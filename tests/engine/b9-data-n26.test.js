@@ -6,7 +6,7 @@ import { fontStore } from '../helpers.js';
 
 const rows = [{ amount: '12.34' }, { amount: 'abc' }, { amount: null }, {}, { amount: '7' }, { amount: '' }];
 const sqlDef = () => ({
-  $schema: 'pagewright/report@1', name: 'L', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'L', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 's', type: 'sql', connection: 'db', query: 'select 1' }],
   dataSets: [{ name: 'D', source: 's', fields: [{ name: 'amount', type: 'number' }] }],
   sections: { body: { items: [{ type: 'table', name: 'T', dataSet: 'D', x: 0, y: 0, w: 200, h: 40, columns: [{ width: 200 }],

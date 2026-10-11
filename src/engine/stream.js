@@ -11,7 +11,7 @@
  * page model as before. Group and table footers may hold Sum/Count/Avg/Min/Max(row expression) and CountRows(): they are
  * folded as rows pass (aggregator), the same values the model computes.
  */
-import { validate } from './schema/validate.js';
+import { validate, bareSorts } from './schema/validate.js';
 import { makeLoader, resolveReuse, resolveTheme, flattenNamed } from './reuse.js';
 import { layerFilter } from './layout.js';
 import { resolvePage } from './units.js';
@@ -45,7 +45,7 @@ export function memorySorter(cmp) {
 /** A string value that holds an expression must be row-local. */
 const okValue = (v, o) => typeof v !== 'string' || !isDynamic(v) || streamable(v, o);
 /** Every expression in a style (any depth) is row-local. */
-const okStyle = (st, d = 0) => !st || typeof st !== 'object' || d > 8 || Object.values(st).every(v => (v && typeof v === 'object' ? okStyle(v, d + 1) : okValue(v)));
+const okStyle = (st, o, d = 0) => !st || typeof st !== 'object' || d > 8 || Object.values(st).every(v => (v && typeof v === 'object' ? okStyle(v, o, d + 1) : okValue(v, o)));
 const isHidden = (h) => !(h == null || h === false || h === '');
 
 /** A footer cell folded as rows pass: Sum/Count/Avg/Min/Max of a row expression, or CountRows(). */
@@ -88,9 +88,10 @@ export async function planStream(def0, opts) {
   const warnings = [];
   const warn = (msg) => { if (warnings.length < 200 && !warnings.includes(msg)) warnings.push(msg); };
   const getReport = makeLoader(opts.loadReport, new Map());
-  const { def, parts } = await resolveReuse(def0, getReport, warn, opts.reportId ? [opts.reportId] : [], { items: 0 });
+  const { def: def1, parts } = await resolveReuse(def0, getReport, warn, opts.reportId ? [opts.reportId] : [], { items: 0 });
   if (parts) return no('report parts');
-  const v = validate(def);
+  const v = validate(def1);
+  const def = bareSorts(def1); // as render()
   if (v.errors.some(e => !v.exprErrors.includes(e))) return no('the definition has errors');
   const fmt = opts.format;
   const state = opts.state || {};
@@ -119,8 +120,11 @@ export async function planStream(def0, opts) {
   for (const g of groups) if (g.parent || g.sortBy || (g.collapsible && g.initiallyCollapsed) || g.expandLevels != null || !okValue(g.expr)) return no('group shape');
   const okRow = (row, { rowNumber = false, folds = false } = {}) => {
     if (!row || isHidden(row.hidden) && row.hidden !== true) return false;
-    if (!okStyle(row.style)) return false;
-    return (Array.isArray(row.cells) ? row.cells : []).every(c => !c || (!c.item && !(Number(c.rowSpan) > 1) && !('raw' in c) && okStyle(c.style)
+    // RowNumber() in a detail row's styles (a zebra row): the paged PDF only, where render() lays the rows out with
+    // their numbers carried; the CSV/Excel rows here carry no fills
+    const so = opts.paged ? { rowNumber } : undefined;
+    if (!okStyle(row.style, so)) return false;
+    return (Array.isArray(row.cells) ? row.cells : []).every(c => !c || (!c.item && !(Number(c.rowSpan) > 1) && !('raw' in c) && okStyle(c.style, so)
       && (okValue(c.value, { rowNumber }) || (folds && foldOf(c.value)))));
   };
   if (!(item.detail || []).every(r => okRow(r, { rowNumber: true }))) return no('detail expressions');
@@ -311,24 +315,37 @@ export async function planStream(def0, opts) {
   /** a row's sort keys (the table's, the data set's) and its place in the data */
   const keyed = (r, s) => { kc.fields = r; dkc.fields = r; return { t: tSort.length ? sortKeys(tSort, kc) : null, d: dSort.length ? sortKeys(dSort, dkc) : null, s, r }; };
   const keyCmp = (a, b) => (tSort.length && compareKeys(a.t, b.t, tSort, tctx)) || (dSort.length && compareKeys(a.d, b.d, dSort, setCtx));
-  /** Rows in the table's order (after its sort), one at a time. grouped: presorted rows are checked by displayOrder. */
+  /**
+   * Rows in the table's order (after its sort), in batches (arrays, maybe empty): a row at a time through these
+   * generators cost more than the rows' layout. grouped: presorted rows are checked by displayOrder.
+   */
   async function* inOrder(grouped = false) {
-    if (!sorted || (grouped && opts.presorted)) { for await (const b of typed()) for (const r of b) yield r; return; }
+    if (!sorted || (grouped && opts.presorted)) { yield* typed(); return; }
     const cmp = (a, b) => keyCmp(a, b) || a.s - b.s;
     const check = opts.presorted ? checked(cmp) : null;
     const s = check ? null : sorter(cmp);
     try {
       let seq = 0;
-      for await (const b of typed()) for (const r of b) {
-        const x = keyed(r, seq++);
-        if (check) { check(x); yield r; } else await s.push(x);
+      for await (const b of typed()) {
+        const out = [];
+        for (const r of b) {
+          const x = keyed(r, seq++);
+          if (check) { check(x); out.push(r); } else await s.push(x);
+        }
+        if (out.length) yield out;
       }
-      if (s) for await (const x of s.drain()) yield x.r;
+      if (s) yield* drained(s, (x) => x.r);
     } finally { await s?.close(); }
   }
-  /** Rows in display order, each with its group path ([ordinal, key] per level). */
+  /** A sorter's rows in batches. @param {any} s @param {(x: any) => any} f */
+  async function* drained(s, f) {
+    let out = [];
+    for await (const x of s.drain()) { out.push(f(x)); if (out.length >= 1000) { yield out; out = []; } }
+    if (out.length) yield out;
+  }
+  /** Rows in display order, each with its group path ([ordinal, key] per level), in batches. */
   async function* displayOrder() {
-    if (!groups.length) { for await (const r of inOrder()) yield { r, g: null }; return; }
+    if (!groups.length) { for await (const b of inOrder()) yield b.map(r => ({ r, g: null })); return; }
     const gc = { ...tctx }, fc = { ...tctx };
     const paths = groups.map(() => new Map()); // per level: path text → [ordinal, the first row's key]
     let ord = 0, keyText = 0; // the groups' key text held, bounded like the groups' number
@@ -348,34 +365,38 @@ export async function planStream(def0, opts) {
     const s = check ? null : sorter(cmp);
     try {
       let seq = 0;
-      for await (const r of inOrder(true)) {
-        gc.fields = r;
-        let path = '';
-        const g = [];
-        for (let l = 0; l < groups.length; l++) {
-          let key;
-          try { key = evalValue(groups[l].expr, gc); } catch (e) { warn(`${item.name || item.type} group: ${e.message}`); key = '#Error'; }
-          path += `\u0000${groupKeyText(key, tctx)}`;
-          let p = paths[l].get(path);
-          if (!p) {
-            keyText += path.length;
-            if (ord > 1e6 || keyText > 64 * 1048576) throw Object.assign(new Error('Too many groups (or group keys too long) to stream: filter the data.'), { status: 413, fallBack: true });
-            paths[l].set(path, p = [ord++, key]);
+      for await (const b of inOrder(true)) {
+        const out = [];
+        for (const r of b) {
+          gc.fields = r;
+          let path = '';
+          const g = [];
+          for (let l = 0; l < groups.length; l++) {
+            let key;
+            try { key = evalValue(groups[l].expr, gc); } catch (e) { warn(`${item.name || item.type} group: ${e.message}`); key = '#Error'; }
+            path += `\u0000${groupKeyText(key, tctx)}`;
+            let p = paths[l].get(path);
+            if (!p) {
+              keyText += path.length;
+              if (ord > 1e6 || keyText > 64 * 1048576) throw Object.assign(new Error('Too many groups (or group keys too long) to stream: filter the data.'), { status: 413, fallBack: true });
+              paths[l].set(path, p = [ord++, key]);
+            }
+            g.push(p);
           }
-          g.push(p);
+          // totals add their rows in the data's order, as the model's aggregates do (a decimal sum in another order
+          // can differ in its last digit): here, before the rows are put in their groups' order
+          if (folds.groups) {
+            fc.fields = r;
+            foldRow(folds.table, fc);
+            for (let l = 0; l < groups.length; l++) { let sc = folds.groups[l].get(g[l][0]); if (!sc) folds.groups[l].set(g[l][0], sc = openScope(l)); foldRow(sc, fc); }
+          }
+          const x = { g, s: seq++, r };
+          if (check) { check({ g, k: sorted ? keyed(r, 0) : null }); out.push(x); } else await s.push(x);
         }
-        // totals add their rows in the data's order, as the model's aggregates do (a decimal sum in another order
-        // can differ in its last digit): here, before the rows are put in their groups' order
-        if (folds.groups) {
-          fc.fields = r;
-          foldRow(folds.table, fc);
-          for (let l = 0; l < groups.length; l++) { let sc = folds.groups[l].get(g[l][0]); if (!sc) folds.groups[l].set(g[l][0], sc = openScope(l)); foldRow(sc, fc); }
-        }
-        const x = { g, s: seq++, r };
-        if (check) { check({ g, k: sorted ? keyed(r, 0) : null }); yield x; } else await s.push(x);
+        if (out.length) yield out;
       }
       for (const m of paths) m.clear();
-      if (s) for await (const x of s.drain()) yield x;
+      if (s) yield* drained(s, (x) => x);
     } finally { await s?.close(); }
   }
 
@@ -428,7 +449,7 @@ export async function planStream(def0, opts) {
         scopes[k] = null;
       }
     };
-    for await (const { r, g } of displayOrder()) {
+    for await (const b of displayOrder()) for (const { r, g } of b) {
       if (!headerDone) { headerDone = true; first = r; yield* header(r); }
       if (g) {
         let l = 0;
@@ -456,7 +477,7 @@ export async function planStream(def0, opts) {
   }
 
   // records: the typed rows in the table's order (filtered and sorted); grouped: in display order, each with its group
-  // path ({ r, g }: [ordinal, key] per level); for the paged PDF (paged.js)
+  // path ({ r, g }: [ordinal, key] per level); for the paged PDF (paged.js). Both in batches (arrays).
   return { name: item.name, columns: cols.map(c => c.width), title: def.name || '', timeZone: timeZone || null, locale: def.locale || null, currency: def.currency || null, warnings, rows, records: inOrder, grouped: displayOrder, fieldList, stats };
 }
 

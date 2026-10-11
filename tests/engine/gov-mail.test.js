@@ -10,7 +10,7 @@ const cwd = process.cwd();
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-mail-'));
 const saved = {};
 let smtp, jobs, schedules, perms;
-const def = { $schema: 'pagewright/report@1', name: 'Mailed', page: { size: 'A4', margins: [36, 36, 36, 36] }, parameters: [{ name: 'n', type: 'string' }], dataSources: [], dataSets: [], sections: { body: { items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 16, value: 'Item {Parameters.n}' }] } } };
+const def = { $schema: 'reportwright/report@1', name: 'Mailed', page: { size: 'A4', margins: [36, 36, 36, 36] }, parameters: [{ name: 'n', type: 'string' }], dataSources: [], dataSets: [], sections: { body: { items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 16, value: 'Item {Parameters.n}' }] } } };
 
 beforeAll(async () => {
   smtp = await startSmtp();

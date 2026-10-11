@@ -10,7 +10,7 @@ const OLD = process.argv.includes('--exceljs'); // the 0.7 writer, for compariso
 const fonts = new FontStore((k) => fs.readFileSync(path.join(root, 'public/fonts', fontFile(k))));
 const rows = Array.from({ length: N }, (_, i) => ({ id: i, name: `Customer ${i}`, city: ['Pune', 'Delhi', 'Kochi'][i % 3], qty: i % 17, price: (i % 100) * 1.25, day: `2024-0${1 + (i % 9)}-1${i % 9}` }));
 const cols = ['id', 'name', 'city', 'qty', 'price', 'day'];
-const def = { $schema: 'pagewright/report@1', name: 'Big', page: { size: 'A4', margins: [36, 36, 36, 36] },
+const def = { $schema: 'reportwright/report@1', name: 'Big', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 's', type: 'json', data: rows }], dataSets: [{ name: 'D', source: 's' }],
   sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 520, h: 40, dataSet: 'D', columns: cols.map(() => ({ width: 86 })),
     header: [{ height: 14, cells: cols.map(c => ({ value: c })) }], detail: [{ height: 14, cells: cols.map(c => ({ value: `=Fields.${c}` })) }] }] } } };

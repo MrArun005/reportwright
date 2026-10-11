@@ -23,7 +23,8 @@ let tmp;
 const pdftotext = (bytes) => {
   const f = path.join(tmp, `t${Math.random().toString(36).slice(2)}.pdf`);
   fs.writeFileSync(f, bytes);
-  const r = spawnSync('pdftotext', ['-layout', f, '-']);
+  const r = spawnSync('pdftotext', ['-layout', f, '-'], { maxBuffer: 1 << 30 });
+  if (r.error || r.status) throw new Error(`pdftotext failed (${r.error?.code ?? r.status}): ${r.stderr}`); // ENOBUFS cut the text short, silently
   return { text: r.stdout.toString(), err: r.stderr.toString() };
 };
 const REGIONS = ['North', 'South', 'East', 'West'];
@@ -31,7 +32,7 @@ const rows = (n) => Array.from({ length: n }, (_, i) => ({ id: i + 1, account: `
   date: `2025-${String(1 + (i % 12)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}`, amount: Math.round(((i * 7919) % 200000 - 100000) * 1.37) / 100,
   reference: i % 37 === 0 ? `Reversal of an earlier transfer between linked accounts, batch ${i}` : `REF-${i * 31}` }));
 const ledger = (n) => ({
-  $schema: 'pagewright/report@1', name: 'Ledger', locale: 'en-IN', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Ledger', locale: 'en-IN', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: { rows: rows(n) } }],
   dataSets: [{ name: 'Tx', source: 'src', path: '$.rows', fields: [{ name: 'id', type: 'number' }, { name: 'account', type: 'string' }, { name: 'region', type: 'string' }, { name: 'date', type: 'date' }, { name: 'amount', type: 'number' }, { name: 'reference', type: 'string' }],
     sort: [{ by: '=Fields.region' }, { by: '=Fields.id', dir: 'desc' }] }],
@@ -71,11 +72,16 @@ describe('the server streams a flowing report\'s PDF', () => {
     expect(b.err).toBe('');
     expect(a.text.length).toBeGreaterThan(1e6);
     expect(b.text).toBe(a.text);
+    // the whole text, both sides: every page's footer, up to the last ("Page 438 of 438")
+    const feet = [...b.text.matchAll(/Page (\d+) of (\d+)/g)];
+    expect(feet.length).toBe(Number(feet[0][2]));
+    expect(feet.at(-1)[1]).toBe(feet[0][2]);
     // an accessible PDF/A of the same report streams too, with the same text
     const pdfa = await pdfRoute(new Request('http://pw.test/api/reports/ledger/pdf?pdfa=1&ua=1', { headers: { host: 'pw.test' } }), { params: Promise.resolve({ id: 'ledger' }) });
     expect(pdfa.headers.get('content-length')).toBeNull();
-    // (its cells' text is one text object a page, as untagged, so it reads as the untagged file in pdftotext's layout)
-    expect(pdftotext(Buffer.from(await pdfa.arrayBuffer())).text).toBe(a.text);
+    // (each item its own marked text object, as exportPdf's tagged file: it reads as that file in pdftotext's layout)
+    const tagged = pdftotext(await exportPdf(await render(def, { fontStore, exportData: true }), fontStore, { subset, tagged: { lang: 'en' } }));
+    expect(pdftotext(Buffer.from(await pdfa.arrayBuffer())).text).toBe(tagged.text);
   }, 240000);
 
   it('a client that leaves stops the render and frees its place in the pool', async () => {

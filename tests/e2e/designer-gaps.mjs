@@ -12,7 +12,7 @@ const rows = [
   { id: 2788, region: 'East', month: '2026-01-01', amount: 77.25, score: 2 },
 ];
 const base = (items = [], extra = {}) => ({
-  $schema: 'pagewright/report@1', name: 'e2e designer gaps', page: { size: 'A4', orientation: 'portrait', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'e2e designer gaps', page: { size: 'A4', orientation: 'portrait', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: { rows } }],
   dataSets: [{ name: 'Sales', source: 'src', path: '$.rows[*]', fields: [{ name: 'id', type: 'number' }, { name: 'region', type: 'string' }, { name: 'month', type: 'date' }, { name: 'amount', type: 'number' }, { name: 'score', type: 'number' }] }],
   sections: { body: { height: 400, items } },
@@ -140,7 +140,7 @@ try {
   const items = def.sections.body.items;
   assert.deepEqual(items.slice(0, 4).map(i => i.name), ['Cover', 'Under', 'Box', 'Inner'], 'Under drawn after Cover; Inner right after Box');
   const under = items.find(i => i.name === 'Under');
-  assert.deepEqual([under.x, under.y], [21, 21], 'arrow keys moved the item');
+  assert.deepEqual([under.x, under.y], [24, 24], 'arrow keys moved the item one grid step (snap is on, grid 4: 0d7e3062)');
   assert.equal(under.style.backgroundColor, '#dcfce7');
   const inner = items.find(i => i.name === 'Inner');
   assert.deepEqual([inner.x, inner.y], [10, 112], 'same place on the page');

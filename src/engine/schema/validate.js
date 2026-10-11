@@ -1,5 +1,5 @@
 // @ts-check
-import { checkValue, checkFunctions, parseValue, callIssues, compile, isAggregate } from '../expr/evaluate.js';
+import { checkValue, checkFunctions, parseValue, callIssues, compile, isAggregate, didYouMean, noParam } from '../expr/evaluate.js';
 import { ITEMS } from '../items/index.js';
 import { symbologyError } from '../items/barcode.js';
 import { rowCells } from '../items/cells.js';
@@ -7,8 +7,8 @@ import { REPORT_SCHEMA } from './report.schema.js';
 import { toDate } from '../expr/format.js';
 import { PAGE_SIZES, normalizePageSize, resolvePage } from '../units.js';
 
-export const SCHEMA_ID = 'pagewright/report@1'; // kept after the rename: every saved report carries it
-export const SCHEMA_ALIAS = 'reportwright/report@1'; // the same format under the new name
+export const SCHEMA_ID = 'reportwright/report@1';
+export const SCHEMA_ALIAS = 'pagewright/report@1'; // deprecated: the name before the rename, still read as the same format
 
 /** Properties the engine reads on any item, beyond each type's own (its inspector props and defaults). ponytail: a
  *  list; a new item property is added here (or to the type's props) or validate() calls it unknown. */
@@ -36,24 +36,7 @@ const DEF_KEYS = new Set(('$schema name description locale currency timeZone pag
   + 'images theme themeDef master nullPropagation caseSensitive naturalSort nullOrder collation arithmetic bandRows version id tags author folder '
   + 'stylesheet parts partProperties dashboard comment notes customCode libraries liveParameters parameterLayout drafts history nonFinite').split(' '));
 for (const k of Object.keys(REPORT_SCHEMA.$defs.Report.properties)) DEF_KEYS.add(k); // the schema's, too
-const lev = (a, b) => {
-  if (Math.abs(a.length - b.length) > 2) return 3;
-  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    let prev = d[0]; d[0] = i;
-    for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1].toLowerCase() === b[j - 1].toLowerCase() ? 0 : 1)); prev = t; }
-  }
-  return d[b.length];
-};
-/** The nearest known name: a typo (2 edits) or the start of a longer one (noRows → noRowsText). */
-export function didYouMean(k, known) {
-  let best = null, bd = 3;
-  for (const c of known) {
-    const dd = c.toLowerCase().startsWith(k.toLowerCase()) && k.length >= 3 ? 1 : lev(k, c);
-    if (dd < bd) { bd = dd; best = c; }
-  }
-  return best;
-}
+export { didYouMean };
 /** Colour names the renderer reads (exporters/color.js; the engine does not import the exporters). Another word is not drawn. */
 const COLOUR_NAMES = ['black', 'white', 'red', 'green', 'blue', 'gray', 'grey', 'orange', 'yellow'];
 const COLOUR_KEYS = ['color', 'backgroundColor', 'fill', 'stroke', 'textDecorationColor'];
@@ -64,8 +47,12 @@ const LOCAL_IMAGE = /^(?:[a-z]:[\\/]|\\\\|\.{1,2}[\\/]|file:|[^:/\\\s]+\.(?:png|
 /** Keys a sort entry is often written with, for the one it means: {by, dir}. */
 const SORT_ALIAS = { expr: 'by', expression: 'by', field: 'by', direction: 'dir', order: 'dir' };
 /** Warnings for a style object: an unknown colour name, a numeric format code with a stray letter. */
+/** Style properties the schema lists (it allows others: the engine reads a few more, e.g. direction). */
+const STYLE_KEYS = Object.keys(REPORT_SCHEMA.$defs.Style.properties);
 function styleIssues(st, label, out) {
   if (!st || typeof st !== 'object' || Array.isArray(st)) return;
+  // a near miss of a style property ("fontWieght") is ignored silently otherwise; another name may be read, so says nothing
+  for (const k in st) { const g = !STYLE_KEYS.includes(k) && didYouMean(k, STYLE_KEYS); if (g) out.push(`${label}: unknown style property "${k}" (did you mean "${g}"?); it is ignored`); }
   for (const k of COLOUR_KEYS) {
     const v = st[k];
     if (typeof v !== 'string' || v.startsWith('=')) continue;
@@ -81,16 +68,50 @@ function formatIssue(f, label, out) {
   if (m) out.push(`${label}: the format "${f}" is not a format code (did you mean "${m[1]}${m[2]}"?)`);
 }
 /** A sort is a list of {by, dir}: an entry without "by" (or with other keys) is ignored, so it says so. */
-function sortIssues(sort, label, out) {
+function sortIssues(sort, label, out, known = new Set()) {
   sort.forEach((s, i) => {
     const at = `${label}, sort ${i + 1}`;
     if (!s || typeof s !== 'object' || Array.isArray(s) || !('by' in s)) { out.push(`${at}: a sort entry is {by, dir}, e.g. {"by": "=Fields.Name", "dir": "asc"}; this one has no "by" and is ignored`); return; }
+    // a bare field name sorts by the field (bareSorts); other text is a constant: no order
+    const f = fieldNamed(s.by, known), g = f || (typeof s.by === 'string' && s.by.trim() && !s.by.startsWith('=') && didYouMean(s.by, known));
+    if (f || g !== false) out.push(`${at}: "by" is ${f ? `"${s.by}", the name of a field; it sorts by that field` : `the constant "${s.by}", so the rows are not sorted;`} (did you mean "=Fields.${g || 'Name'}"?)`);
     for (const k of Object.keys(s)) {
       if (k === 'by' || k === 'dir' || k.startsWith('_')) continue;
       const g = SORT_ALIAS[k] || didYouMean(k, ['by', 'dir']);
       out.push(`${at}: "${k}" is ignored; a sort entry is {by, dir}${g ? ` (did you mean "${g}"?)` : ''}`);
     }
     if (s.dir != null && !['asc', 'desc'].includes(s.dir)) out.push(`${at}: "dir" is ${JSON.stringify(s.dir)}; expected "asc" or "desc"`);
+  });
+}
+const FILTER_KEYS = ['expr', 'op', 'value', 'value2', 'skipBlank'];
+const FILTER_ALIAS = { expression: 'expr', field: 'expr', by: 'expr', operator: 'op', comparison: 'op', values: 'value', value1: 'value' };
+/** A filter is {expr, op, value, value2, skipBlank}: any other key is ignored (the filter then matches on undefined), so it says so. */
+function filterIssues(filters, label, out) {
+  filters.forEach((f, i) => {
+    if (!f || typeof f !== 'object' || Array.isArray(f)) return;
+    for (const k of Object.keys(f)) {
+      if (FILTER_KEYS.includes(k) || k.startsWith('_')) continue;
+      const g = FILTER_ALIAS[k] || didYouMean(k, FILTER_KEYS);
+      out.push(`${label}, filter ${i + 1}: "${k}" is ignored; a filter is {${FILTER_KEYS.join(', ')}}${g ? ` (did you mean "${g}"?)` : ''}`);
+    }
+  });
+}
+/** The operators rowFilter() reads (data/index.js); TopN... in any case. */
+const FILTER_OPS = '= <> > >= < <= in like contains between Between TopN BottomN TopPercent BottomPercent'.split(' ');
+/**
+ * A half-written filter is an error: with no expr, an unknown op, no value, or a Between with no upper bound it
+ * matches every row or none and says nothing. {expr, value} with no op is "=" (documented, kept); with neither op nor
+ * value (the whole comparison written in expr) it is an error, not a test of expr's truth: whether a missing op meant
+ * "=" would then hang on whether a value is there.
+ */
+function filterShape(filters, label, out) {
+  filters.forEach((f, i) => {
+    if (!f || typeof f !== 'object') return;
+    const at = `${label}, filter ${i + 1}`, op = f.op, eg = `; a filter is {expr, op, value}, e.g. { expr: '=Fields.a', op: '>=', value: 2 }`;
+    const msg = /^=?\s*$/.test(f.expr ?? '') ? ' has no expr' : op == null || op === '' ? (f.value == null ? ' has no op' : '')
+      : !FILTER_OPS.some(o => o === op || (o.length > 7 && o.toLowerCase() === String(op).toLowerCase())) ? `: the op ${JSON.stringify(op)} is not a filter operator (${FILTER_OPS.join(' ')})`
+        : f.value == null ? ` (${op}) has no value` : /^between$/i.test(op) && f.value2 == null && !Array.isArray(f.value) && !String(f.value).startsWith('=') ? ` (${op}) has no value2, the upper bound (or give value as [low, high])` : '';
+    if (msg) out.push(at + msg + eg);
   });
 }
 /** Each item type's properties in the report JSON Schema (its own and ItemBase's): type → Map(key → schema). */
@@ -142,6 +163,14 @@ export function validate(def) {
   }
   for (const [n, st] of Object.entries(def.styles?.named || {})) styleIssues(st, `Named style "${n}"`, warnings);
   styleIssues(def.styles?.base, 'Base style', warnings);
+  if (def.export != null) {
+    const xs = REPORT_SCHEMA.$defs.Report.properties.export.properties;
+    if (typeof def.export !== 'object' || Array.isArray(def.export)) warnings.push('"export" must be an object { html?, drillLinks? }; it is ignored');
+    else for (const [k, v] of Object.entries(def.export)) {
+      if (!xs[k]) warnings.push(`Unknown export property "${k}" (expected html or drillLinks); it is ignored`);
+      else { const bad = offEnum(xs[k], v); if (bad) warnings.push(`export.${k} "${v}" is not one of ${bad.join(', ')}; the server's default is used`); }
+    }
+  }
   if (Array.isArray(body)) body.forEach((b, i) => {
     if (!b || typeof b !== 'object' || Array.isArray(b)) errors.push(`Body section ${i + 1} is not an object`);
     else if (b.page != null && (typeof b.page !== 'object' || Array.isArray(b.page))) errors.push(`Body section ${i + 1}: "page" must be an object`);
@@ -168,7 +197,7 @@ export function validate(def) {
     }
   }
 
-  const srcNames = new Set();
+  const known = fieldNames(def), srcNames = new Set();
   for (const s of def.dataSources || []) {
     if (!s.name) errors.push('A data source has no name');
     if (srcNames.has(s.name)) errors.push(`Two data sources have the name "${s.name}"`);
@@ -184,7 +213,8 @@ export function validate(def) {
       if (d.relation.path != null && typeof d.relation.path !== 'string') errors.push(`Data set "${d.name}": the relation path must be text, e.g. $.items[*]`);
     } else if (!srcNames.has(d.source)) errors.push(`Data set "${d.name}" uses the source "${d.source}", which does not exist`);
     dsNames.add(d.name);
-    if (Array.isArray(d.sort)) sortIssues(d.sort, `Data set "${d.name}"`, warnings);
+    if (Array.isArray(d.sort)) sortIssues(d.sort, `Data set "${d.name}"`, warnings, known);
+    if (Array.isArray(d.filters)) { filterIssues(d.filters, `Data set "${d.name}"`, warnings); filterShape(d.filters, `Data set "${d.name}"`, errors); }
   }
 
   const names = new Set();
@@ -206,7 +236,7 @@ export function validate(def) {
       for (const [k, v] of Object.entries(n)) scan(v, k === 'cells' && own === label ? `${label} cell` : own, depth + 1);
     }
   };
-  const lists = [];
+  const lists = [], refErrors = [];
   const fields = inlineFields(def), params = new Set((Array.isArray(def.parameters) ? def.parameters : []).map(p => p?.name));
   for (const where of ['pageHeader', 'body', 'pageFooter']) {
     const sec = def.sections?.[where];
@@ -220,7 +250,7 @@ export function validate(def) {
     for (const it of Array.isArray(items) ? items : []) {
       const label = it.name || it.type;
       if (!ITEMS[it.type]) { warnings.push(`Unknown item type "${it.type}"`); continue; }
-      walkItems(it, (x) => itemRefs(x, warnings, fields, params));
+      walkItems(it, (x) => { itemRefs(x, warnings, fields, params, refErrors); if (Array.isArray(x.filters)) filterShape(x.filters, x.name || x.type, errors); });
       if (it.name) {
         if (names.has(it.name)) warnings.push(`Two items have the name "${it.name}"`);
         names.add(it.name);
@@ -233,7 +263,12 @@ export function validate(def) {
         const g = didYouMean(it.styleName, Object.keys(def.styles?.named || {}));
         warnings.push(`${label}: there is no named style "${it.styleName}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`);
       }
-      if (Array.isArray(it.sort)) sortIssues(it.sort, label, warnings);
+      if (Array.isArray(it.sort)) sortIssues(it.sort, label, warnings, known);
+      // a group on a constant is one group of every row
+      for (const [g, at] of [...(it.groups || []).map((g, i) => [g, `${label}, group ${i + 1}`]), ...['rowGroups', 'columnGroups'].flatMap(k => (Array.isArray(it[k]) ? it[k] : []).map((g, i) => [g, `${label} ${k} ${i + 1}`]))]) {
+        if (fieldNamed(g?.expr, known)) warnings.push(`${at}: "expr" is "${g.expr}", the name of a field, so every row is in one group; did you mean "=Fields.${g.expr}"?`);
+      }
+      if (Array.isArray(it.filters)) filterIssues(it.filters, label, warnings);
       if (it.type === 'chart' && it.legend != null && it.legend !== 'bottom' && it.legend !== 'none') {
         const shown = typeof it.legend === 'object' ? `is an object (${JSON.stringify(it.legend).slice(0, 60)})` : `is ${JSON.stringify(it.legend)}`;
         warnings.push(`${label}: "legend" ${shown}; only "bottom" (show the legend) or "none" (hide it) is supported, and the legend is drawn at the bottom`);
@@ -288,6 +323,7 @@ export function validate(def) {
       }
     }
   }
+  for (const e of new Set(refErrors)) { errors.push(e); exprErrors.push(e); }
   // functions an expression calls that do not exist, anywhere in the report (items, data sets, parameters, functions)
   const custom = new Set((Array.isArray(def.functions) ? def.functions : []).map(f => String(f?.name ?? '').toLowerCase()));
   const callErr = (label, msg) => { const e = `${label}: ${msg}`; if (!errors.includes(e)) { errors.push(e); exprErrors.push(e); checkOnly.push(e); } };
@@ -366,13 +402,36 @@ const TEMPLATE_KEYS = new Set(['value', 'text', 'label', 'tooltip', 'title', 'no
  */
 function inlineFields(def) {
   const srcs = Array.isArray(def.dataSources) ? def.dataSources : [];
-  if (!srcs.length || srcs.some(x => x?.type !== 'json' || !x.data || typeof x.data !== 'object')) return null;
+  const names = srcs.length && srcs.every(x => x?.type === 'json' && x.data && typeof x.data === 'object') ? fieldNames(def) : null;
+  return names?.size ? names : null;
+}
+/** Every field name the report knows: the keys of inline (JSON) rows and the data sets' declared fields. */
+function fieldNames(def) {
   const names = new Set();
   // a top-level object is one row (a data set at $.meta); a list is rows
-  for (const x of srcs) for (const v of Object.values(x.data)) for (const r of (Array.isArray(v) ? v.slice(0, 200) : [v])) if (r && typeof r === 'object' && !Array.isArray(r)) for (const k of Object.keys(r)) names.add(k);
+  for (const x of Array.isArray(def.dataSources) ? def.dataSources : []) if (x?.type === 'json' && x.data && typeof x.data === 'object') for (const v of Object.values(x.data)) for (const r of (Array.isArray(v) ? v.slice(0, 200) : [v])) if (r && typeof r === 'object' && !Array.isArray(r)) for (const k of Object.keys(r)) names.add(k);
   for (const d of Array.isArray(def.dataSets) ? def.dataSets : []) for (const f of Array.isArray(d?.fields) ? d.fields : []) if (f?.name) names.add(f.name);
-  return names.size ? names : null;
+  return names;
 }
+/** The field of that name (any case, as Fields.x reads it) when s is text, not an expression. */
+const fieldNamed = (s, known) => typeof s === 'string' && !s.startsWith('=') && [...known].find(k => k.toLowerCase() === s.trim().toLowerCase());
+/**
+ * A sort "by" a bare field name ("region", not "=Fields.region") sorts by a constant, i.e. not at all: the field is
+ * meant, so it sorts by it (validate() warns). def itself when there is none, else a copy with them rewritten.
+ * @param {any} def
+ */
+export function bareSorts(def) {
+  const known = fieldNames(def || {}), lists = [];
+  for (const d of Array.isArray(def?.dataSets) ? def.dataSets : []) lists.push(d?.sort);
+  walkItems(def?.sections, (x) => lists.push(x.sort));
+  if (!lists.some(l => Array.isArray(l) && l.some(s => fieldNamed(s?.by, known)))) return def;
+  const out = structuredClone(def);
+  const fix = (l) => { if (Array.isArray(l)) for (const s of l) if (fieldNamed(s?.by, known)) s.by = `=Fields.${s.by.trim()}`; };
+  for (const d of out.dataSets || []) fix(d?.sort);
+  walkItems(out.sections, (x) => fix(x.sort));
+  return out;
+}
+
 /**
  * One item's sizes and references: a zero or negative width or height (a line may be flat), and Fields.x or Parameters.x
  * that the report does not declare. Child items are checked on their own (walkItems), so each is said once.
@@ -381,7 +440,7 @@ function inlineFields(def) {
  * @param {Set<string>|null} fields
  * @param {Set<string>} params
  */
-function itemRefs(it, warnings, fields, params) {
+function itemRefs(it, warnings, fields, params, exprErrors) {
   const label = it.name || it.type;
   if (!/line/i.test(String(it.type))) for (const [k, what] of [['w', 'width'], ['h', 'height']]) {
     if (typeof it[k] === 'number' && it[k] <= 0) warnings.push(`${label}: ${what} is ${it[k]}, so the item is not drawn; give it a positive ${what}`);
@@ -396,7 +455,9 @@ function itemRefs(it, warnings, fields, params) {
         if (seen.has(key)) continue;
         seen.add(key);
         // the same words as the render's own message, so the two are said once (render() drops a repeated warning)
-        if (m[1] === 'Parameters' && !params.has(m[2])) warnings.push(`${label}: The parameter "${m[2]}" does not exist; declare it under parameters, or check the spelling`);
+        // a near miss of a declared name (Regoin for Region) is an error; another name stays a warning, as imported
+        // reports name their tool's built-in parameters (IS_IGNORE_PAGINATION). render() draws #Error, in the same words
+        if (m[1] === 'Parameters' && ![...params].some(p => String(p).toLowerCase() === m[2].toLowerCase())) (didYouMean(m[2], params) ? exprErrors : warnings).push(`${label}: ${noParam(m[2], params)}`);
         if (m[1] === 'Fields' && fields && !fields.has(m[2])) warnings.push(`${label}: The field "${m[2]}" does not exist; check the spelling, or the data set that has it`);
       }
       return;

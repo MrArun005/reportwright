@@ -12,7 +12,7 @@ const ORIGIN = 'http://a11y.test';
 const FILES = { '/pw/': path.join(root, 'public/embed/esm/'), '/pw-fonts/': path.join(root, 'packages/fonts/public/fonts/') };
 const TYPES = { '.js': 'text/javascript', '.html': 'text/html', '.ttf': 'font/ttf', '.woff2': 'font/woff2', '.wasm': 'application/wasm', '.map': 'application/json' };
 const definition = {
-  $schema: 'pagewright/report@1', name: 'A11y', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'A11y', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'orders', type: 'json', data: { rows: [{ customer: 'Asha Rao', amount: 1200.5 }] } }],
   dataSets: [{ name: 'Rows', source: 'orders', path: '$.rows', fields: [{ name: 'customer', type: 'string' }, { name: 'amount', type: 'number' }] }],
   sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 400, h: 40, dataSet: 'Rows', columns: [{ width: 200 }, { width: 200 }],

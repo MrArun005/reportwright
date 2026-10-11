@@ -4,7 +4,7 @@ const W = 523.28, MUTED = '#6b7280';
 const tb = (name, x, y, w, h, value, style = {}, extra = {}) => ({ type: 'textbox', name, x, y, w, h, value, canGrow: true, style, ...extra });
 const half = (W - 12) / 2;
 const def = {
-  $schema: 'pagewright/report@1', name: 'Sales dashboard', locale: 'en-IN', currency: 'INR',
+  $schema: 'reportwright/report@1', name: 'Sales dashboard', locale: 'en-IN', currency: 'INR',
   page: { size: 'A4', orientation: 'portrait', margins: [32, 32, 28, 32] },
   parameters: [{ name: 'year', type: 'number', prompt: 'Year', required: true, default: 2026, options: [{ value: 2025, label: '2025' }, { value: 2026, label: '2026' }] }],
   dataSources: [{ name: 'sales', type: 'rest', method: 'GET', url: '/api/sample/sales/{Parameters.year}' }],

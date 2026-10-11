@@ -4,7 +4,7 @@
  * render worker stuck in it never answers. Every chunk is walked with its length in bounds and its CRC right, IHDR
  * first, IDAT present, IEND last; the IDAT data must inflate to exactly the bytes the header promises.
  */
-import { Unzlib } from 'fflate';
+import { Unzlib } from '@reportwright/pdf/fflate';
 
 const CRC = new Uint32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
 /** @param {Uint8Array} b @param {number} from @param {number} to */

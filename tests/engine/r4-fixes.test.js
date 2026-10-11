@@ -94,12 +94,12 @@ describe('HTML export size', () => {
       expect(fs.statSync(out).size).toBeLessThan(300 * 1024);
     } finally { fs.rmSync(out, { force: true }); }
   });
-  it('the viewer exports HTML as pages + tables by default; an old stored "interactive" default is dropped, a v2 choice kept', async () => {
+  it('the viewer exports interactive HTML by default; the HTML kind is never read from browser storage (0.14.1)', async () => {
     const { EXPORT_DEFAULTS, exportOptionsFrom } = await import('../../src/viewer/logic.js');
-    expect(EXPORT_DEFAULTS.html).toBe('tables');
-    expect(exportOptionsFrom({ pdfua: true, pdfa: false, formulas: true, html: 'interactive' })).toEqual({ ...EXPORT_DEFAULTS, pdfua: true });
-    expect(exportOptionsFrom({ v: 2, html: 'interactive' }).html).toBe('interactive');
-    expect(exportOptionsFrom(null)).toEqual(EXPORT_DEFAULTS);
+    expect(EXPORT_DEFAULTS.html).toBe('interactive');
+    expect(exportOptionsFrom({ pdfua: true, pdfa: false, formulas: true, html: 'static' })).toEqual({ pdfua: true, pdfa: false, formulas: true });
+    expect(exportOptionsFrom({ v: 2, html: 'tables' }).html).toBe(undefined);
+    expect(exportOptionsFrom(null)).toEqual({ pdfua: false, pdfa: false, formulas: true });
   });
   it('the interactive file\'s data snapshot keeps only the values a report can read', async () => {
     const { pruneSnapshot } = await import('../../src/viewer/logic.js');
@@ -188,7 +188,7 @@ describe('saving warns about drill-through reports that do not exist', () => {
     process.env.PW_STORAGE = `sqlite:${path.join(tmp, 's.db')}`;
     try {
       const link = (report) => report && { type: 'report', report, params: {} };
-      const def = (name, report) => ({ ...report && {}, $schema: 'pagewright/report@1', name, page: { size: 'A4' }, sections: { body: { items: [
+      const def = (name, report) => ({ ...report && {}, $schema: 'reportwright/report@1', name, page: { size: 'A4' }, sections: { body: { items: [
         { type: 'textbox', name: 'Go', x: 0, y: 0, w: 100, h: 14, value: 'open', ...(report ? { action: link(report) } : {}) }] } } });
       const a = await put('r4-ledger', def('Ledger', 'account-detail'));
       expect(a.ok).toBe(true);
@@ -207,7 +207,7 @@ describe('render speed: no layout pass for nothing', () => {
     ...extra], { data: { rows } }), functions: [{ name: 'Tick', params: ['x'], body: '=x' }] });
   const passes = async (def, opts = {}) => { const fnCount = { n: 0 }; const { FontStore } = await import('../../src/engine/index.js'); const { fontFile } = await import('../../src/engine/text/fonts.js');
     const store = opts.fresh ? new FontStore(async (k) => fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'public', 'fonts', fontFile(k)))) : fontStore;
-    await render(def, { fontStore: store, fnCount, loadReport: async () => ({ $schema: 'pagewright/report@1', sections: { body: { items: [] } } }) }); return fnCount.n / def.dataSources[0].data.rows.length; };
+    await render(def, { fontStore: store, fnCount, loadReport: async () => ({ $schema: 'reportwright/report@1', sections: { body: { items: [] } } }) }); return fnCount.n / def.dataSources[0].data.rows.length; };
   it('data in Hindi and Arabic: the fallback fonts and the shaper load before the layout, not after a first pass', async () => {
     const rows = Array.from({ length: 50 }, (_, i) => ({ v: i % 2 ? `राधिका ${i}` : `محمد ${i}` }));
     expect(await passes(counted(rows), { fresh: true })).toBe(1);

@@ -16,7 +16,7 @@ const rows = [
 ];
 const chart = (name, x, y, extra) => ({ type: 'chart', name, x, y, w: 250, h: 170, dataSet: 'Sales', category: '=Fields.region', series: [{ name: 'Amount', value: '=Sum(Fields.amount)' }], legend: 'bottom', ...extra });
 const definition = {
-  $schema: 'pagewright/report@1', name: 'e2e outline and charts', page: { size: 'A4', orientation: 'landscape', margins: [24, 24, 24, 24] },
+  $schema: 'reportwright/report@1', name: 'e2e outline and charts', page: { size: 'A4', orientation: 'landscape', margins: [24, 24, 24, 24] },
   dataSources: [{ name: 'src', type: 'json', data: { rows } }],
   dataSets: [{ name: 'Sales', source: 'src', path: '$.rows[*]', fields: [{ name: 'region', type: 'string' }, { name: 'amount', type: 'number' }, { name: 'month', type: 'string' }] }],
   sections: { body: { height: 420, items: [

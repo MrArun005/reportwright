@@ -35,10 +35,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: sudo apt-get install -y poppler-utils # pdftotext: the PDF text, password and script tests read the PDFs they make
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils # pdftotext: the PDF text, password and script tests read the PDFs they make
       - name: Type check (the server has no errors; the engine's may only go down)
         run: npm run typecheck
-      - run: npx vitest run
+      # storage, perms and audit share the one database per engine (storage.test.js empties its tables between cases),
+      # so they run one file at a time after the rest; in one parallel run they wipe each other's jobs and leases
+      - run: npx vitest run --exclude tests/engine/storage.test.js --exclude tests/engine/perms.test.js --exclude tests/engine/audit.test.js
+      - run: npx vitest run --no-file-parallelism tests/engine/storage.test.js tests/engine/perms.test.js tests/engine/audit.test.js
       - run: node scripts/check-engine-boundary.mjs
       - name: Report snapshots (fails when a page or a total changes)
         run: node bin/pw.mjs test reports
@@ -58,7 +61,8 @@ jobs:
       - name: veraPDF (the CLI image) as a command
         run: |
           docker pull verapdf/cli:latest
-          printf '#!/bin/sh\nexec docker run --rm -v /tmp:/tmp verapdf/cli:latest "$@"\n' | sudo tee /usr/local/bin/verapdf && sudo chmod +x /usr/local/bin/verapdf
+          # run as the runner's uid: the script's mkdtemp dir is 0700, which the image's own user can't read ("doesn't exist")
+          printf '#!/bin/sh\nexec docker run --rm -u "$(id -u):$(id -g)" -v /tmp:/tmp verapdf/cli:latest "$@"\n' | sudo tee /usr/local/bin/verapdf && sudo chmod +x /usr/local/bin/verapdf
       - name: PDF/A-2b and PDF/UA-1 of the showcase reports
         run: node scripts/verapdf.mjs
         env:
@@ -77,11 +81,13 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: sudo apt-get install -y poppler-utils # pdftotext, pdftoppm: the suites read the PDFs they get
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils # pdftotext, pdftoppm: the suites read the PDFs they get
+      - run: npm run fonts:cjk # the optional CJK and emoji fonts a developer machine has: the suites expect no 404 for them
       - name: 'Build and start the server as the suites expect (scripts/restart.sh, PW_AUTH=proxy behind scripts/e2e-proxy.mjs, test keys)'
         run: |
           ./scripts/restart.sh
           for i in $(seq 1 90); do curl -sf http://localhost:3000/api/v1/livez && break; sleep 1; done
+      - run: node scripts/build-packages.mjs # the embed suites serve packages/fonts/public/fonts and the wrappers' packages, which this builds
       - name: Browser suites
         run: npm run test:e2e
       - name: Firefox and WebKit smoke (viewer, PDF export, designer)
@@ -98,6 +104,10 @@ jobs:
           BASE=http://localhost:3602 node tests/e2e/users.mjs && BASE=http://localhost:3602 node tests/e2e/permissions.mjs
       # not run here: drilldown, fonts, viewer-p6 and platform need the sample reports and the embed host page of a
       # developer machine (see each file's header); they are in the manual gate (docs/COORDINATION.md)
+      - name: Screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with: { name: e2e-shots, path: /tmp/shots, if-no-files-found: ignore }
       - name: Server log
         if: failure()
         run: tail -200 /tmp/next.log /tmp/e2e-proxy.log /tmp/next-users.log 2>/dev/null || true

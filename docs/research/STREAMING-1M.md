@@ -368,7 +368,7 @@ There is **no streaming JSON parser among the dependencies** (package.json: ffla
   threads, pdf.js:747-756 `zslots.free = 4` per worker). With 4–8 workers, every PDF's compression queues on the same 4
   threads. Set `UV_THREADPOOL_SIZE = cores` at startup (cluster.mjs / the Dockerfile `ENV`). It must be set before the
   first libuv use, so set it in the env, not in code.
-- **`@pagewrightjs/engine/pool`** (packages/engine/pool/index.js): `cores − 1` workers, **no `resourceLimits`**
+- **`@reportwright/engine/pool`** (packages/engine/pool/index.js): `cores − 1` workers, **no `resourceLimits`**
   (one big render can take the whole process down), no timeout, and `bytes.slice()` copies when the buffer isn't owned
   (worker.js:21). Fine for a library, but it should accept `{ heapMB, timeoutMs }`.
 - **cluster.mjs**: processes = max(2, cores/4). Each gets `PW_CPUS = floor(cores/n)` and an equal share of memory, and

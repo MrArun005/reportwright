@@ -15,7 +15,7 @@ const now = new Date('2026-01-02T03:04:05Z');
 
 /** a ledger over a SQL source; "of M" in the footer unless single */
 const def = ({ single = false, sort = false } = {}) => ({
-  $schema: 'pagewright/report@1', name: 'L', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'L', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 's', type: 'sql', connection: 'db', query: 'select id, g from t' }],
   dataSets: [{ name: 'D', source: 's', fields: [{ name: 'id', type: 'number' }, { name: 'g', type: 'string' }] }],
   sections: {
@@ -102,10 +102,14 @@ describe('N22: every cursor opened is closed, on every exit', () => {
   };
   it('a write that throws in the second pass ("Page N of M" reads the rows twice)', async () => {
     const c = cursor(12000);
-    expect((await run(c, def(), {}, failing()))?.message).toBe('disk full');
+    expect((await run(c, def(), { holdItems: 0 }, failing()))?.message).toBe('disk full'); // holdItems 0: never held, two passes
     expect(c.opened).toBe(2);
     expect(c.batches).toBeLessThan(240); // the second pass stopped before its end
     expect(c.closed).toBe(2);
+    // held (the first pass keeps its pages): the rows are read once, and that cursor is closed too
+    const h = cursor(12000);
+    expect((await run(h, def(), {}, failing()))?.message).toBe('disk full');
+    expect([h.opened, h.closed]).toEqual([1, 1]);
   });
   it('a write that throws in the one pass, and the spill path', async () => {
     const c = cursor(12000);

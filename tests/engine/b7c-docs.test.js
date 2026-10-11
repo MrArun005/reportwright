@@ -49,7 +49,7 @@ describe('README examples run', () => {
     const readme = read('packages/viewer/README.md');
     expect(readme).toMatch(/data: \{ orders: \{ rows: \[\.\.\.\] \} \}/);
     const rows = [{ item: 'Design', amount: 1200 }, { item: 'Hosting', amount: 99.5 }];
-    const base = (path) => ({ $schema: 'pagewright/report@1', name: 'R', page: { size: 'A4', margins: [36, 36, 36, 36] },
+    const base = (path) => ({ $schema: 'reportwright/report@1', name: 'R', page: { size: 'A4', margins: [36, 36, 36, 36] },
       dataSources: [{ name: 'orders', type: 'json', data: {} }], dataSets: [{ name: 'D', source: 'orders', ...(path ? { path } : {}) }],
       sections: { body: { items: [{ type: 'table', x: 0, y: 0, w: 400, h: 40, dataSet: 'D', columns: [{ width: 200 }, { width: 200 }],
         detail: [{ height: 16, cells: [{ value: '=Fields.item' }, { value: '=Fields.amount' }] }],

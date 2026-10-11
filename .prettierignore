@@ -1,0 +1,11 @@
+node_modules/
+.next/
+dist/
+public/
+packages/*/dist/
+data/
+bench/
+site/
+package-lock.json
+*.pw.json
+*.min.js

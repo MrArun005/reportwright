@@ -9,7 +9,7 @@ import { FontStore, CORE_FONT_KEY, PRELOAD_KEYS, fontsFor, fontsForDef, familyOf
 import { safeUrl } from './url.js';
 import { TextMeasurer, finishText } from './text/measure.js';
 import { loadSources, buildDataSets, coerce } from './data/index.js';
-import { evalValue, evaluate, functionTable } from './expr/evaluate.js';
+import { evalValue, evaluate, functionTable, didYouMean } from './expr/evaluate.js';
 import { isoDate, validTimeZone } from './expr/format.js';
 import { BASE_STYLE } from './style.js';
 import { resolveImageSrc } from './image.js';
@@ -18,7 +18,7 @@ import { loadBarcodes } from './items/barcode.js';
 import { placeItems, shiftItems } from './items/paint.js';
 import { paginate } from './paginate/index.js';
 import { layoutItems } from './layout.js';
-import { validate } from './schema/validate.js';
+import { validate, bareSorts } from './schema/validate.js';
 import { makeLoader, resolveReuse, resolveTheme, flattenNamed, REUSE_LIMITS, isSubreportId } from './reuse.js';
 import { layerFilter } from './layout.js';
 
@@ -39,6 +39,7 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  * @typedef {object} RenderOptions
  * @property {{ layoutPasses?: number }} [stats] filled in: how many times the report was laid out (tests, the bench)
  * @property {Record<string, any>} [parameters] values of the report's parameters, by name (invariant form: 1234.5, 2026-03-05)
+ * @property {boolean} [strictParameters] a value for a parameter the report does not declare, or not of its type or options, throws a ReportError (status 400) instead of warning
  * @property {import('./text/fonts.js').FontStore} [fontStore] the fonts; share one across renders (a new one loads them again)
  * @property {boolean} [lazyFonts] the viewer: load only the core face up front; the other bundled faces when the layout first needs one
  * @property {(key: string) => Promise<ArrayBuffer|Uint8Array>} [loadFont] loads a font the store does not have
@@ -73,7 +74,9 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  * @property {{ items: number }} [reuseBudget] internal: items drawn through report parts so far
  * @property {{ n: number }} [fnCount] internal: report function calls so far
  * @property {any} [imageBudget] internal: the images drawn so far, shared with subreports
- * @property {{ offset: number, total?: number|null, final: boolean, first?: any, rowOffset?: number, cont?: ({ first: any }|null)[] }} [pageWindow]
+ * @property {{ offset: number, total?: number|null, final: boolean, first?: any, rowOffset?: number, cont?: ({ first: any }|null)[], count?: boolean, hold?: boolean, rebands?: any[] }} [pageWindow] count: the page-counting pass, whose pages are only counted (table rows are measured, not drawn).
+ *   hold: the counting pass keeps its pages (paged.js); each says (page.reband) which of its bands read Globals, for
+ *   rebands: those bands laid out again with the page count known, the only thing this render then does ({ bands })
  *   internal (paged.js): these pages are a window of a longer report: numbered from offset + 1 of total ('…' when not known
  *   yet); final: the window holds the report's last page; first: the report's first row; rowOffset: the rows before this
  *   window; cont: per group level, the group the window's first row continues (its first row), or null
@@ -103,7 +106,7 @@ export { NO_CJK_FONTS };
 /**
  * Render a report definition to a page model (pages, regions), the input of every exporter. Throws ReportError for a
  * definition that cannot render at all; everything else is a warning in the model.
- * @param {any} def0 the report definition (pagewright/report@1), or a saved report's JSON
+ * @param {any} def0 the report definition (reportwright/report@1), or a saved report's JSON
  * @param {RenderOptions} [opts]
  * @returns {Promise<any>} the page model
  */
@@ -118,6 +121,7 @@ export async function render(def0, opts = {}) {
     ({ def, parts } = await resolveReuse(def0, getReport, (m) => { if (!reuseWarnings.includes(m)) reuseWarnings.push(m); }, opts.reportId ? [opts.reportId] : [], opts.reuseBudget || (opts.reuseBudget = { items: 0 })));
   }
   const v = validate(def);
+  def = bareSorts(def); // a sort by "region" sorts by Fields.region (validate() warned)
   // an expression that does not parse stops only its own item or cell (#Error there, a warning here)
   const cellErrors = new Set(v.exprErrors);
   const fatal = v.errors.filter(e => !cellErrors.has(e));
@@ -135,7 +139,8 @@ export async function render(def0, opts = {}) {
   if (['pageHeader', 'body', 'pageFooter'].some(k => hasType(k === 'body' && Array.isArray(def.sections?.body) ? def.sections.body.flatMap(b => [...(b?.items || []), ...(b?.pageHeader?.items || []), ...(b?.pageFooter?.items || [])]) : def.sections?.[k]?.items, 'barcode'))) await loadBarcodes();
   let timeZone = def.timeZone || opts.timeZone;
   if (timeZone && !validTimeZone(timeZone)) { warn(`The time zone "${String(timeZone).slice(0, 60)}" is not known, so dates show in the server's zone.`); timeZone = undefined; }
-  const params = resolveParameters(def, opts.parameters || {}, { now: opts.now, timeZone, locale: def.locale });
+  // a value given for an undeclared parameter, or not of its type: a warning, or a 400 with strictParameters (the API, the CLI)
+  const params = resolveParameters(def, opts.parameters || {}, { now: opts.now, timeZone, locale: def.locale, issue: opts.strictParameters ? (m) => { throw new ReportError(m, { status: 400 }); } : warn });
 
   /** font names the report asks for that are not available (N39): never swapped without a warning @type {Set<string>} */
   const unknownFonts = new Set();
@@ -210,7 +215,9 @@ export async function render(def0, opts = {}) {
         const ds = item.dataSet || defaultDs;
         const rows = (ds && dataSets[ds]) || [];
         // a window of a longer report (paged.js): Fields outside the rows read the report's first row, not the window's
-        return { ...baseCtx, globals, fields: (opts.pageWindow?.first && ds === defaultDs ? opts.pageWindow.first : rows[0]) || null, aggRows: rows };
+        // the data set's caseSensitive (RDL's DataSet CaseSensitivity) holds in the regions over it too: groups, sorts, filters
+        const cs = def.dataSets?.find?.((/** @type {any} */ d) => d?.name === ds)?.caseSensitive;
+        return { ...baseCtx, globals, fields: (opts.pageWindow?.first && ds === defaultDs ? opts.pageWindow.first : rows[0]) || null, aggRows: rows, ...(cs != null ? { caseSensitive: cs === true } : {}) };
       },
       subreports: null,
       bodyWidth: opts.bodyWidth ?? page.bodyWidth,
@@ -220,6 +227,20 @@ export async function render(def0, opts = {}) {
     };
     return lc;
   };
+
+  // paged.js, after a held first pass: the page bands that read Globals, laid out again with the page count known, as
+  // the page loop below lays them out (a band that reads Globals is laid out for each page and placed, not copied)
+  if (opts.pageWindow?.rebands) {
+    const bands = opts.pageWindow.rebands.map((/** @type {any} */ b) => {
+      const r = layoutItems((b.band === 'header' ? header : footer)?.items || [], makeLc(b.globals, true));
+      const items = [];
+      for (const u of r.units) for (const d of u.items) d.art = 1;
+      for (const u of r.units) placeItems(u.items, b.ml, b.y0 + u.top, items);
+      finishText(items, m);
+      return items.filter(it => it.t !== 'bookmark'); // the first pass took them (their labels do not read Globals: paged.js)
+    });
+    return { bands, warnings };
+  }
 
   /* ---------------- body: layout + push-down ---------------- */
   const firstPages = Number(opts.firstPages) || 0;
@@ -259,7 +280,7 @@ export async function render(def0, opts = {}) {
             if ((opts.chain || []).includes(id)) throw new Error('it includes itself');
             if (!defs.has(id)) defs.set(id, await opts.loadReport(id));
             const child = defs.get(id);
-            const r = await render(child, { ...opts, dataOnly: false, target, onSources: undefined, deadline: deadline ?? undefined, reportId: id, budget, fnCount, imageBudget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, id], bodyWidth: page.bodyWidth, state: {} });
+            const r = await render(child, { ...opts, dataOnly: false, target, onSources: undefined, deadline: deadline ?? undefined, reportId: id, budget, fnCount, imageBudget, parameters: rq.params, strictParameters: false, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, id], bodyWidth: page.bodyWidth, state: {} });
             results.set(key, r);
             for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`, r.clipped?.includes(w));
           } catch (e) { if (e.timeout) throw e; results.set(key, { error: e.message }); }
@@ -383,6 +404,7 @@ export async function render(def0, opts = {}) {
         };
         // a section's own band: first and last are the section's pages; the shared one: the report's
         band(g.hdr, mt, g.own.h ? k === 0 : isFirst, g.own.h ? last : isLast);
+        const hEnd = items.length;
         const frozen = []; // table headers on this page and where each table ends: viewers keep them in view while scrolling
         for (let c = 0; c < colCount; c++) {
           const p = slices[k * colCount + c];
@@ -408,7 +430,21 @@ export async function render(def0, opts = {}) {
             placeItems(u.items, cx, bodyTop + off + (u.top - p.top), items);
           }
         }
+        const fStart = items.length;
         band(g.ftr, ph - pg.margins.bottom - g.fH, g.own.f ? k === 0 : isFirst, g.own.f ? last : isLast);
+        // paged.js holds this pass's pages: the bands that read Globals are laid out again once the page count is known
+        // (rebands, above); each says where it is (its items: the page's first or last, bookmarks aside)
+        let reband = null;
+        if (win?.hold) {
+          const at = (/** @type {any} */ sec, /** @type {string} */ band, /** @type {number} */ y0, /** @type {number} */ a, /** @type {number} */ b) => {
+            if (a === b || !sec || !pagedBand(sec, def.functions)) return undefined;
+            let n = 0;
+            for (let i = a; i < b; i++) if (items[i].t !== 'bookmark') n++;
+            return { band, y0, ml, globals, n };
+          };
+          const h = at(g.hdr, 'header', mt, 0, hEnd), f = at(g.ftr, 'footer', ph - pg.margins.bottom - g.fH, fStart, items.length);
+          if (h || f) reband = { h, f };
+        }
         let j = 0; // bookmarks leave the page's items (compacted in place: a page holds hundreds of items)
         for (let i = 0; i < items.length; i++) {
           const it = items[i];
@@ -416,7 +452,8 @@ export async function render(def0, opts = {}) {
           else items[j++] = it;
         }
         items.length = j;
-        const out = frozen.length ? { items, frozen } : { items };
+        const out = /** @type {any} */ (frozen.length ? { items, frozen } : { items });
+        if (reband) out.reband = reband;
         if (win) { // where this page starts: a row's first piece, or a group's header (headLevel), else not at a row
           const u = slices[k * colCount]?.units[0];
           if (u?.dataRow != null) { out.firstRow = u.dataRow; out.rowHead = !!u.rowHead; if (u.headLevel != null) out.headLevel = u.headLevel; }
@@ -681,17 +718,23 @@ function splitMulti(s, options) {
 /**
  * Defaults, types and required checks for report parameters.
  * @param {any} def @param {Record<string, any>} given the values the caller passed, by name
- * @param {{ lenient?: boolean, now?: Date, timeZone?: string, locale?: string }} [o] lenient: a missing required value is not an error (the option lists); now, timeZone, locale: for defaults such as =Today()
+ * @param {{ lenient?: boolean, now?: Date, timeZone?: string, locale?: string, issue?: (msg: string) => void }} [o] lenient: a missing required value is not an error (the option lists); now, timeZone, locale: for defaults such as =Today(); issue: hears of a value given for a parameter the report does not declare, or one that is not of its type or not one of its options
  * @returns {Record<string, any>}
  */
 export function resolveParameters(def, given, o = {}) {
-  const { lenient = false, now, timeZone, locale } = o;
+  const { lenient = false, now, timeZone, locale, issue } = o;
   const out = {}, missing = [];
   // defaults such as =Today() read the render's clock (opts.now) and zone
   const ctx = { params: {}, globals: { ExecutionTime: now || new Date() }, dataSets: {}, fields: null, functions: functionTable(def), timeZone, locale };
-  const copt = { timeZone }; // parameter values arrive in the invariant form (1234.5, 2026-03-05), whatever the locale
+  const decl = (def.parameters || []).map(p => p?.name);
+  if (issue) for (const k in given) if (!decl.includes(k)) { const g = didYouMean(k, decl); issue(`Unknown parameter "${k}"${g ? ` (did you mean "${g}"?)` : ''}; this report declares: ${decl.join(', ')}`); }
   for (const p of def.parameters || []) {
     let val = given[p.name];
+    // a value the caller gave (not a default) that is not of the parameter's type, or not one of its options
+    const own = issue && val != null && val !== '' && [val].flat().length;
+    const bad = (v, what = `takes a ${p.type}`) => issue(`The parameter "${p.name}" ${what}; ${JSON.stringify(v).slice(0, 60)} is not one`);
+    const copt = { timeZone, bad: own && bad }; // parameter values arrive in the invariant form (1234.5, 2026-03-05), whatever the locale
+    if (own && p.type === 'boolean') for (const v of [val].flat()) if (!/^(true|false|1|0|yes|no|y|n)$/i.test(v)) bad(v);
     // nullable: an explicit null is a value, so the default does not replace it
     const chosenNull = val === null && p.nullable && !p.multi && Object.hasOwn(given, p.name);
     if (!chosenNull && (val == null || val === '') && p.default != null && p.default !== '') {
@@ -706,6 +749,10 @@ export function resolveParameters(def, given, o = {}) {
       if (val === '' && (p.type !== 'string' || (p.nullable && !p.allowBlank))) val = null;
       else val = coerce(val, p.type || 'string', copt);
       if (p.required && ((val == null && !p.nullable) || (val === '' && !p.allowBlank))) missing.push(p.name);
+    }
+    if (own && p.options?.map && !p.optionsFrom) {
+      const key = (x) => (x instanceof Date ? isoDate(x, timeZone) : String(x)), ok = p.options.map(x => key(x?.value ?? x));
+      for (const v of [val].flat()) if (v != null && !ok.includes(key(v))) bad(key(v), 'takes one of its options');
     }
     out[p.name] = val;
     ctx.params[p.name] = val;

@@ -14,7 +14,7 @@ defineReportWrightElements();
 window.saves = [];
 const el = document.querySelector('reportwright-designer');
 el.addEventListener('pw-save', (e) => { window.saves.push(e.detail); });
-el.options = { definition: { $schema: 'pagewright/report@1', name: 'Saveme', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [], sections: { body: { items: [] } } }, fontsUrl: '/pw-fonts/', height: 500 };
+el.options = { definition: { $schema: 'reportwright/report@1', name: 'Saveme', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [], sections: { body: { items: [] } } }, fontsUrl: '/pw-fonts/', height: 500 };
 `;
 const bundle = (await build({ stdin: { contents: app, resolveDir: root }, bundle: true, format: 'esm', write: false, logLevel: 'silent',
   alias: { '@reportwright/viewer': path.join(root, 'packages/viewer/dist/viewer.js'), '@reportwright/viewer/designer': path.join(root, 'packages/viewer/dist/designer.js') },

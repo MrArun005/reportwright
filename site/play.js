@@ -4,7 +4,7 @@ const SERVER = new URL('.', document.baseURI).href.replace(/\/$/, '');
 const MINE = '__mine', KEY = 'pw-play-autosave', HASH = '#r=', MAX_URL = 8000;
 const $ = (s) => document.querySelector(s);
 const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids); return n; };
-const BLANK = { $schema: 'pagewright/report@1', name: 'New report', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [], sections: { body: { items: [] } } };
+const BLANK = { $schema: 'reportwright/report@1', name: 'New report', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [], sections: { body: { items: [] } } };
 const SAMPLES = [
   ['Sales 2024', 'sales/2024'], ['Sales 2025', 'sales/2025'], ['Sales 2026', 'sales/2026'],
   ['Loan statement LN-2025-001982', 'loans/LN-2025-001982'], ['Loan statement LN-2026-004417', 'loans/LN-2026-004417'],

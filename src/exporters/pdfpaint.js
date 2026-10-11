@@ -10,7 +10,8 @@ import { FORMAT_CHAR } from '../engine/text/measure.js';
 /** a colour for pdf-lib (color) and for our own operators (rgb: "r g b") */
 const colors = new Map();
 export const col = (c) => {
-  if (colors.has(c)) return colors.get(c);
+  const hit = colors.get(c);
+  if (hit !== undefined || colors.has(c)) return hit;
   const p = parseColor(c), v = p ? { color: rgb(p.r, p.g, p.b), opacity: p.a, rgb: `${n3(p.r)} ${n3(p.g)} ${n3(p.b)}` } : null;
   if (colors.size < 1000) colors.set(c, v); // ponytail: a bounded memo; report colours are few
   return v;
@@ -27,7 +28,8 @@ export const n4 = (v) => Math.round(v * 10000) / 10000;
 export const hex4 = (id) => id.toString(16).padStart(4, '0');
 export const KAPPA = 4 * ((Math.SQRT2 - 1) / 3);
 // as pdf-lib's drawText cleaned text: tabs and line separators become four spaces
-export const cleanText = (t) => t.replace(/\t|\u0085|\u2028|\u2029/g, '    ').replace(/[\b\v]/g, '');
+export const cleanText = (t) => (ODD.test(t) ? t.replace(/\t|\u0085|\u2028|\u2029/g, '    ').replace(/[\b\v]/g, '') : t);
+const ODD = /[\t\b\v\u0085\u2028\u2029]/;
 
 /**
  * Draw one run of shaped glyphs by ID, where the engine placed them: a TJ array whose numbers move each
@@ -142,6 +144,7 @@ export function insideClip(it, m) {
   return it.lines.every(l => l.w != null && !l.runs && l.x >= k.x && l.x + l.w <= k.x + k.w && l.y - asc >= k.y && l.y + desc <= k.y + k.h);
 }
 
+const eq = (/** @type {number} */ a, /** @type {number} */ b) => Math.abs(a - b) < 0.005;
 /**
  * A page's operators as text. The graphics state is tracked, so a colour, line width, dash, opacity or font
  * that is already set is not set again; q/Q save and restore it as the PDF does.
@@ -172,11 +175,14 @@ export class Content {
    */
   line(stroke, w, dash, x1, y1, x2, y2) {
     if (this.tagged && !this.artLines) { this.paint(null, stroke, w, dash); this._s += `${n2(x1)} ${n2(y1)} m ${n2(x2)} ${n2(y2)} l S\n`; return; }
-    const key = `${stroke.rgb}|${stroke.opacity}|${w}|${(dash || []).join(' ')}`;
-    if (this.lines && this.lines.key !== key) this.flushLines();
-    this.lines ||= { key, stroke, w, dash, segs: [] };
+    const L0 = this.lines;
+    // the same stroke objects (col() and DASH share them) are the same key: a table's borders skip building it
+    if (!(L0 && L0.stroke === stroke && L0.w === w && L0.dash === dash)) {
+      const key = `${stroke.rgb}|${stroke.opacity}|${w}|${(dash || []).join(' ')}`;
+      if (L0 && L0.key !== key) this.flushLines();
+      this.lines ||= { key, stroke, w, dash, segs: [] };
+    }
     const segs = this.lines.segs, last = segs[segs.length - 1];
-    const eq = (a, b) => Math.abs(a - b) < 0.005;
     if (last && eq(last[1], y1) && eq(last[3], y2) && eq(y1, y2) && eq(last[2], x1)) last[2] = x2; // horizontal, end to end
     else if (last && eq(last[0], x1) && eq(last[2], x2) && eq(x1, x2) && eq(last[3], y1)) last[3] = y2; // vertical
     else segs.push([x1, y1, x2, y2]);
@@ -267,6 +273,6 @@ export const NODE_ZLIB = /** @type {any} */ (globalThis).process?.getBuiltinModu
 async function deflateNow(bytes) {
   const zlib = NODE_ZLIB;
   if (zlib) return new Promise((ok, fail) => zlib.deflate(bytes, { level: 9 }, (e, z) => (e ? fail(e) : ok(z))));
-  if (typeof CompressionStream === 'undefined') return (await import('fflate')).zlibSync(bytes);
+  if (typeof CompressionStream === 'undefined') return (await import('@reportwright/pdf/fflate')).zlibSync(bytes);
   return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
 }

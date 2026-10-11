@@ -143,7 +143,7 @@ The audit log itself (append-only events, retention `PW_AUDIT_RETENTION_DAYS`, f
 - Security events (sign-ins, accounts, permissions, settings, schedules, mail, exports, deletes) that cannot be written
   make their request fail (503) instead of going on unlogged.
 - **SIEM:** `PW_AUDIT_SIEM=syslog+tls://host:6514` (RFC 5424, octet-counted, TLS; `PW_AUDIT_SIEM_CA` to trust a private
-  CA) or `https://…` (a JSON array per POST, `X-Pagewright-Signature: sha256=<HMAC of the body with PW_AUDIT_SIEM_SECRET>`).
+  CA) or `https://…` (a JSON array per POST, `X-ReportWright-Signature: sha256=<HMAC of the body with PW_AUDIT_SIEM_SECRET>`).
   Retried with backoff from 1 s to 5 minutes; at least once (a retried batch may repeat). The Settings page shows the
   queue.
 - Exports made in the viewer are recorded with `serverView`: the server's own `report.view` record behind them.
@@ -172,7 +172,7 @@ Known limits are in [API.md](API.md#known-limits).
 **Settings page → Report snapshot cache:** a TTL in seconds (0, the default, is off) and a size bound in MB. A rendering
 is reused only for the same stored definition, parameters, format and options, the same principal with the same access,
 and no report saved or deleted since. Pushed data, signed and password-protected PDFs are never cached. The render API
-and server links answer `x-pagewright-snapshot: hit|miss|off`; schedules may **Render from snapshot**. Clear it on the
+and server links answer `x-reportwright-snapshot: hit|miss|off`; schedules may **Render from snapshot**. Clear it on the
 Settings page.
 
 ## Shared batch output

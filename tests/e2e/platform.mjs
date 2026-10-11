@@ -12,7 +12,7 @@ const KEY = process.env.KEY || 'test-key';
 const step = (s) => console.log('·', s);
 fs.mkdirSync('/tmp/shots', { recursive: true });
 
-const DEF = { $schema: 'pagewright/report@1', name: 'Embedded', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [],
+const DEF = { $schema: 'reportwright/report@1', name: 'Embedded', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [],
   sections: { body: { items: [{ id: 'hello', type: 'textbox', name: 'Hello', x: 0, y: 0, w: 200, h: 24, value: 'Hello from the host' }] } } };
 const MODES = {
   edit: `{ toolbox: { hide: ['map', 'chart'] }, dataSourceTemplates: [{ label: 'Orders API', source: { name: 'orders', type: 'json', data: { rows: [{ id: 1 }] } } }],

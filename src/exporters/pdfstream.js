@@ -17,16 +17,21 @@
  * are added by writePagedPdf (pdfstreamtags.js, the XMP and output intent).
  */
 import { fontkit, loadFontkit } from '../engine/lazylibs.js';
-import { Zlib, deflateSync, inflateSync } from 'fflate';
+import { Zlib, deflateSync, inflateSync } from '@reportwright/pdf/fflate';
 import { render } from '../engine/index.js';
 import { planPaged } from '../engine/paged.js';
 import { sqlBatches } from '../engine/stream.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
-import { exportPdf } from './pdf.js';
+import { exportPdf, forcedPdfLib, roundRect, fieldFont, signDetails } from './pdf.js';
+import { checkboxAppearance, textAppearance, shapedAppearance } from './pdffields.js';
+import { parseSvg, svgOps } from './svgimage.js';
+import { drawSvgPathOps, pdfNum } from './svgpath.js';
 import { xmpPacket } from './pdfa.js';
-import { createStreamTagger } from './pdfstreamtags.js';
 import { standardFontDict, embeddedPage, embeddedWarnings, standIns } from './pdfstandard.js';
 import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, KAPPA, cleanText, deflate } from './pdfpaint.js';
+import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
+import { pngProblem } from './png.js';
+import { passwordBytes, permissionsValue } from './encrypt.js';
 
 const CHUNK = 64 * 1024;
 const LEAF = 64; // pages per node of the page tree
@@ -82,13 +87,17 @@ export function raced(p, signal) {
  * @param {Sink} sink
  * @param {{ fontStore: import('../engine/text/fonts.js').FontStore, fonts?: string[],
  *   subset?: (font: Uint8Array, codePoints: Iterable<number>, opt?: { glyphs?: Iterable<number> }) => Promise<Uint8Array>,
- *   id?: string, signal?: AbortSignal }} opt
+ *   id?: string, signal?: AbortSignal, pdf?: any, onWarning?: (message: string) => void, tagged?: boolean }} opt
  *   fonts: font keys to name now (F1, F2… in this order); any other font is named on first use.
  *   subset: subset.js's subsetter; without it fonts embed in full. id: the file ID (32 hex digits), else random.
- *   signal: stops a wait for the sink (back-pressure) when it aborts.
+ *   signal: stops a wait for the sink (back-pressure) when it aborts. pdf: a @reportwright/pdf document (createPdf) that
+ *   writes the objects, pages and the file's end instead of this writer's own (the sink is then unused).
+ *   onWarning: a font embedded whole because its subset could not be used. tagged: every glyph gets a ToUnicode entry.
  */
 export function createPdfStream(sink, opt) {
   const { fontStore } = opt;
+  /** the @reportwright/pdf document (opt.pdf's extension API): objects, pages and the file's end go through it */
+  const core = opt.pdf?.core;
   let pos = 0, nextNum = 0;
   // where each object is: kind 1 at byte loc, 2 in object stream loc at index idx, 3 waiting for its object stream; in
   // blocks of XB numbers (7 bytes an object). A tagged file has an element per table cell, millions of objects (N44): a
@@ -106,6 +115,7 @@ export function createPdfStream(sink, opt) {
     b.kind[j] = k; b.loc[j] = l; b.idx[j] = i;
   };
   const reserve = () => {
+    if (core) return core.reserve();
     const n = nextNum++;
     if (!(n & (XB - 1))) {
       blocks.push({ kind: new Uint8Array(XB), loc: new Uint32Array(XB), idx: new Uint16Array(XB) });
@@ -131,7 +141,7 @@ export function createPdfStream(sink, opt) {
     const b = z instanceof Uint8Array ? reading[1] : z;
     return [b.kind[j], b.loc[j], b.idx[j]];
   };
-  reserve(); // object 0: free
+  if (!core) reserve(); // object 0: free
   /** @type {Uint8Array[]} */
   let parts = [];
   let size = 0;
@@ -165,6 +175,7 @@ export function createPdfStream(sink, opt) {
   /** an object: its dictionary (or any value), and its stream's bytes (already filtered) */
   /** @param {number} n @param {string} dict @param {Uint8Array} [stream] */
   const writeObj = async (n, dict, stream) => {
+    if (core) return core.write(n, dict, stream);
     if (!stream) { // small objects go into object streams, OBJSTM at a time (compressed together, as pdf-lib saves)
       batch.push([n, dict]);
       place(n, 3, 0); // placed when its object stream is written
@@ -175,10 +186,10 @@ export function createPdfStream(sink, opt) {
     await put(stream);
     return put('\nendstream\nendobj\n');
   };
-  put('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n');
+  if (!core) put('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n');
 
   // fonts: a resource name and the Type0 font's object number each, now; their glyphs are recorded as pages draw
-  /** @type {Map<string, { name: string, ref: number, font: any, cps: Set<number>, glyphs: Map<number, string>, memo: Map<number, string>, lit: Map<number, string> }>} */
+  /** @type {Map<string, { name: string, ref: number, font: any, cps: Set<number>, glyphs: Map<number, string>, memo: Map<number, string>, lit: Map<number, string>, full: boolean }>} */
   const fonts = new Map();
   let pages = 0, done = false;
   /** @type {any[]} pages whose streams are compressing */
@@ -188,12 +199,12 @@ export function createPdfStream(sink, opt) {
     let f = fonts.get(key);
     if (!f) {
       if (done) throw new Error('The PDF is finished');
-      fonts.set(key, f = { name: fontRes(key), ref: reserve(), font: fontStore.get(key), cps: new Set([32]), glyphs: new Map(), memo: new Map(), lit: new Map() });
+      fonts.set(key, f = { name: fontRes(key), ref: reserve(), font: fontStore.get(key), cps: new Set([32]), glyphs: new Map(), memo: new Map(), lit: new Map(), full: false });
     }
     return f;
   };
 
-  const resRef = reserve();
+  const resRef = core ? core.resourcesRef : reserve();
   for (const key of opt.fonts || []) fontOf(key);
   /** @type {Map<string, Map<string, string>>} kind → value → name */
   const res = new Map();
@@ -207,6 +218,8 @@ export function createPdfStream(sink, opt) {
   const w = {
     /** @param {string} key @returns {string} the font's resource name (F1…) */
     fontName: (key) => fontOf(key).name,
+    /** A font a form field uses: embedded whole (what is typed into the field later can be any character) @param {string} key */
+    fullFont: (key) => { fontOf(key).full = true; },
     /**
      * The text's glyphs, one per character (as the engine measured it: no layout features), as hex for <…> Tj, with
      * the glyphs recorded for the subset, W and ToUnicode.
@@ -235,6 +248,21 @@ export function createPdfStream(sink, opt) {
     literal(key, text) {
       const F = fontOf(key);
       let out = '';
+      // Latin-1 text (most of a table): each character's escaped bytes from a table, no Map, no string iterator
+      const L = (/** @type {any} */ (F).lat ||= new Array(256));
+      let i = 0;
+      for (; i < text.length; i++) {
+        const c = text.charCodeAt(i);
+        if (c > 255) break;
+        let b = L[c];
+        if (b === undefined) {
+          const id = parseInt(w.encode(key, String.fromCharCode(c)), 16);
+          L[c] = b = F.font.standard ? esc(id) : esc(id >> 8) + esc(id & 255);
+        }
+        out += b;
+      }
+      if (i === text.length) return out;
+      text = text.slice(i);
       for (const ch of text) {
         const cp = /** @type {number} */ (ch.codePointAt(0));
         let b = F.lit.get(cp);
@@ -259,6 +287,7 @@ export function createPdfStream(sink, opt) {
      * @param {'ExtGState'|'XObject'|'Pattern'|'Shading'|'ColorSpace'} kind @param {string} value
      */
     resource(kind, value, name = undefined) {
+      if (core) return core.resource(kind, value, name);
       let m = res.get(kind);
       if (!m) res.set(kind, m = new Map());
       let n = m.get(value);
@@ -270,6 +299,17 @@ export function createPdfStream(sink, opt) {
      * painted elsewhere, parallel.js, use it too). @param {number} ca @param {number} CA
      */
     gs: (ca, CA) => w.resource('ExtGState', `<< /Type /ExtGState /ca ${num(ca)} /CA ${num(CA)} >>`, `GS${num(ca)}_${num(CA)}`),
+    /**
+     * A PNG or JPEG through @reportwright/pdf (not the legacy writer), written now: its name in the shared Resources,
+     * its size in pixels upright (EXIF orientation applied) and that orientation as a unit-square matrix.
+     * @param {Uint8Array} bytes @param {any} [o] embedImage's options
+     */
+    async image(bytes, o) {
+      if (!core) throw new Error('images need the @reportwright/pdf writer');
+      const img = await /** @type {any} */ (opt.pdf).embedImage(bytes, o);
+      const r = core.imageResource(img);
+      return { name: r.name, width: img.width, height: img.height, orientation: r.orientation };
+    },
     /** What this writer's pages used, for another writer to take over (pages painted elsewhere). */
     used: () => ({ fonts: [...fonts].map(([key, F]) => [key, [...F.cps], [...F.glyphs]]), gs: [...(res.get('ExtGState')?.keys() || [])] }),
     /** Take over what pages painted elsewhere used (used() of their writer). @param {any} u */
@@ -293,13 +333,14 @@ export function createPdfStream(sink, opt) {
      * tail; written out in place, never held whole. @param {number} n @param {string} head @param {Iterable<string>} parts @param {string} tail
      */
     async bigObject(n, head, parts, tail) {
+      if (core) return core.writeBig(n, head, parts, tail);
       place(n, 1, pos);
       await put(`${n} 0 obj\n${head}`);
       for (const x of parts) await put(x);
       await put(`${tail}\nendobj\n`);
     },
     /** The object number of page i (0-based), written or not: links and outline entries may point ahead. @param {number} i */
-    pageRef(i) { return (pageRefs[i] ??= reserve()); },
+    pageRef(i) { return core ? core.pageRef(i) : (pageRefs[i] ??= reserve()); },
     /**
      * The total page count, drawn at the end: a Form XObject whose origin is the text's baseline at the box's left;
      * draw it with `q 1 0 0 1 x y cm /<name> Do Q`. align: within width.
@@ -313,7 +354,7 @@ export function createPdfStream(sink, opt) {
     },
     /**
      * Write a page: its content stream (deflated) and its dictionary, now. Nothing of it stays but two offsets.
-     * @param {{ width: number, height: number, content?: string | Uint8Array, deflated?: Uint8Array, annots?: (string | { ref: number, dict: string })[], extra?: string }} p
+     * @param {{ width: number, height: number, content?: string | Uint8Array, deflated?: Uint8Array, annots?: (string | { ref: number, dict: string })[], extra?: string, fields?: ((form: any, page: any) => void)[] }} p
      *   deflated: the content stream already compressed (zlib), as pages painted elsewhere come.
      *   content: the page's operators (a string holds bytes 0–255, as pdf.js's Content makes). annots: annotation
      *   dictionaries (with a reserved number: { ref, dict }). extra: more entries for the page dictionary (/StructParents 3).
@@ -321,6 +362,8 @@ export function createPdfStream(sink, opt) {
     async addPage(p) {
       if (done) throw new Error('The PDF is finished');
       const i = pages++;
+      if (core) return corePage(p);
+      if (p.fields?.length) throw new Error('form fields need the @reportwright/pdf writer');
       const ref = w.pageRef(i);
       if (i % LEAF === 0) leaves.push(reserve());
       const contents = reserve(), parent = leaves[leaves.length - 1];
@@ -332,8 +375,9 @@ export function createPdfStream(sink, opt) {
     },
     /**
      * The end of the file: totals, fonts, resources, page tree, outline, catalog, Info, xref, trailer.
-     * @param {{ outline?: OutlineEntry[], info?: { title?: string, author?: string, subject?: string, creationDate?: Date }, catalog?: string }} [o]
-     *   catalog: more entries for the catalog (the structure tree, metadata, output intents).
+     * @param {{ outline?: OutlineEntry[], info?: { title?: string, author?: string, subject?: string, creationDate?: Date }, catalog?: string, pageStarts?: number[] }} [o]
+     *   catalog: more entries for the catalog (the structure tree, metadata, output intents). pageStarts: the pages
+     *   (0-based) where the numbering restarts at 1 (the page labels).
      * @returns {Promise<{ pages: number, bytes: number }>}
      */
     async finish(o = {}) {
@@ -341,16 +385,9 @@ export function createPdfStream(sink, opt) {
       if (!pages) await w.addPage({ width: 595.28, height: 841.89, content: '' }); // a PDF has at least one page
       while (inFlight.length) await writeNext();
       done = true;
+      if (core) return coreFinish(o);
       // "of Y": the number's glyphs are recorded before the fonts are subset
-      for (const t of totals) {
-        const F = fontOf(t.font), text = String(pages), hex = w.encode(t.font, text);
-        let adv = 0;
-        for (const ch of text) adv += F.font.glyphForCodePoint(/** @type {number} */ (ch.codePointAt(0))).advanceWidth;
-        const tw = adv * t.size / F.font.unitsPerEm;
-        const dx = t.align === 'right' ? t.width - tw : t.align === 'center' ? (t.width - tw) / 2 : 0;
-        await writeObj(t.ref, `<< /Type /XObject /Subtype /Form /BBox [${num(Math.min(0, dx))} ${num(-t.size)} ${num(Math.max(t.width, dx + tw))} ${num(2 * t.size)}] /Resources << /Font << /${F.name} ${F.ref} 0 R >> >> /Filter /FlateDecode >>`,
-          await deflate(latin1(`${t.color} rg BT /${F.name} ${num(t.size)} Tf ${num(dx)} 0 Td <${hex}> Tj ET`)));
-      }
+      for (const t of totals) await writeTotal(t);
       const fontDict = [];
       for (const [key, F] of fonts) {
         if (F.glyphs.size) { await writeFont(key, F); fontDict.push(`/${F.name} ${F.ref} 0 R`); }
@@ -376,9 +413,9 @@ export function createPdfStream(sink, opt) {
 
       const outline = await writeOutline(o.outline || []);
       const catalog = reserve();
-      await writeObj(catalog, `<< /Type /Catalog /Pages ${pagesRoot} 0 R /PageLabels << /Nums [0 << /S /D /St 1 >>] >>${outline ? ` /Outlines ${outline} 0 R /PageMode /UseOutlines` : ''}${o.catalog || ''} >>`);
-      const info = reserve(), I = o.info || {};
-      await writeObj(info, `<< /Producer ${pdfText('ReportWright')} /Creator ${pdfText('ReportWright')} /Title ${pdfText(I.title || 'Report')}${I.author ? ` /Author ${pdfText(I.author)}` : ''}${I.subject ? ` /Subject ${pdfText(I.subject)}` : ''} /CreationDate ${pdfDate(I.creationDate || new Date())} /ModDate ${pdfDate(I.creationDate || new Date())} >>`);
+      await writeObj(catalog, `<< /Type /Catalog /Pages ${pagesRoot} 0 R /PageLabels ${pageLabels(o.pageStarts, pages)}${outline ? ` /Outlines ${outline} 0 R /PageMode /UseOutlines` : ''}${o.catalog || ''} >>`);
+      const info = reserve();
+      await writeObj(info, infoDict(o.info));
 
       // object numbers reserved and never used (a link to a page that never came): null objects keep the xref whole
       for (let n = 1; n < nextNum; n++) if (!where(n)[0]) await writeObj(n, 'null');
@@ -419,6 +456,42 @@ export function createPdfStream(sink, opt) {
     },
   };
 
+  /**
+   * A page through @reportwright/pdf: the engine's operators (or a worker's compressed stream) as its content, its
+   * annotations and entries; the writer compresses and writes it in order. @param {any} p
+   */
+  async function corePage(p) {
+    const page = /** @type {any} */ (opt.pdf).addPage({ width: p.width, height: p.height });
+    // ponytail: the page's own content builder is replaced by our stream, compressed by pdfpaint's deflate (level 9, as
+    // the paint workers compress theirs: a parallel export stays the same file, byte for byte)
+    const z = p.deflated ? Promise.resolve(p.deflated) : deflate(typeof p.content === 'string' ? latin1(p.content) : p.content || new Uint8Array(0));
+    z.catch(() => {});
+    page.content = { s: ' ', end: () => '' };
+    for (const a of p.annots || []) {
+      const ref = typeof a === 'string' ? core.reserve() : a.ref, dict = typeof a === 'string' ? a : a.dict;
+      page.annots.push({ ref, make: () => dict });
+    }
+    for (const [k, v] of dictEntries(p.extra || '')) page.entries.set(k, v);
+    for (const f of p.fields || []) f(/** @type {any} */ (opt.pdf).form, page); // form fields (B6): the library's, our appearances
+    const ended = page.end();
+    page.z = z; // set before the writer reads it (queued, written in turn)
+    await ended;
+  }
+  /** The end through @reportwright/pdf: "of Y", fonts, outline in its finisher; Info and catalog entries as ours. @param {any} o */
+  async function coreFinish(o) {
+    core.onFinish(async () => {
+      for (const t of totals) await writeTotal(t);
+      for (const [key, F] of fonts) if (F.glyphs.size) { await writeFont(key, F); core.resource('Font', `${F.ref} 0 R`, F.name); }
+      const outline = await writeOutline(o.outline || []);
+      if (outline) { core.catalog('Outlines', `${outline} 0 R`); core.catalog('PageMode', '/UseOutlines'); }
+    });
+    core.catalog('PageLabels', pageLabels(o.pageStarts, Math.max(1, pages)));
+    for (const [k, v] of dictEntries(o.catalog || '')) core.catalog(k, v);
+    core.info = infoDict(o.info);
+    const r = await /** @type {any} */ (opt.pdf).end();
+    return { pages: r.pages, bytes: r.bytes };
+  }
+
   /** the oldest page waiting for its compressed stream: written, stream and dictionary */
   async function writeNext() {
     const { ref, contents, parent, p, z } = /** @type {any} */ (inFlight.shift());
@@ -426,6 +499,17 @@ export function createPdfStream(sink, opt) {
     const annots = [];
     for (const a of p.annots || []) annots.push(typeof a === 'string' ? await w.object(a) : (await writeObj(a.ref, a.dict), a.ref));
     await writeObj(ref, `<< /Type /Page /Parent ${parent} 0 R /MediaBox [0 0 ${num(p.width)} ${num(p.height)}] /Resources ${resRef} 0 R /Contents ${contents} 0 R${annots.length ? ` /Annots [${annots.map(a => `${a} 0 R`).join(' ')}]` : ''}${p.extra || ''} >>`);
+  }
+
+  /** "of Y": the total's form XObject (the number's glyphs are recorded before the fonts are subset) @param {typeof totals[number]} t */
+  async function writeTotal(t) {
+    const F = fontOf(t.font), text = String(pages), hex = w.encode(t.font, text);
+    let adv = 0;
+    for (const ch of text) adv += F.font.glyphForCodePoint(/** @type {number} */ (ch.codePointAt(0))).advanceWidth;
+    const tw = adv * t.size / F.font.unitsPerEm;
+    const dx = t.align === 'right' ? t.width - tw : t.align === 'center' ? (t.width - tw) / 2 : 0;
+    await writeObj(t.ref, `<< /Type /XObject /Subtype /Form /BBox [${num(Math.min(0, dx))} ${num(-t.size)} ${num(Math.max(t.width, dx + tw))} ${num(2 * t.size)}] /Resources << /Font << /${F.name} ${F.ref} 0 R >> >> /Filter /FlateDecode >>`,
+      await deflate(latin1(`${t.color} rg BT /${F.name} ${num(t.size)} Tf ${num(dx)} 0 Td <${hex}> Tj ET`)));
   }
 
   /** @param {{ ref: number, kids: number[], count: number, parent?: number }[]} nodes */
@@ -440,21 +524,23 @@ export function createPdfStream(sink, opt) {
    */
   async function writeFont(key, F) {
     if (F.font.standard) { await writeObj(F.ref, standardFontDict(F.font)); return; } // named, not embedded (pdfstandard.js)
-    await loadFontkit(); // checks a subset (loaded already when the FontStore parsed this font; never for a standard font)
     const f = F.font, full = /** @type {Uint8Array} */ (fontStore.bytes.get(key));
+    if (!f.lite) await loadFontkit(); // checks a subset (a font read by sfnt.js checks it the same way, without fontkit)
     let bytes = full, psName = f.postscriptName; // N10: a subset of a variable font says the weight it is cut at
-    if (opt.subset && !f['OS/2']?.fsType?.noSubsetting) {
+    if (opt.subset && !F.full && !(f.lite ? f.noSubsetting : f['OS/2']?.fsType?.noSubsetting)) {
       try {
         // glyphs given: subset.js keeps their IDs (HB_SUBSET_FLAGS_RETAIN_GIDS), which the pages already drew with
         const sub = await opt.subset(full, F.cps, { glyphs: F.glyphs.keys() });
+        const why = (await import('../engine/text/sfnt.js')).subsetProblem(sub); // a cut or damaged subset: the full font
+        if (why) throw new Error(why);
         // fontkit must read every glyph we drew (16 zero bytes after the tables, as pdf.js pads); else the full font
         const padded = new Uint8Array(sub.length + 16);
         padded.set(sub);
-        const check = fontkit.create(padded);
-        for (const id of F.glyphs.keys()) void check.getGlyph(id).advanceWidth;
+        const check = (f.lite && (await import('../engine/text/sfnt.js')).liteFont(padded, () => { throw new Error('subset: not read by sfnt.js'); })) || (await loadFontkit(), fontkit.create(padded));
+        for (const id of F.glyphs.keys()) { if (check.lite && id >= check.numGlyphs) throw new Error('subset: glyph missing'); void check.getGlyph(id).advanceWidth; }
         bytes = sub;
         psName = check.postscriptName || psName;
-      } catch { /* the full font */ }
+      } catch (e) { opt.onWarning?.(`The font ${f.postscriptName || key} is embedded whole: its subset could not be used (${/** @type {any} */ (e)?.message || e})`); }
     }
     const cff = 'CFF ' in f.directory.tables || 'CFF2' in f.directory.tables;
     const base = `${bytes === full ? '' : `${subsetTag(bytes)}+`}${String(psName || 'Font').replace(/[^A-Za-z0-9_.-]/g, '')}`;
@@ -464,7 +550,7 @@ export function createPdfStream(sink, opt) {
     const fileDict = cff ? '<< /Subtype /OpenType /Filter /FlateDecode >>' : `<< /Length1 ${bytes.length} /Filter /FlateDecode >>`;
     await writeObj(file, fileDict, await deflate(bytes));
     const bb = f.bbox, italic = f.italicAngle || 0;
-    const flags = (f.post?.isFixedPitch ? 1 : 0) | 4 | (italic ? 64 : 0);
+    const flags = ((f.lite ? f.fixedPitch : f.post?.isFixedPitch) ? 1 : 0) | 4 | (italic ? 64 : 0);
     await writeObj(desc, `<< /Type /FontDescriptor /FontName /${base} /Flags ${flags} /FontBBox [${s(bb.minX)} ${s(bb.minY)} ${s(bb.maxX)} ${s(bb.maxY)}] /ItalicAngle ${num(italic)} /Ascent ${s(f.ascent)} /Descent ${s(f.descent)} /CapHeight ${s(f.capHeight || f.ascent)} /XHeight ${s(f.xHeight || 0)} /StemV 0 /${cff ? 'FontFile3' : 'FontFile2'} ${file} 0 R >>`);
     // widths: runs of consecutive glyph IDs, "first [w w w]"
     const ids = [...F.glyphs.keys()].sort((a, b) => a - b);
@@ -476,7 +562,7 @@ export function createPdfStream(sink, opt) {
       i = j + 1;
     }
     await writeObj(cid, `<< /Type /Font /Subtype /${cff ? 'CIDFontType0' : 'CIDFontType2'} /BaseFont /${base} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${desc} 0 R /W [${W}]${cff ? '' : ' /CIDToGIDMap /Identity'} >>`);
-    await writeObj(cmap, '<< /Filter /FlateDecode >>', await deflate(latin1(toUnicode(F.glyphs))));
+    await writeObj(cmap, '<< /Filter /FlateDecode >>', await deflate(latin1(toUnicode(F.glyphs, !!opt.tagged))));
     await writeObj(F.ref, `<< /Type /Font /Subtype /Type0 /BaseFont /${base} /Encoding /Identity-H /DescendantFonts [${cid} 0 R] /ToUnicode ${cmap} 0 R >>`);
   }
 
@@ -494,7 +580,7 @@ export function createPdfStream(sink, opt) {
       const level = Math.max(0, Math.min(9, Number(e.level) || 0));
       while (stack[stack.length - 1].level >= level) stack.pop();
       /** @type {Node} */
-      const node = { ref: reserve(), level, kids: [], title: e.title, dest: `[${pageRefs[e.page - 1]} 0 R ${e.top == null ? '/Fit' : `/XYZ null ${num(e.top)} null`}]` };
+      const node = { ref: reserve(), level, kids: [], title: e.title, dest: `[${w.pageRef(e.page - 1)} 0 R ${e.top == null ? '/Fit' : `/XYZ null ${num(e.top)} null`}]` };
       stack[stack.length - 1].kids.push(node);
       stack.push(node);
     }
@@ -520,15 +606,50 @@ export function createPdfStream(sink, opt) {
   return w;
 }
 
-/** ToUnicode: each glyph to the text it stands for (UTF-16BE); glyphs that stand for nothing are left out. @param {Map<number, string>} glyphs */
-function toUnicode(glyphs) {
-  const entries = [...glyphs].filter(([, t]) => t).sort((a, b) => a[0] - b[0]);
+/**
+ * ToUnicode: each glyph to the text it stands for (UTF-16BE); glyphs that stand for nothing are left out, or, tagged,
+ * map to U+200D ZERO WIDTH JOINER (every glyph needs an entry, PDF/UA 7.21.7; the run's ActualText gives the real
+ * text), as pdf.js's addGlyphs does. @param {Map<number, string>} glyphs @param {boolean} [tagged]
+ */
+function toUnicode(glyphs, tagged = false) {
+  const entries = [...glyphs].filter(([, t]) => t || tagged).map(([id, t]) => /** @type {[number, string]} */ ([id, t || '\u200d'])).sort((a, b) => a[0] - b[0]);
   let body = '';
   for (let i = 0; i < entries.length; i += 100) {
     const chunk = entries.slice(i, i + 100);
     body += `${chunk.length} beginbfchar\n${chunk.map(([id, t]) => `<${hex4(id)}> <${utf16(t)}>`).join('\n')}\nendbfchar\n`;
   }
   return `/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <ffff>\nendcodespacerange\n${body}endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n`;
+}
+
+/** The Info dictionary (both writers). @param {{ title?: string, author?: string, subject?: string, creationDate?: Date }} [I] */
+const infoDict = (I = {}) => `<< /Producer ${pdfText('ReportWright')} /Creator ${pdfText('ReportWright')} /Title ${pdfText(I.title || 'Report')}${I.author ? ` /Author ${pdfText(I.author)}` : ''}${I.subject ? ` /Subject ${pdfText(I.subject)}` : ''} /CreationDate ${pdfDate(I.creationDate || new Date())} /ModDate ${pdfDate(I.creationDate || new Date())} >>`;
+
+/**
+ * The entries of a dictionary's body as [key, value] (" /StructTreeRoot 5 0 R /Lang (en)"): values may nest << >>, [ ]
+ * and ( ) strings. Only the engine's own text is read here. @param {string} s @returns {[string, string][]}
+ */
+export function dictEntries(s) {
+  /** @type {[string, string][]} */
+  const out = [];
+  let i = s.indexOf('/');
+  while (i >= 0 && i < s.length) {
+    let k = i + 1;
+    while (k < s.length && !/[\s/<>\[\]()]/.test(s[k])) k++;
+    const key = s.slice(i + 1, k);
+    while (/\s/.test(s[k])) k++;
+    const start = k;
+    let depth = 0;
+    for (; k < s.length; k++) {
+      const c = s[k];
+      if (c === '(') { let d = 1; for (k++; k < s.length && d; k++) { if (s[k] === '\\') k++; else if (s[k] === '(') d++; else if (s[k] === ')') d--; } k--; }
+      else if (c === '<' || c === '[') depth++;
+      else if (c === '>' || c === ']') depth--;
+      else if (c === '/' && !depth && k > start && /\s/.test(s[k - 1])) break;
+    }
+    out.push([key, s.slice(start, k).trim()]);
+    i = k < s.length ? k : -1;
+  }
+  return out;
 }
 
 /** UTF-16BE hex of a string (surrogate pairs as they are in JS). @param {string} t */
@@ -571,6 +692,7 @@ function latin1(s) {
  */
 export async function exportPdfStream(def, opts, sink) {
   opts.signal?.throwIfAborted();
+  checkPdfWriter(opts);
   const t0 = Date.now();
   const deadline = opts.deadline ?? (Number(opts.timeoutMs) > 0 ? t0 + Number(opts.timeoutMs) : undefined);
   // one signal for every wait: the caller's, the time limit, and an error the sink reports
@@ -597,11 +719,13 @@ export async function exportPdfStream(def, opts, sink) {
 /** @param {any} def @param {any} opts @param {Sink} sink */
 async function streamed(def, opts, sink) {
   const { signal } = opts;
-  const why = opts.encrypt ? 'encrypted' : opts.prepare ? 'signed' : opts.save ? 'save options' : opts.pdfa && !opts.pdfa.icc?.length ? 'PDF/A without a colour profile' : null;
+  const why = forcedPdfLib() ? 'PW_FORCE_PDFLIB' : opts.encrypt ? 'encrypted' : opts.prepare || opts.sign ? 'signed' : opts.save ? 'save options' : opts.pdfa && !opts.pdfa.icc?.length ? 'PDF/A without a colour profile' : null;
   const plan = why ? { why } : await raced(planPaged(def, opts), signal);
   if (plan.why !== undefined) {
     // render() reads SQL through opts.sql (whole rows): the sqlRows batches, gathered (this path holds the model whole anyway)
-    const rOpts = opts.sqlRows && !opts.sql ? { ...opts, sql: async (/** @type {any} */ src, /** @type {any} */ p) => { const all = []; for await (const b of sqlBatches(opts.sqlRows, src, p, signal)) for (const r of b) all.push(r); return all; } } : opts;
+    // tagged: the cell tags an accessible PDF builds its tables from (exportData), as the streamed windows render them
+    const base = opts.tagged && !opts.exportData ? { ...opts, exportData: true } : opts;
+    const rOpts = opts.sqlRows && !opts.sql ? { ...base, sql: async (/** @type {any} */ src, /** @type {any} */ p) => { const all = []; for await (const b of sqlBatches(opts.sqlRows, src, p, signal)) for (const r of b) all.push(r); return all; } } : base;
     const model = await raced(render(def, rOpts), signal);
     const bytes = await raced(exportPdf(model, opts.fontStore, { ...opts, timeoutMs: opts.deadline ? Math.max(1, opts.deadline - Date.now()) : undefined }), signal);
     await raced(written(sink, sink.write(bytes)), signal);
@@ -621,16 +745,24 @@ async function streamed(def, opts, sink) {
 export async function writePagedPdf(plan, opts, sink) {
   const { fontStore } = opts;
   if (opts.pdfa || opts.tagged) await fontStore.load(standIns(fontStore)); // standard fonts are drawn in their embedded stand-ins
-  const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id, signal: opts.signal });
   const { info, pages } = /** @type {any} */ (plan);
+  const onWarning = (/** @type {string} */ m) => { if (!info.warnings.includes(m)) info.warnings.push(m); };
+  const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id, signal: opts.signal, tagged: !!opts.tagged, pdf: await newWriter(sink, opts), onWarning });
   // tagged (PDF/UA-1): a structure tree written as the pages are (pdfstreamtags.js)
-  const tags = opts.tagged ? createStreamTagger(w, { maxElements: Number(opts.tagged.maxElements) || Infinity }) : null;
-  const env = paintEnv(w, fontStore, { drillBase: opts.drillBase, tags, embedAll: !!(opts.pdfa || tags) });
+  // opts.model (exportPdf's whole page model, B4): pdfua.js's tree for it, element for element
+  const T = opts.tagged ? await import('./pdfstreamtags.js') : null;
+  const tags = !T ? null : opts.model ? T.createModelTagger(w, opts.model) : T.createStreamTagger(w, { maxElements: Number(opts.tagged.maxElements) || Infinity });
+  const env = paintEnv(w, fontStore, { onWarning, drillBase: opts.drillBase, tags, embedAll: !!(opts.pdfa || tags), pageHeight: info.pageHeights ? (/** @type {number} */ i) => info.pageHeights[i] : undefined });
   const { shaped } = env;
-  // opts.parallel: windows laid out and painted by that many worker threads (Node), their pages written here in order
-  const pool = !tags && Number(opts.parallel) > 1 ? paintPool(Number(opts.parallel), fontStore, opts, info) : null;
+  // opts.parallel: windows laid out and painted by that many worker threads (Node), their pages written here in order;
+  // 'auto': as many as the cores but one (4 at most), started only once the report is big (paged.js, lazy)
+  const auto = opts.parallel === 'auto';
+  const size = auto ? autoWorkers() : Number(opts.parallel);
+  const pool = !tags && (auto ? size > 0 : size > 1) ? paintPool(size, fontStore, opts, info) : null;
   let pi = -1;
-  const it = pages(pool ? { run: pool.run, parallel: pool.size } : {})[Symbol.asyncIterator]();
+  /** each page's height, for the outline's places @type {number[]} */
+  const heights = [];
+  const it = pages(pool ? { run: pool.run, parallel: pool.size, total: pool.total, lazy: auto } : {})[Symbol.asyncIterator]();
   let pending = false; // a read the signal stopped waiting for: the iterator is busy, its return() would wait for it
   try {
     for (;;) {
@@ -642,6 +774,7 @@ export async function writePagedPdf(plan, opts, sink) {
       const pg = x.value;
       pi++;
       const H = pg.height ?? info.height;
+      heights[pi] = H;
       if (pg.deflated) { // painted by a worker: its fonts and glyphs first, then its links' pages by number
         for (const f of pg.embedded || []) env.embedded?.add(f);
         if (pg.used) { w.take(pg.used); for (const [k, g] of pg.shaped) { const m = env.shapedOf(k); for (const [id, t] of g) if (!m.has(id)) m.set(id, t); } }
@@ -649,8 +782,14 @@ export async function writePagedPdf(plan, opts, sink) {
         await w.addPage({ width: pg.width ?? info.width, height: H, deflated: pg.deflated, annots });
         continue;
       }
-      const { content, annots } = paintPage(pg, H, env);
-      await w.addPage({ width: pg.width ?? info.width, height: H, content, annots, extra: tags ? await tags.end(w.pageRef(pi)) : undefined });
+      // the page's pictures, embedded before it is painted (once per source); one left out is said, as pdf-lib's path says it
+      for (const im of pg.items) if (im.t === 'image') {
+        let r = env.images.get(im.src);
+        if (!r) env.images.set(im.src, r = await loadImage(im.src, w, opts));
+        if (!r.img) onWarning(`Image on page ${pi + 1} (${im.tag?.alt ? `"${im.tag.alt}"` : String(im.src).slice(0, 40)}) was left out: ${r.why}`);
+      }
+      const { content, annots, fields } = paintPage(pg, H, env);
+      await w.addPage({ width: pg.width ?? info.width, height: H, content, annots, fields, extra: tags ? await tags.end(w.pageRef(pi)) : undefined });
     }
   } finally {
     // the rows' cursors close as the pages' generators unwind; a read still running (its cursor told by the signal)
@@ -664,7 +803,7 @@ export async function writePagedPdf(plan, opts, sink) {
   const outline = [...info.bookmarks, ...info.headings].map((b, i) => ({ b, i }))
     .sort((p, q) => p.b.page - q.b.page || (p.b.y ?? 0) - (q.b.y ?? 0) || p.i - q.i).map(({ b }) => b)
     .filter((b) => { const k = `${b.page}|${Math.round(b.y ?? 0)}|${b.label}`; if (seen.has(k)) return false; seen.add(k); return true; })
-    .map(b => ({ title: b.label, page: b.page, top: info.height - b.y + 4, level: b.level }));
+    .map(b => ({ title: b.label, page: b.page, top: (heights[b.page - 1] ?? info.height) - b.y + 4, level: b.level }));
   // PDF/A and PDF/UA: the structure tree's root, XMP metadata, the output intent (as pdfa.js adds them)
   const title = opts.title || 'Report', when = new Date(Math.floor((opts.creationDate || new Date()).getTime() / 1000) * 1000);
   let catalog = tags ? await tags.finish({ lang: opts.tagged.lang }) : '';
@@ -676,12 +815,90 @@ export async function writePagedPdf(plan, opts, sink) {
     const icc = await w.object('<< /N 3 /Filter /FlateDecode >>', await deflate(opts.pdfa.icc));
     catalog += ` /OutputIntents [${await w.object(`<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier (sRGB) /Info (sRGB IEC61966-2.1) /DestOutputProfile ${icc} 0 R >>`)} 0 R]`;
   }
-  const res = await w.finish({ outline, catalog, info: { title, author: opts.author, creationDate: when } });
+  const res = await w.finish({ outline, catalog, info: { title, author: opts.author, creationDate: when }, pageStarts: info.pageStarts });
   // a tagged file of millions of elements is valid, but tools that load every object (qpdf, pikepdf) need gigabytes
   for (const x of env.embedded ? embeddedWarnings(env.embedded) : []) info.warnings.push(x);
   if (tags && tags.count > TAGGED_LARGE) info.warnings.push(`The tagged PDF has ${tags.count.toLocaleString('en-US')} structure elements (${res.pages.toLocaleString('en-US')} pages): readers open it, but tools that load every object of a file (qpdf, pikepdf) may run out of memory on it. tagged.maxElements caps it.`);
   return { pages: res.pages, warnings: info.warnings };
 }
+
+/** opts.pdfWriter, 'pdf' (the default) or 'legacy'; anything else is a 400 (checked first by both exporters) @param {any} opts */
+export function checkPdfWriter(opts) {
+  const which = opts.pdfWriter ?? 'pdf';
+  if (which !== 'pdf' && which !== 'legacy') throw Object.assign(new TypeError(`pdfWriter is 'pdf' (the default) or 'legacy', not ${JSON.stringify(which)}`), { status: 400 });
+  return which;
+}
+
+/**
+ * The @reportwright/pdf writer the file goes through, or null for the engine's own (pdfWriter: 'legacy', kept for one
+ * release). Loaded on first use. It writes our objects as they are; Info, metadata and the tags stay the engine's.
+ * @param {Sink} sink @param {any} opts
+ */
+async function newWriter(sink, opts) {
+  if (checkPdfWriter(opts) === 'legacy') return null;
+  const { createPdf } = await import('@reportwright/pdf');
+  // the sink stays the caller's: written with back-pressure as before, never ended here
+  const pdf = createPdf({ write: (/** @type {Uint8Array} */ u8) => raced(written(sink, sink.write(u8)), opts.signal) },
+    // object streams at zlib's level 9, as the engine's own writer packed them (its files are no bigger)
+    { metadata: false, id: opts.id, signal: opts.signal, creationDate: opts.creationDate, objectStreamLevel: 9, ...(opts.encrypt ? { encrypt: encryptOptions(opts.encrypt) } : {}), ...(opts.sign ? { sign: true } : {}) });
+  // signed (B8): an invisible signature field, signed as the file ends (the signer runs at end())
+  if (opts.sign) pdf.sign({ name: 'Signature1' }, { signer: opts.sign.signer, ...signDetails(opts.sign), ...(opts.creationDate ? { date: opts.creationDate } : {}) });
+  return pdf;
+}
+
+/**
+ * The engine's encrypt option ({ userPassword, ownerPassword, permissions }) for @reportwright/pdf: checked as
+ * encrypt.js checks it (the same 400s: a password over 127 bytes, an unknown permission); no owner password (or '')
+ * leaves the library to pick a random one, so the permissions cannot be lifted. AES-256, metadata encrypted.
+ * @param {any} e
+ */
+function encryptOptions(e) {
+  passwordBytes(e.userPassword, 'user');
+  if (e.ownerPassword != null && e.ownerPassword !== '') passwordBytes(e.ownerPassword, 'owner');
+  permissionsValue(e.permissions || {});
+  return { userPassword: e.userPassword ?? '', ...(e.ownerPassword ? { ownerPassword: e.ownerPassword } : {}), algorithm: /** @type {'aes-256'} */ ('aes-256'), permissions: { ...(e.permissions || {}) } };
+}
+
+/**
+ * Page labels (what a reader shows as the page number): decimal, restarting at 1 on each page of starts (0-based, a
+ * section that restarts the numbering), as exportPdf's pdf-lib path writes them. @param {number[]|undefined} starts @param {number} n pages
+ */
+function pageLabels(starts, n) {
+  const at = [...new Set([0, ...(starts || [])])].filter(i => i >= 0 && i < n).sort((a, b) => a - b);
+  return `<< /Nums [${at.map(i => `${i} << /S /D /St 1 >>`).join(' ')}] >>`;
+}
+
+/**
+ * A picture's bytes checked as exportPdf's pdf-lib path checks them (size limits, fetchImage, a damaged or huge PNG,
+ * PNG and JPEG only), then embedded: { img } or { why }, the reason it is left out.
+ * ponytail: the same checks as pdf.js's loadImage; one copy once pdf-lib's path goes (Phase C).
+ * @param {string} src @param {any} w the writer @param {any} opts fetchImage
+ * @returns {Promise<{ img?: any, why?: string }>}
+ */
+async function loadImage(src, w, opts) {
+  try {
+    const local = /^data:/i.test(src);
+    if (local && dataUriBytes(src) > IMAGE_LIMITS.bytes) return { why: 'it is larger than the image size limit' };
+    if (!local && !opts.fetchImage) return { why: 'it is a URL, and no fetchImage was given to load it' };
+    const bytes = local ? dataUriBytesOf(src) : await opts.fetchImage(src);
+    if (!bytes?.length) return { why: 'it could not be loaded' };
+    if (bytes.length > IMAGE_LIMITS.bytes) return { why: 'it is larger than the image size limit' };
+    const info = /** @type {any} */ (imageInfoOf(bytes));
+    if (info?.type === 'svg') {
+      const svg = parseSvg(new TextDecoder().decode(bytes));
+      return svg ? { img: { svg, width: svg.w, height: svg.h } } : { why: 'the SVG could not be read' };
+    }
+    if (info?.type === 'png') {
+      const why = 'w' in info && !info.suspect && info.w * info.h <= IMAGE_LIMITS.pixels ? pngProblem(bytes) : 'too large or animated';
+      if (why) return { why: `the PNG is not usable (${why})` };
+    } else if (info?.type !== 'jpeg') return { why: info ? `${info.type.toUpperCase()} is not embedded (PNG, JPEG and SVG are)` : 'it is not a PNG, JPEG or SVG' };
+    // ponytail: the decoded-size bound of the pixel limit at 8-bit RGBA; a 16-bit PNG near the limit is refused
+    return { img: await w.image(bytes, { maxDecodedBytes: IMAGE_LIMITS.pixels * 4 }) };
+  } catch (e) { return { why: `it could not be embedded (${/** @type {any} */ (e)?.message || e})` }; }
+}
+
+/** a font's resource name through paintEnv @param {any} env @param {string} key */
+const w2name = (env, key) => env.fontName(key);
 
 /** a literal string, \ ( ) escaped @param {string} v */
 const lit = (v) => `(${String(v).replace(/[\\()]/g, '\\$&')})`;
@@ -697,23 +914,22 @@ function coveredText(items, box) {
  * (pdfpaint.js) as exportPdf draws it. env (paintEnv): the writer's names and glyph records, the page refs links jump
  * to, the tagger when tagged. Pages painted in parallel (parallel.js) use a writer of their own and the same names.
  * @param {any} pg @param {number} H @param {any} env
- * @returns {{ content: string, annots: any[] }}
+ * @returns {{ content: string, annots: any[], fields: ((form: any, page: any) => void)[] }}
  */
 export function paintPage(pg, H, env) {
   if (env.embedded) pg = embeddedPage(pg, env.font, env.embedded);
   const annots = [];
+  /** form fields: made on the library's page as it is written (corePage) @type {((form: any, page: any) => void)[]} */
+  const fields = [];
   const c = new Content(env.shared);
   const { tags } = env;
-  if (tags) { c.tagged = true; c.artLines = true; tags.page(pg.win ?? 0); }
-  for (const it of pg.items) {
-    // tagged: lines wait and are drawn together as one artifact (a table's borders); a cell's plain text is marked inside
-    // the open text object, so the cells' text stays one text object as untagged (BT, then BDC … EMC per cell)
-    const mark = tags && it.t !== 'line' && tags.open(it);
-    const inText = mark && it.t === 'text' && !it.rotate && it.lines.every((/** @type {any} */ l) => !l.runs) && !(it.clip && !insideClip(it, env.vmetrics(it.font)));
-    if (inText) {
-      if (!c.bt) { c._s += 'BT\n'; c.bt = true; c.tx = 0; c.ty = 0; }
-      c._s += mark;
-    } else if (mark) { c.et(); c.s += mark; }
+  if (tags) { c.tagged = true; tags.page(pg.win ?? 0); }
+  for (let ii = 0; ii < pg.items.length; ii++) {
+    const it = pg.items[ii];
+    // tagged: every item in its own marked content, its text in its own text object and its lines one by one, operator
+    // for operator as exportPdf's pdf-lib path draws it (the parity gate compares the drawing commands exactly)
+    const mark = tags && tags.open(it, ii);
+    if (mark) { c.et(); c.s += mark; }
     if ((it.t !== 'text' && it.t !== 'line') || it.rotate) c.et();
     if (it.rotate) {
       const t = -it.rotate.a * Math.PI / 180, cs = Math.cos(t), sn = Math.sin(t);
@@ -725,7 +941,13 @@ export function paintPage(pg, H, env) {
       case 'rect': {
         const fill = col(it.fill), stroke = col(it.stroke);
         if (!fill && !stroke) break;
-        if (it.radius) throw new Error('rounded boxes do not stream yet');
+        if (it.radius) {
+          // as pdf-lib's drawSvgPath draws it on exportPdf's pdf-lib path, operator for operator (svgpath.js)
+          c.et(); c.lineWidth(1);
+          c.s += drawSvgPathOps(roundRect(it.x, it.y, it.w, it.h, it.radius), { x: 0, y: H, gs: c.gsFor(fill?.opacity ?? 1, stroke?.opacity ?? 1),
+            color: fill?.color, borderColor: stroke?.color, borderWidth: stroke ? it.strokeWidth || 1 : 0, borderDashArray: it.dash || undefined });
+          break;
+        }
         c.paint(fill, stroke, it.strokeWidth || 1, it.dash);
         const x = n2(it.x), y = n2(H - it.y - it.h), rw = n2(it.w), rh = n2(it.h);
         c.s += (stroke && it.dash?.length ? `${x} ${y} m ${x} ${n2(y + rh)} l ${n2(x + rw)} ${n2(y + rh)} l ${n2(x + rw)} ${y} l h` : `${x} ${y} ${rw} ${rh} re`) + (fill && stroke ? ' B\n' : fill ? ' f\n' : ' S\n');
@@ -752,7 +974,13 @@ export function paintPage(pg, H, env) {
         const clipped = it.clip && !insideClip(it, env.vmetrics(it.font));
         if (clipped) { c.q(); c.s += `${n2(it.clip.x)} ${n2(H - it.clip.y - it.clip.h)} ${n2(it.clip.w)} ${n2(it.clip.h)} re W n\n`; }
         for (const l of it.lines) {
-          if (!l.runs) { c.text(env.pf(it.font), it.size, color, l.x, H - l.y, env.literal(it.font, cleanText(l.text))); continue; }
+          if (!l.runs) {
+            // tagged: a character the font lacks is left out (PDF/UA forbids drawing .notdef), its space kept, as pdf.js's tjOf
+            const str = cleanText(l.text), tj = tags ? notdefTJ(env, it.font, str) : null;
+            if (tj) c.text(env.pf(it.font), it.size, color, l.x, H - l.y, tj, true);
+            else c.text(env.pf(it.font), it.size, color, l.x, H - l.y, env.literal(it.font, str));
+            continue;
+          }
           for (const r of l.runs) {
             const g = env.shapedOf(r.font), spans = new WeakMap();
             glyphText(r, env.font(r.font), g, spans);
@@ -766,28 +994,99 @@ export function paintPage(pg, H, env) {
         const rect = `[${[it.x, H - it.y - it.h, it.x + it.w, H - it.y].map(n2).join(' ')}]`;
         const a = it.action;
         const href = a?.type === 'url' && safeUrl(a.href) ? a.href : a?.type === 'drill' ? drillUrl(env.drillBase, a) : null;
-        const to = href ? `/A << /Type /Action /S /URI /URI ${lit(asciiUrl(href))} >>` : a?.type === 'bookmark' && a.page ? `/Dest [${env.pageRef(a.page - 1)} 0 R /XYZ null ${n2(H - a.y + 4)} null]` : null;
+        const to = href ? `/A << /Type /Action /S /URI /URI ${lit(asciiUrl(href))} >>` : a?.type === 'bookmark' && a.page ? `/Dest [${env.pageRef(a.page - 1)} 0 R /XYZ null ${n2((env.pageHeight?.(a.page - 1) ?? H) - a.y + 4)} null]` : null;
         if (!to) break; // ponytail: a jump to a bookmark by name needs every page's bookmarks first: left out while streaming
         if (!tags) { annots.push(`<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] ${to} >>`); break; }
         // tagged: what the link does, for a screen reader, and its Link element
-        const ref = env.reserve(), key = tags.link(it, ref);
-        const say = coveredText(pg.items, it) || it.tip || href || (a.target ? `Go to ${a.target}` : `Go to page ${a.page}`);
+        const ref = env.reserve(), key = tags.link(it, ref, ii);
+        // as exportPdf's pdf-lib path says it: the covered text, the tip, a drill's report, a jump's target, the URL
+        const say = coveredText(pg.items, it) || it.tip || (a.type === 'drill' ? `Open the report "${a.report}"` : a.type === 'bookmark' ? `Go to ${a.target || `page ${a.page}`}` : href) || 'Link';
         annots.push({ ref, dict: `<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] ${to} /Contents ${pdfText(say)} /StructParent ${key} >>` });
+        break;
+      }
+      case 'path': {
+        const fill = col(it.fill), stroke = col(it.stroke);
+        c.et(); c.lineWidth(1); // what a stroke without a width of its own inherits, as on pdf-lib's path
+        c.s += drawSvgPathOps(it.d, { x: it.x, y: H - it.y, gs: c.gsFor(fill?.opacity ?? 1, stroke?.opacity ?? 1), color: fill?.color, borderColor: stroke?.color,
+          borderWidth: stroke ? it.strokeWidth || 1 : 0, borderLineCap: it.lineCap === 'butt' ? 0 : 1, borderDashArray: it.dash || undefined });
+        break;
+      }
+      case 'image': {
+        const img = env.images?.get(it.src)?.img;
+        if (!img) break; // left out (said when it was loaded)
+        // as exportPdf's pdf-lib path draws it: the fit in the box, cover and clip cut to it
+        let w = it.w, h = it.h, x = it.x, y = it.y;
+        const clipBox = it.fit === 'clip' ? [it.x, H - it.y - it.ch, it.cw, it.ch] : it.fit === 'cover' ? [it.x, H - it.y - it.h, it.w, it.h] : null;
+        if (it.fit !== 'fill' && it.fit !== 'clip') {
+          const s = it.fit === 'cover' ? Math.max(it.w / img.width, it.h / img.height) : Math.min(it.w / img.width, it.h / img.height);
+          w = img.width * s; h = img.height * s; x = it.x + (it.w - w) / 2; y = it.y + (it.h - h) / 2;
+        }
+        const o = img.orientation || [1, 0, 0, 1, 0, 0], upright = o[0] === 1 && o[1] === 0 && o[2] === 0 && o[3] === 1 && o[4] === 0 && o[5] === 0;
+        c.q();
+        if (clipBox) c.s += `${clipBox.map(n2).join(' ')} re W n\n`;
+        if (img.svg) { c.et(); c.lineWidth(1); c.s += svgOps(img.svg, { x, y: H - y - h, sx: w / img.width, sy: h / img.height }, (a, b) => c.gsFor(a, b)); c.Q(); break; }
+        c.alpha(1, c.st.CA);
+        c.s += `${n4(w)} 0 0 ${n4(h)} ${n2(x)} ${n2(H - y - h)} cm${upright ? '' : ` ${o.join(' ')} cm`} /${img.name} Do\n`;
+        c.Q();
+        break;
+      }
+      case 'field': {
+        // as exportPdf's pdf-lib path makes it (pdffields.js): the same look, value, flags and name
+        const key = fieldFont(it), F = env.font(key), fname = w2name(env, key);
+        env.fullFont(key);
+        const name = env.uniqueName(it.name);
+        // tagged (whole model): its widget in a Form element, its label as the description a screen reader says
+        const tag = tags?.field ? tags.field(ii) : null;
+        if (tag && !it.label) env.onWarning?.(`Form field "${name}" has no label, so a screen reader announces its name; give it a label`);
+        const acc = tag ? { tooltip: it.label || it.name || name, structParent: tag.key } : {};
+        const made = (/** @type {any} */ f) => { if (tag) tag.made(f.widgetRef); };
+        // pdf-lib's addToPage grows the widget by the border width (half on each side); its appearance fills that box
+        const W = it.w + 0.75, Hh = it.h + 0.75;
+        const box = { x: it.x - 0.375, y: it.y - 0.375, width: W, height: Hh, border: { width: 0.75, color: [0.61, 0.64, 0.69] }, background: [1, 1, 1], readOnly: !!it.readOnly, required: !!it.required };
+        const shaped = it.draw.some((/** @type {any} */ d) => d.t === 'text' && d.lines.some((/** @type {any} */ l) => l.runs));
+        if (it.kind === 'checkbox') {
+          const ap = checkboxAppearance(W, Hh);
+          fields.push((form, page) => made(form.checkbox(name, { ...box, ...acc, page, checked: !!it.value, appearance: { on: ap.on, off: ap.off } })));
+          break;
+        }
+        const choice = it.kind === 'choice';
+        const text = choice ? (it.options.includes(String(it.value)) ? String(it.value) : '') : String(it.value ?? '');
+        const look = textAppearance(text, it.kind === 'multiline', W, Hh, it.size, F, fname, (t) => `(${env.literal(key, cleanText(t))})`);
+        // pdf.js's own appearance has the item's box as its BBox, which the viewer stretches to the grown widget
+        const normal = shaped ? `${pdfNum(W / it.w)} 0 0 ${pdfNum(Hh / it.h)} 0 0 cm\n${shapedAppearance(it, env)}` : look.normal;
+        const raw = { appearance: { normal }, da: look.da };
+        if (choice) fields.push((form, page) => made(form.comboBox(name, { ...box, ...acc, page, ...raw, options: it.options, ...(text ? { value: text } : {}) })));
+        else fields.push((form, page) => made(form.textField(name, { ...box, ...acc, page, ...raw, value: String(it.value ?? ''), multiline: it.kind === 'multiline' })));
         break;
       }
       default: throw new Error(`A ${it.t} item does not stream yet`);
     }
     if (it.rotate) c.Q();
-    if (inText) c._s += 'EMC\n';
-    else if (mark) { c.et(); c.s += 'EMC\n'; }
+    if (mark) { c.et(); c.s += 'EMC\n'; }
   }
   c.et();
-  return { content: c.s, annots };
+  return { content: c.s, annots, fields };
+}
+
+/**
+ * A TJ array's body that skips the characters font key has no glyph for, moving on by .notdef's width (pdf.js's tjOf);
+ * null when there are none. @param {any} env @param {string} key @param {string} text
+ */
+function notdefTJ(env, key, text) {
+  const f = env.font(key);
+  if (!f?.glyphForCodePoint) return null;
+  let out = '', cur = '', any = false;
+  for (const ch of text) {
+    if (f.glyphForCodePoint(/** @type {number} */ (ch.codePointAt(0))).id === 0) { any = true; if (cur) out += `(${env.literal(key, cur)})`; cur = ''; out += `${-Math.round(f.getGlyph(0).advanceWidth * 1000 / f.unitsPerEm)}`; continue; }
+    cur += ch;
+  }
+  return any ? out + (cur ? `(${env.literal(key, cur)})` : '') : null;
 }
 
 /**
  * What paintPage draws with: a writer's resource names and glyph records (w), the fonts, shaped glyphs' texts.
- * @param {any} w @param {any} fontStore @param {{ drillBase?: string, pageRef?: (i: number) => any, tags?: any, embedAll?: boolean }} [o]
+ * @param {any} w @param {any} fontStore @param {{ onWarning?: (m: string) => void, drillBase?: string, pageRef?: (i: number) => any, tags?: any, embedAll?: boolean, pageHeight?: (i: number) => number }} [o]
+ *   pageHeight: the height of page i (0-based), when pages differ: where a link to it lands
  */
 export function paintEnv(w, fontStore, o = {}) {
   /** @type {Map<string, any>} pdf-lib-like fonts for the shared painter: { key, embedder: { font } } */
@@ -795,6 +1094,7 @@ export function paintEnv(w, fontStore, o = {}) {
   /** @type {Map<string, Map<number, string>>} shaped glyphs per font: the text each stands for */
   const shaped = new Map();
   const vm = new Map();
+  const taken = new Set();
   return {
     shared: { font: (f) => w.fontName(f.key), gs: (ca, CA) => w.gs(ca, CA), image: () => { throw new Error('images do not stream yet'); } },
     pf: (/** @type {string} */ key) => { let f = pfs.get(key); if (!f) pfs.set(key, f = { key, embedder: { font: fontStore.get(key) } }); return f; },
@@ -808,18 +1108,37 @@ export function paintEnv(w, fontStore, o = {}) {
     },
     literal: (/** @type {string} */ key, /** @type {string} */ text) => w.literal(key, text),
     pageRef: o.pageRef || ((/** @type {number} */ i) => w.pageRef(i)),
+    pageHeight: o.pageHeight,
+    /** the pictures embedded so far, by source: { img } or { why } (writePagedPdf loads a page's before painting it) @type {Map<string, any>} */
+    images: new Map(),
     reserve: () => w.reserve(),
+    fullFont: (/** @type {string} */ key) => w.fullFont(key),
+    fontName: (/** @type {string} */ key) => w.fontName(key),
+    /** a form field's name, made unique in the document as pdf.js does ("qty", "qty_2") */
+    uniqueName: (/** @type {string} */ n) => { let name = n, i = 1; while (taken.has(name)) name = `${n}_${++i}`; taken.add(name); return name; },
     drillBase: o.drillBase,
     tags: o.tags || null,
+    onWarning: o.onWarning,
     /** PDF/A, PDF/UA: standard fonts drawn in embedded stand-ins; the families that were @type {Set<string>|null} */
     embedded: o.embedAll ? new Set() : null,
   };
 }
 
 /**
+ * parallel 'auto': the cores but one (the writer's), 4 at most; none below 3 (2 workers did not beat one thread on the
+ * README's ledger) or without Node
+ */
+function autoWorkers() {
+  const os = /** @type {any} */ (globalThis).process?.getBuiltinModule?.('node:os');
+  const n = Math.min(4, (os ? (os.availableParallelism?.() ?? os.cpus().length) : 1) - 1);
+  return n >= 3 ? n : 0;
+}
+
+/**
  * Worker threads that lay out and paint windows of pages (pdfstreamworker.js): run(job) answers as paged.js's own
- * layout does, with pages painted and compressed. Started at the first job, when every font the report uses is loaded
- * (the counting pass loaded them); each worker gets their bytes. Node only.
+ * layout does, with pages painted and compressed. Started at the first job, each worker given the fonts loaded by then;
+ * a font a later row needs is asked of this side (and loaded here too, for the file). A job sent before the pages are
+ * counted (job.defer) waits in its worker for total(n). Node only.
  * @param {number} size @param {any} fontStore @param {any} opts @param {any} info
  */
 function paintPool(size, fontStore, opts, info) {
@@ -827,15 +1146,21 @@ function paintPool(size, fontStore, opts, info) {
   if (!wt) return null;
   /** @type {any[]} */
   let workers = [];
-  let seq = 0, turn = 0;
+  let seq = 0, turn = 0, count = /** @type {number|undefined} */ (undefined);
   const waiting = new Map();
-  const clean = (/** @type {any} */ r) => { if (!r) return r; const { __i, ...o } = r; return o; };
+  // the row without its groups (paged.js's own): a copy key by key, as fast on a row in dictionary mode (delete r.__g)
+  const clean = (/** @type {any} */ r) => { if (!r) return r; const o = /** @type {any} */ ({}); for (const k in r) if (k !== '__i') o[k] = r[k]; return o; };
   const start = async () => {
     const fonts = [...fontStore.bytes];
     if (fontStore.shaper) fonts.push(['harfbuzz', await fontStore.loader('harfbuzz')]);
     workers = Array.from({ length: size }, () => {
       const w = new wt.Worker(new URL('./pdfstreamworker.js', import.meta.url), { workerData: { fonts } });
-      w.on('message', (/** @type {any} */ m) => { const p = waiting.get(m.id); waiting.delete(m.id); if (m.error) p.fail(Object.assign(new Error(m.error.message), { status: m.error.status, timeout: m.error.timeout })); else p.ok(m); });
+      w.on('message', (/** @type {any} */ m) => {
+        if (m.font !== undefined) { // a font a later row needs: loaded here too (the file embeds it), its bytes sent
+          fontStore.load([m.font]).catch(() => {}).then(async () => w.postMessage({ font: m.font, bytes: m.font === 'harfbuzz' ? (fontStore.shaper ? await fontStore.loader(m.font) : undefined) : fontStore.bytes.get(m.font) }));
+          return;
+        }
+        const p = waiting.get(m.id); waiting.delete(m.id); if (m.error) p.fail(Object.assign(new Error(m.error.message), { status: m.error.status, timeout: m.error.timeout })); else p.ok(m); });
       w.on('error', (/** @type {any} */ e) => { for (const p of waiting.values()) p.fail(e); waiting.clear(); });
       return w;
     });
@@ -846,16 +1171,21 @@ function paintPool(size, fontStore, opts, info) {
     size,
     /** @param {any} job */
     async run(job) {
-      await (started ||= start());
+      // the message now, before any wait: the rows go on changing as the pass reads on (a group's totals when it closes)
       const id = ++seq;
       const pw = job.pageWindow;
       const msg = { id, def: job.def, rows: job.rows.map(clean), keep: job.keep, drillBase: opts.drillBase, embedAll: !!opts.pdfa, height: info.height,
-        opts: Object.fromEntries(pick.filter(k => opts[k] !== undefined).map(k => [k, opts[k]])),
+        opts: Object.fromEntries(pick.filter(k => opts[k] !== undefined).map(k => [k, opts[k]])), defer: job.defer, rebandDef: job.rebandDef,
         pageWindow: { ...pw, first: clean(pw.first), cont: pw.cont.map((/** @type {any} */ c) => c && { first: clean(c.first), before: c.before }) } };
+      await (started ||= start());
+      // the count came while the workers started: the job is sent with it
+      if (msg.defer && count !== undefined) { msg.defer = false; msg.pageWindow.total = count; }
       const r = await new Promise((ok, fail) => { waiting.set(id, { ok, fail }); workers[turn++ % workers.length].postMessage(msg); });
       if (r.pages.length) { r.pages[0].used = r.used; r.pages[0].shaped = r.shaped; r.pages[0].embedded = r.embedded; }
       return r;
     },
+    /** the page count, for the jobs sent before it (each worker's, in order) @param {number} n */
+    total(n) { count = n; for (const w of workers) w.postMessage({ total: n }); },
     async close() { await Promise.all(workers.map(w => w.terminate())); },
   };
 }

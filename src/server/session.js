@@ -48,20 +48,22 @@ export function devHostOk(req) {
   return ok.includes(host);
 }
 /**
- * PW_AUTH=proxy with PW_PROXY_SECRET: the reverse proxy sends it as x-pagewright-proxy-secret, so a request that
+ * PW_AUTH=proxy with PW_PROXY_SECRET: the reverse proxy sends it as x-reportwright-proxy-secret (or the deprecated x-pagewright-proxy-secret), so a request that
  * reaches the app port directly (around the proxy) is refused. Without PW_PROXY_SECRET: true (and a warning at start).
  * @param {Request} req
  */
+/** The proxy secret header: x-reportwright-proxy-secret, else the old name (deprecated 0.13.2). @param {Request} req */
+export const proxySecretHeader = (req) => req.headers.get('x-reportwright-proxy-secret') ?? req.headers.get('x-pagewright-proxy-secret');
 export function proxySecretOk(req) {
   const want = process.env.PW_PROXY_SECRET;
   if (process.env.PW_AUTH !== 'proxy' || !want) return true;
   const d = (s) => crypto.createHash('sha256').update(s).digest();
-  return crypto.timingSafeEqual(d(req.headers.get('x-pagewright-proxy-secret') || ''), d(want));
+  return crypto.timingSafeEqual(d(proxySecretHeader(req) || ''), d(want));
 }
 /** Production with nobody signing in, and PW_PUBLIC_READONLY=1: anyone may open and render the saved reports, nothing more. */
 export const publicReadonly = () => !accountsOn() && !openTrusted() && process.env.PW_PUBLIC_READONLY === '1';
 /** What a production server with no sign-in answers (and logs when it starts). */
-export const NO_AUTH_HELP = 'This ReportWright server runs in production with no sign-in, so it refuses changes and server-side data. Set PW_AUTH=users (accounts, SSO), or PW_BASIC_AUTH="user:password", or PW_AUTH=proxy with PW_PROXY_SECRET (16+ characters, sent by the signing-in reverse proxy as x-pagewright-proxy-secret). PW_PUBLIC_READONLY=1 lets anyone open and render the saved reports (and their saved queries), read-only.';
+export const NO_AUTH_HELP = 'This ReportWright server runs in production with no sign-in, so it refuses changes and server-side data. Set PW_AUTH=users (accounts, SSO), or PW_BASIC_AUTH="user:password", or PW_AUTH=proxy with PW_PROXY_SECRET (16+ characters, sent by the signing-in reverse proxy as x-reportwright-proxy-secret). PW_PUBLIC_READONLY=1 lets anyone open and render the saved reports (and their saved queries), read-only.';
 
 /** PW_SESSION_SECRET; in development a random one per process (sessions end on restart). */
 export function sessionSecret() {

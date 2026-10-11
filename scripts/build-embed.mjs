@@ -3,11 +3,12 @@ import { build } from 'esbuild';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import path from 'node:path';
-import { root, common, readable, ENTRIES, WORKER, APART, bwipApart, firstLoad } from './embed-options.mjs';
-const workerBuild = (o) => build({ ...common, entryPoints: [WORKER], format: 'esm', ...readable, splitting: false, ...o });
+import { fixDist } from './line-continuations.mjs';
+import { root, common, readable, workerMin, ENTRIES, WORKER, APART, bwipApart, firstLoad } from './embed-options.mjs';
+const workerBuild = (o) => build({ ...common, entryPoints: [WORKER], format: 'esm', ...workerMin, splitting: false, ...o });
 const workerWithBwip = async (dir, o = {}) => {
   const r = await workerBuild({ outfile: path.join(dir, 'engine.worker.js'), plugins: [...common.plugins, bwipApart], ...o });
-  for (const [lib, file] of Object.entries(APART)) await build({ entryPoints: [lib], absWorkingDir: root, bundle: true, format: 'esm', target: ['es2020'], logLevel: 'warning', ...readable, outfile: path.join(dir, file) });
+  for (const [lib, file] of Object.entries(APART)) await build({ entryPoints: [lib], absWorkingDir: root, bundle: true, format: 'esm', target: ['es2020'], logLevel: 'warning', ...workerMin, outfile: path.join(dir, file) });
   return r;
 };
 // 1. Everything in one classic script: the interactive HTML export inlines this one (it must work offline).
@@ -23,8 +24,9 @@ await build({ ...common, entryPoints: ENTRIES, format: 'esm', ...readable, split
 await workerWithBwip(path.join(root, 'public/embed/esm-peer'), { external: ['react', 'react-dom', 'react/*', 'react-dom/*'] });
 //    What @reportwright/viewer publishes: the same two builds with the third-party libraries that carry data blobs
 //    (pdf-lib's standard fonts, fontkit's brotli dictionary, bwip-js's barcode tables, bidi-js's Unicode data) and
-//    fflate left as imports: they are the package's pinned dependencies, so the tarball holds only our code.
-const PKG_EXTERNAL = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js'];
+//    @reportwright/pdf (with its fflate, @reportwright/pdf/fflate) left as imports: they are the package's pinned
+//    dependencies, so the tarball holds only our code.
+const PKG_EXTERNAL = ['@pdf-lib/fontkit', 'bwip-js', 'bidi-js', '@reportwright/pdf']; // fflate: @reportwright/pdf/fflate
 for (const [dir, ext] of [['esm-pkg', []], ['esm-pkg-peer', ['react', 'react-dom', 'react/*', 'react-dom/*']]]) {
   fs.rmSync(path.join(root, 'public/embed', dir), { recursive: true, force: true });
   await build({ ...common, entryPoints: ENTRIES, format: 'esm', ...readable, splitting: true, outdir: path.join(root, 'public/embed', dir), entryNames: '[name]', chunkNames: 'chunk-[hash]', external: [...ext, ...PKG_EXTERNAL] });
@@ -37,7 +39,9 @@ fs.writeFileSync(path.join(root, 'public/embed/reportwright-viewer.js'), `/* Rep
 (function () {
   var s = document.currentScript, base = s && s.src ? s.src.replace(/[^/]*$/, '') : '/embed/';
   var ready = import(base + 'esm/viewer.js'), designer = null;
-  window.ReportWright = window.Pagewright = { // Pagewright: the old name, deprecated (0.9)
+  var warned = false; // window.Pagewright: the old name, deprecated (0.9), gone in 1.0; one warning per page
+  Object.defineProperty(window, 'Pagewright', { configurable: true, get: function () { if (!warned) { warned = true; console.warn('ReportWright: window.Pagewright is deprecated, use window.ReportWright (the old name goes in 1.0).'); } return window.ReportWright; } });
+  window.ReportWright = {
     mountViewer: function (t, o) { return ready.then(function (m) { return m.mountViewer(t, o); }); },
     // the designer loads only when a page asks for it
     mountDesigner: function (t, o) { designer = designer || import(base + 'esm/designer.js'); return designer.then(function (m) { return m.mountDesigner(t, o); }); },
@@ -46,8 +50,13 @@ fs.writeFileSync(path.join(root, 'public/embed/reportwright-viewer.js'), `/* Rep
 })();
 `);
 // the old file names (embed snippets pasted before the rename) keep working; deprecated (0.9)
-for (const f of ['viewer.js', 'viewer.full.js']) fs.copyFileSync(path.join(root, `public/embed/reportwright-${f}`), path.join(root, `public/embed/pagewright-${f}`));
+for (const f of ['viewer.js', 'viewer.full.js']) {
+  const src = path.join(root, `public/embed/reportwright-${f}`);
+  fs.writeFileSync(path.join(root, `public/embed/pagewright-${f}`), `console.warn('ReportWright: /embed/pagewright-${f} is deprecated, load /embed/reportwright-${f} (the old file goes in 1.0).');\n${fs.readFileSync(src, 'utf8')}`);
+}
 fs.rmSync(path.join(root, 'public/embed/exceljs.min.js'), { force: true }); // the Excel export has its own writer now
+// no backslash line continuation in a string (lineLimit makes them; Vite 7 broke one): fails the build if one is left
+fixDist(path.join(root, 'public/embed'));
 // what a page loads up front: the entry and the chunks it imports statically
 const dir = path.join(root, 'public/embed/esm');
 const first = new Set(firstLoad(esmBuild.metafile, Object.keys(esmBuild.metafile.outputs).find(f => path.basename(f) === 'viewer.js')).map(f => path.basename(f)));

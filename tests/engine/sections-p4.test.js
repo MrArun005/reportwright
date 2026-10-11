@@ -74,9 +74,10 @@ describe('exporters: page sizes per section, merged cells', () => {
     return render(d, { exportData: true, fontStore });
   };
   it('PDF: each page has its section\'s size', async () => {
-    const { PDFDocument } = await import('pdf-lib');
-    const doc = await PDFDocument.load(await exportPdf(await twoSizes(), fontStore));
-    expect(doc.getPages().map(p => [Math.round(p.getWidth()), Math.round(p.getHeight())])).toEqual([[595, 842], [842, 595]]);
+    const { loadPdf } = await import('@reportwright/pdf');
+    const doc = await loadPdf(await exportPdf(await twoSizes(), fontStore));
+    expect(doc.pageCount).toBe(2);
+    expect([0, 1].map(i => doc.page(i)).map(p => [Math.round(p.width), Math.round(p.height)])).toEqual([[595, 842], [842, 595]]);
   });
   it('Word: a section break carries the portrait size, the last section is landscape', async () => {
     const doc = strFromU8(unzipSync(await exportDocx(await twoSizes()))['word/document.xml']);

@@ -5,11 +5,14 @@
 //   require2fa   roles whose password accounts must sign in with a second factor (src/server/totp.js)
 //   snapshotTtl  seconds a rendered report snapshot is reused (src/server/snapshots.js); 0 = off
 //   snapshotMaxMb the snapshot cache's size bound
+//   htmlExport   { html, drillLinks }: how the viewer makes HTML files unless a report says otherwise (src/engine/htmlExport.js);
+//                unset: env PW_HTML_EXPORT / PW_HTML_DRILL_LINKS, then interactive / inline
 // Other records here (named by id) are small server state: audit chain heads, the snapshot generation.
 import { store, withLock } from './storage/index.js';
+import { HTML_MODES, DRILL_LINKS, resolveHtmlExport, envHtmlExport } from '../engine/htmlExport.js';
 
 export const SETTINGS_ROLES = ['viewer', 'designer', 'admin'];
-const DEFAULTS = Object.freeze({ require2fa: [], snapshotTtl: 0, snapshotMaxMb: 512 });
+const DEFAULTS = Object.freeze({ require2fa: [], snapshotTtl: 0, snapshotMaxMb: 512, htmlExport: {} });
 const CACHE_MS = 3000;
 const g = /** @type {any} */ (globalThis);
 g.__pwSettings ||= { at: 0, value: null };
@@ -26,7 +29,7 @@ export function putRecord(id, rec) { return withLock('settings', () => store().p
 
 /**
  * The settings, with defaults. Cached for 3 s in this process (sessions read them on every request); fresh: read now.
- * @returns {Promise<{ require2fa: string[], snapshotTtl: number, snapshotMaxMb: number, updatedAt?: string, updatedBy?: string }>}
+ * @returns {Promise<{ require2fa: string[], snapshotTtl: number, snapshotMaxMb: number, htmlExport: { html?: string, drillLinks?: string }, updatedAt?: string, updatedBy?: string }>}
  */
 export async function getSettings({ fresh = false } = {}) {
   if (!fresh && g.__pwSettings.value && Date.now() - g.__pwSettings.at < CACHE_MS) return g.__pwSettings.value;
@@ -53,7 +56,21 @@ function check(patch) {
     if (!Number.isInteger(n) || n < 1 || n > 1000000) throw fail('snapshotMaxMb is whole megabytes, 1 to 1000000.');
     out.snapshotMaxMb = n;
   }
+  if (patch.htmlExport !== undefined) {
+    const h = patch.htmlExport;
+    if (!h || typeof h !== 'object' || Array.isArray(h)) throw fail('htmlExport is { html?, drillLinks? }.');
+    const v = {};
+    // an empty value means "not set here": the environment, then the default, decide
+    if (h.html) { if (!HTML_MODES.includes(h.html)) throw fail(`htmlExport.html is one of ${HTML_MODES.join(', ')}.`); v.html = h.html; }
+    if (h.drillLinks) { if (!DRILL_LINKS.includes(h.drillLinks)) throw fail(`htmlExport.drillLinks is one of ${DRILL_LINKS.join(', ')}.`); v.drillLinks = h.drillLinks; }
+    out.htmlExport = v;
+  }
   return out;
+}
+
+/** The server's HTML export default: the admin setting, then env, then interactive / inline. */
+export async function serverHtmlExport() {
+  return resolveHtmlExport((await getSettings()).htmlExport, envHtmlExport());
 }
 
 /** Change settings (an admin, from the Settings page). @param {any} patch @param {{ by?: string | { email: string, sv?: number } }} [o] */

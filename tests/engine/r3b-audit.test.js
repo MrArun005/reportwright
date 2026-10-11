@@ -78,11 +78,15 @@ describe('unauthenticated events are rate-limited, counted, never lost', () => {
 describe('an API render writes one compact event', () => {
   it('one report.render (it names the caller: no second api.call event), well under the 1.5 KB of before', async () => {
     await wipe();
-    await store().put('reports', 'inv', JSON.stringify(report([{ type: 'text', x: 0, y: 0, w: 100, h: 20, value: 'Hi' }])));
+    await store().put('reports', 'inv', JSON.stringify(report([{ type: 'text', x: 0, y: 0, w: 100, h: 20, value: 'Hi' }], { def: { parameters: [{ name: 'a', type: 'number' }] } })));
     const { POST } = await import('../../app/api/v1/render/route.js');
     const before = (await rows()).length;
     const r = await POST(new Request(`${BASE}/api/v1/render`, { method: 'POST', headers: { authorization: 'Bearer svc-secret-key-123', 'content-type': 'application/json', 'x-pw-peer': '192.0.2.5' }, body: JSON.stringify({ template: 'inv', format: 'pdf', parameters: { a: 1 } }) }));
     expect(r.status).toBe(200);
+    // a parameter the report does not declare is a 400 on the API (strictParameters)
+    const bad = await POST(new Request(`${BASE}/api/v1/render`, { method: 'POST', headers: { authorization: 'Bearer svc-secret-key-123', 'content-type': 'application/json', 'x-pw-peer': '192.0.2.5' }, body: JSON.stringify({ template: 'inv', format: 'pdf', parameters: { Nope: 1 } }) }));
+    expect(bad.status).toBe(400);
+    expect(await bad.text()).toContain('Unknown parameter \\"Nope\\"');
     const after = await rows();
     expect(after.length - before).toBe(1);
     expect(after[0].type).toBe('report.render');

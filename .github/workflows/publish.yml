@@ -1,7 +1,7 @@
 # Publishes the @reportwright/* packages to npm with provenance (a signed statement, checked by npm and Socket, that
 # the tarball was built from this repository by this workflow).
-# NOTE: npm provenance is generated only for public repositories. The repository is private, so the --provenance
-# publish below cannot succeed until it is public. Until then, publish by hand (docs/RELEASING.md "By hand").
+# NOTE: npm provenance is generated only for public repositories, so --provenance is added only when the repository is
+# public; while it is private the packages are published without it. The NPM_TOKEN secret is required (checked first).
 #
 # Runs only when the owner starts it: publish a GitHub release, or "Run workflow" on the Actions tab.
 # Before the first run, the owner sets up ONE of:
@@ -9,20 +9,59 @@
 #     publisher > GitHub Actions, repository MrArun005/reportwright, workflow publish.yml; or
 #   - a granular npm access token with publish rights on @reportwright, saved as the repository secret NPM_TOKEN.
 # Step by step: docs/RELEASING.md.
+#
+# THE FLOW (three jobs, in this order; `latest` moves only if every check passes):
+#   1. publish  builds, tests and scans the packages, then publishes all 9 with provenance to the `next` dist-tag.
+#               Nobody who runs `npm i @reportwright/engine` gets the new version yet: `latest` is untouched.
+#   2. verify   waits for the registry (up to ~5 minutes of retries), installs all 9 packages from the npm REGISTRY (not
+#               the workspace) at exactly that version into an empty folder, and runs scripts/smoke-published.mjs: every
+#               main entry imports; engine + fonts render and export PDF, XLSX and DOCX; qpdf --check opens the PDF;
+#               `pw render` from @reportwright/cli works; the viewer's dist files and one-file worker exist; the
+#               framework wrappers resolve their peer @reportwright/viewer. Its summary says what failed and why.
+#   3. latest   runs ONLY if verify passed: `npm dist-tag add @reportwright/<p>@<version> latest` for all 9.
+#               If verify fails, `latest` still points at the previous release (fix, then publish the next patch; or
+#               after repairing by hand, run the dist-tag commands in docs/RELEASING.md).
+# Trusted publishing covers `npm publish` only; `npm dist-tag` needs a token, so the latest job uses the NPM_TOKEN secret
+# (the same one the publish job uses when trusted publishing is not set up). Without NPM_TOKEN, job 3 fails and the packages
+# stay on `next`; move `latest` by hand.
+#
+# SECURITY (least privilege per job; the workflow default is no permissions at all):
+#   publish  contents: read + id-token: write (provenance / trusted publishing). Holds NPM_TOKEN, only on the publish step.
+#   verify   contents: read, NO id-token, NO secrets. It installs registry packages (with --ignore-scripts) and runs
+#            them, so it could not publish or move a tag even if a package were compromised. Output: the version.
+#   latest   no permissions at all; holds NPM_TOKEN, only on the dist-tag step. It checks out nothing and runs
+#            nothing from the registry or the repo: just `npm dist-tag add`, with a version that is matched against a
+#            strict semver regex and passed through env (never interpolated into the script).
+# Triggers are release (published) and workflow_dispatch only: no pull_request, no pull_request_target. Actions are
+# pinned to commit SHAs.
 name: Publish to npm
 on:
   release:
     types: [published]
   workflow_dispatch:
-permissions:
-  contents: read
-  id-token: write # provenance and trusted publishing
+permissions: {}
+env:
+  PACKAGES: fonts fonts-cjk engine cli viewer react vue svelte angular
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # provenance and trusted publishing
+    outputs:
+      version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # Fail fast, before any build: the latest job always needs NPM_TOKEN (npm dist-tag has no trusted publishing).
+      - name: Check the NPM_TOKEN secret
+        env:
+          HAS_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
+        run: |
+          if [ "$HAS_TOKEN" != "true" ]; then
+            msg="The repository secret NPM_TOKEN is missing. Create an Automation token on npmjs.com (Access Tokens), then add it under Settings > Secrets and variables > Actions as NPM_TOKEN. See docs/RELEASING.md."
+            echo "::error::$msg"; echo "### publish stopped: $msg" >> "$GITHUB_STEP_SUMMARY"; exit 1
+          fi
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
@@ -32,11 +71,78 @@ jobs:
       - run: npm run build:packages
       - run: npx vitest run tests/engine/packages.test.js
       - run: npm run scan:packages
-      # fonts first: the engine, the CLI and the viewer depend on it at the same version
-      - name: npm publish --provenance
+      - id: v
+        run: echo "version=$(node -p "require('./packages/engine/package.json').version")" >> "$GITHUB_OUTPUT"
+      # fonts first: the engine, the CLI and the viewer depend on it at the same version. --tag next: not `latest` yet.
+      # --provenance only when the repository is public: npm refuses provenance from a private repository.
+      - name: npm publish --tag next (--provenance when public)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          REPO_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          prov=--provenance; [ "$REPO_PRIVATE" = "false" ] || { prov=; echo "private repository: publishing without --provenance"; }
+          for p in $PACKAGES; do
+            npm publish "./packages/$p" $prov --access public --tag next
+          done
+
+  verify:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # no id-token, no secrets: this job runs registry code
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    env:
+      VERSION: ${{ needs.publish.outputs.version }}
+    steps:
+      - id: v
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version" >&2; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2 # only for scripts/smoke-published.mjs and its sample; the packages come from the registry
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq qpdf
+      - name: Install all 9 from the registry (retries up to ~5 minutes for propagation)
+        run: |
+          mkdir "$RUNNER_TEMP/clean" && cd "$RUNNER_TEMP/clean"
+          echo '{"private":true,"type":"module"}' > package.json
+          specs=(); for p in $PACKAGES; do specs+=("@reportwright/$p@$VERSION"); done
+          for i in $(seq 1 30); do
+            if npm i --ignore-scripts --no-audit --no-fund --prefer-online "${specs[@]}"; then ok=1; break; fi
+            echo "attempt $i: not installable yet, waiting 10 s"; sleep 10
+          done
+          [ -n "$ok" ] || { echo "### verify failed: the 9 packages at $VERSION could not be installed from the registry in 5 minutes" >> "$GITHUB_STEP_SUMMARY"; exit 1; }
+          cp "$GITHUB_WORKSPACE/scripts/smoke-published.mjs" "$GITHUB_WORKSPACE/scripts/smoke-sample.pw.json" .
+          mv smoke-sample.pw.json sample.pw.json
+      - name: Smoke test
+        run: |
+          cd "$RUNNER_TEMP/clean"
+          if node smoke-published.mjs "$VERSION" 2>&1 | tee smoke.log; then
+            echo "### verify passed: $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          else
+            { echo "### verify FAILED: \`latest\` was NOT moved ($VERSION stays on \`next\`)"; echo '```'; tail -30 smoke.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+  latest:
+    needs: verify # a failed verify skips this job: latest is untouched
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: npm dist-tag add ... latest
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for p in fonts fonts-cjk engine cli viewer react vue svelte angular; do
-            npm publish ./packages/$p --provenance --access public
-          done
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version" >&2; exit 1; }
+          for p in $PACKAGES; do npm dist-tag add "@reportwright/$p@$VERSION" latest; done
+          echo "### $VERSION is now \`latest\` for all 9 packages" >> "$GITHUB_STEP_SUMMARY"

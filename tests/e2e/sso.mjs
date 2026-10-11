@@ -30,7 +30,7 @@ const env = {
 };
 let server;
 const startServer = async (extra = {}) => {
-  server = spawn('npx', ['next', 'start', '-p', String(PORT)], { env: { ...env, ...extra }, stdio: ['ignore', 'pipe', 'pipe'] });
+  server = spawn(process.execPath, [new URL('../../node_modules/next/dist/bin/next', import.meta.url).pathname, 'start', '-p', String(PORT)], { env: { ...env, ...extra }, stdio: ['ignore', 'pipe', 'pipe'] }); // not npx: killing npx left next running on the port
   for (let i = 0; i < 60; i++) { try { if ((await fetch(`${BASE}/login`)).ok) return; } catch { /* not yet */ } await new Promise(r => setTimeout(r, 1000)); }
   throw new Error('the server did not start');
 };

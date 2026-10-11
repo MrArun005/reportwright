@@ -40,8 +40,13 @@ describe('render pool', () => {
   });
 
   it('stops a render at the time limit by terminating its worker, and replaces only that worker', async () => {
-    process.env.PW_RENDER_TIMEOUT_MS = '800';
-    const t0 = Date.now();
+    // the limit is calibrated to this machine: well above a small render on a cold worker (a slow 2-vCPU runner takes
+    // over 0.8 s for one), far below the minute the slow render takes
+    let t0 = Date.now();
+    await Promise.all([render(small()), render(small())]);
+    process.env.PW_RENDER_TIMEOUT_MS = String(Math.min(5000, Math.max(800, 4 * (Date.now() - t0))));
+    await stopPool(); // cold workers again, as the limit was measured on
+    t0 = Date.now();
     const [late, fine] = await Promise.all([render(slow(20000)).catch(e => e), render(small())]);
     expect(late.status).toBe(504);
     expect(Date.now() - t0).toBeLessThan(15000); // the limit, not the minute the render would take
@@ -54,11 +59,12 @@ describe('render pool', () => {
     process.env.PW_RENDER_WORKERS = '1';
     process.env.PW_RENDER_QUEUE = '1';
     process.env.PW_RENDER_QUEUE_PER_PRINCIPAL = '1';
-    // the queued renders wait behind a 6 s render: on a loaded machine that can pass the default 30 s wait budget, and a
-    // dropped wait is a 503 this test does not expect. The test checks admission (the queue's places), not the wait budget.
+    // the queued renders wait behind a slow render (each check below runs at once after running(), so a short one holds
+    // the worker long enough; 6,000 rows took over 30 s on a 2-vCPU runner). On a loaded machine the wait can pass the
+    // default 30 s wait budget, and a dropped wait is a 503 this test does not expect. The test checks admission (the queue's places), not the wait budget.
     process.env.PW_RENDER_MAX_WAIT_MS = '300000';
     const r0 = poolStats().totals.rejected;
-    const a = render(slow(6000)); // runs
+    const a = render(slow(2500)); // runs
     await running();
     const b = render(small()); // waits: the queue's one place
     const c = await render(small()).catch(e => e); // OPEN again: the queue is full
@@ -71,7 +77,7 @@ describe('render pool', () => {
     expect(e).toMatchObject({ status: 503 });
     await Promise.all([a, b, d]);
     process.env.PW_RENDER_QUEUE = '10';
-    const f = render(slow(6000));
+    const f = render(slow(2500));
     await running();
     const h = render(small());
     const i = await render(small()).catch(x => x); // OPEN's one place is taken

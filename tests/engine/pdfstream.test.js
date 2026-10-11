@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { PDFDocument } from 'pdf-lib';
+import { loadPdf } from '@reportwright/pdf';
 import fontkitModule from '@pdf-lib/fontkit';
 import { render } from '../../src/engine/index.js';
 import { exportPdf } from '../../src/exporters/pdf.js';
@@ -30,7 +30,8 @@ let tmpN = 0;
 const tmp = (bytes) => { const f = path.join(tmpDir, `${++tmpN}.pdf`); fs.writeFileSync(f, bytes); return f; };
 /** pdftotext's text and its complaints (a broken xref or object makes poppler print "Syntax Error") */
 const pdftotext = (bytes, ...args) => {
-  const r = spawnSync('pdftotext', [...args, tmp(bytes), '-']);
+  const r = spawnSync('pdftotext', [...args, tmp(bytes), '-'], { maxBuffer: 1 << 30 });
+  if (r.error || r.status) throw new Error(`pdftotext failed (${r.error?.code ?? r.status}): ${r.stderr}`); // ENOBUFS cut the text short, silently
   return { text: r.stdout.toString(), err: r.stderr.toString() };
 };
 /**
@@ -118,9 +119,9 @@ describe('streaming PDF writer', () => {
       expect(b.text).toBe(a.text);
     }
     expect(pdftotext(pdf).text).toContain('Page 2 of');
-    const doc = await PDFDocument.load(pdf);
-    expect(doc.getPageCount()).toBe(model.pages.length);
-    expect(doc.getTitle()).toBe('T');
+    const doc = await loadPdf(pdf);
+    expect(doc.pageCount).toBe(model.pages.length);
+    expect(doc.info.title).toBe('T');
   });
 
   it.skipIf(!hasPoppler)('fonts: only the glyphs drawn are embedded (IDs kept), and the text reads back', async () => {
@@ -163,8 +164,8 @@ describe('streaming PDF writer', () => {
     const pages = pdftotext(pdf).text.split('\f');
     expect(pages[2]).toMatch(/Page 3 of\s*7/);
     expect(pages[6]).toMatch(/Page 7 of\s*7/);
-    const doc = await PDFDocument.load(pdf);
-    expect(doc.getPageCount()).toBe(7);
+    const doc = await loadPdf(pdf);
+    expect(doc.pageCount).toBe(7);
     const s = checkXref(pdf);
     expect(s).toContain('/Type /Outlines');
     expect(s).toMatch(/\/Dest \[\d+ 0 R \/XYZ null 150 null\]/);

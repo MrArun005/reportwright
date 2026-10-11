@@ -12,8 +12,9 @@ import Outline from './Outline.jsx';
 import ReportViewer from '@/viewer/ReportViewer.jsx';
 import { ITEMS } from '@/engine/items/index.js';
 import { fontFaceCss } from '@/exporters/svg.js';
-import { allFontKeys } from '@/engine/text/fonts.js';
+import { allFontKeys, optionalMissing } from '@/engine/text/fonts.js';
 import { customFonts, fontsBase } from '@/viewer/engineClient.js';
+import { setFetchPolicy } from '@/viewer/dataFetch.js';
 import ThemeToggle from '@/theme/ThemeToggle.jsx';
 import ChartWizard from './ChartWizard.jsx';
 import TableWizard from './TableWizard.jsx';
@@ -22,7 +23,7 @@ import { PartsPanel, LayersPanel } from './Reuse.jsx';
 import PivotWizard, { InstantVisuals } from './PivotWizard.jsx';
 import { t, dirOf, pickLang } from '@/i18n/index.js';
 import { Icon } from '@/viewer/icons.jsx';
-import { sectionList, findItem, bodyWidth } from './store.js';
+import { sectionList, findItem, bodyWidth, nudgeStep } from './store.js';
 import { resolvePage } from '@/engine/units.js';
 import { readDraft, writeDraft, clearDraft, clearDrafts, mergeDraft, staleDraft } from './draft.js';
 
@@ -161,6 +162,7 @@ function StatusBar({ T, zoom, setZoom }) {
         <button type="button" className="btn sm icon ghost" title={T('zoomIn')} aria-label={T('zoomIn')} onClick={() => step(1)} disabled={zoom !== 'fit' && zoom >= ZOOMS[ZOOMS.length - 1]}><Icon name="zoomIn" /></button>
       </span>
       <span className="dstatus-sel" data-testid="status-selection"><i aria-hidden="true" />{what}</span>
+      <span className="hint dstatus-hint" title={T('canvasHint')}>{T('canvasHint')}</span>
       <span className="dstatus-page">{page}</span>
     </div>
   );
@@ -293,7 +295,7 @@ function isTyping(e) {
 
 const SHORTCUTS = [
   ['⌘/Ctrl S', 'sc_save'], ['⌘/Ctrl Z', 'sc_undo'], ['⇧⌘/Ctrl Z, ⌘/Ctrl Y', 'sc_redo'], ['⌘/Ctrl C / V', 'sc_copy'],
-  ['⌘/Ctrl D', 'sc_duplicate'], ['Delete / Backspace', 'sc_delete'], ['← ↑ → ↓', 'sc_nudge'], ['⇧ ← ↑ → ↓', 'sc_nudge4'],
+  ['⌘/Ctrl D', 'sc_duplicate'], ['Delete / Backspace', 'sc_delete'], ['← ↑ → ↓', 'c132_nudge1'], ['⇧ ← ↑ → ↓', 'c132_nudge10'],
   ['⇧ Click', 'sc_toggle'], ['Drag', 'sc_marquee'], ['Alt + Drag', 'sc_guides'],
   ['Esc', 'sc_clear'], ['?', 'sc_help'],
 ];
@@ -333,9 +335,11 @@ function HistoryDialog({ id, onClose, T, lang }) {
  *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: object[], server?: string } }} props
  *   embed: set by mountDesigner (another site); none on ReportWright's own pages
  */
-export default function Designer({ store: storeIn = null, ...props }) {
+export default function Designer({ store: storeIn = null, allowHosts = null, ...props }) {
   // its own store (N17: two designers on a page shared one), active from its first render and on every event in it
-  const [store] = useState(() => { const s = storeIn || newDesignerStore(); activateStore(s); return s; });
+  // allowHosts: the app's designer page passes PW_INTERNAL_HOSTS, which designers' data may reach (as in server renders);
+  // the embedded designer sets its policy from mountDesigner's options instead
+  const [store] = useState(() => { if (allowHosts) setFetchPolicy({ allowHosts }); const s = storeIn || newDesignerStore(); activateStore(s); return s; });
   return <DesignerStore.Provider value={store}><DesignerIn {...props} /></DesignerStore.Provider>;
 }
 /** Events that may change a designer's state: each makes this designer's store the active one first (capture phase). */
@@ -363,7 +367,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
   // every report font, bundled and uploaded: the canvas draws text boxes as HTML in them (the browser only
   // downloads the ones it uses, e.g. Noto Sans Devanagari once there is Hindi on the page)
   const fonts = useDesigner(s => s.fonts);
-  const fontCss = useMemo(() => fontFaceCss(allFontKeys(), fontsBase().replace(/\/$/, '')), [fonts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fontCss = useMemo(() => fontFaceCss(allFontKeys().filter(k => !optionalMissing(k)), fontsBase().replace(/\/$/, '')), [fonts]); // eslint-disable-line react-hooks/exhaustive-deps
   // embedded: @font-face is ignored inside a shadow root, so the report fonts are declared on the host document
   useEffect(() => { if (embed) declareDocumentStyles('pw-designer-fonts', fontCss); }, [embed, fontCss]);
   useEffect(() => { customFonts().then(list => api.getState().setUi({ fonts: list })); }, []);
@@ -419,11 +423,11 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
       const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
       if (arrows[e.key] && st().sel.kind === 'items') {
         e.preventDefault();
-        const step = st().cells ? st().cellSize : e.shiftKey ? st().grid * 4 : 1; // cell mode: a cell at a time
+        const step = nudgeStep(st(), e.shiftKey);
         const [dx, dy] = arrows[e.key];
         const s = st();
         s.lastKey = null;
-        moveItems(s.sel.ids, dx * step, dy * step);
+        moveItems(s.sel.ids, dx * step, dy * step, { nudge: true });
       }
     };
     const onLeave = (e) => { if (!st().saved) { e.preventDefault(); e.returnValue = ''; } };
@@ -546,7 +550,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
       {pivotWizard && <PivotWizard />}
       {instantVisuals && <InstantVisuals />}
       {tab === 'preview' ? (
-        <main className="dpreview"><ReportViewer definition={def} reportId={id} compact lang={lang} /></main>
+        <main className="dpreview"><ReportViewer definition={def} reportId={id} compact lang={lang} showWarnings /></main>
       ) : (
         <div className="dmain" data-left={hasLeft && showLeft ? 'open' : 'closed'} data-right={hasRight && showRight ? 'open' : 'closed'}
           style={{ gridTemplateColumns: `${hasLeft && showLeft ? 'var(--left-w)' : '0px'} minmax(0, 1fr) ${hasRight && showRight ? 'var(--right-w)' : '0px'}` }}>
@@ -567,7 +571,6 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
               </label>
               <AlignBar T={T} />
               <IssuesButton T={T} />
-              <span className="hint cbar-hint">{T('canvasHint')}</span>
             </div>
             <Canvas />
             <StatusBar T={T} zoom={zoom} setZoom={(z) => { st().setUi({ zoom: z }); keepZoom(z); }} />

@@ -42,7 +42,8 @@ describe('N43: standard-font metrics without @pdf-lib/standard-fonts', () => {
   it('a PDF in all 14 standard fonts is byte-identical to 0.13.0 (layout and /Widths)', async () => {
     const fonts = new FontStore(() => { throw new Error('no font file for a standard-font report'); });
     const model = await render(def, { fontStore: fonts });
-    const pdf = await exportPdf(model, { fonts, creationDate: new Date('2026-01-01T00:00:00Z') });
+    // the hash is the 0.13.0 writer's file: pdfWriter 'legacy' (scripts/writer-parity.mjs holds the default writer's pages to it)
+    const pdf = await exportPdf(model, { fonts, creationDate: new Date('2026-01-01T00:00:00Z'), pdfWriter: 'legacy' });
     expect(contentHash(pdf)).toBe(HASH);
   });
   it('the generated table is up to date, and nothing in src or the builds imports @pdf-lib/standard-fonts', () => {

@@ -58,7 +58,10 @@ function scriptOf(cp) {
   return s;
 }
 const INTL = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function';
-const GRAPHEMES = INTL ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+// made on first use: the first Intl.Segmenter starts ICU's break iterators (about 10 ms of every cold start)
+/** @type {Intl.Segmenter|null|undefined} */ let graphemeSeg;
+/** @type {Intl.Segmenter|null|undefined} */ let wordSeg;
+const GRAPHEMES = () => (graphemeSeg === undefined ? (graphemeSeg = INTL ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null) : graphemeSeg);
 const JOINS = /[\p{M}\u200c\u200d\ufe00-\ufe0f]/u;
 /**
  * Grapheme clusters: where a too-long word may break. Intl.Segmenter when there is one; else code points with
@@ -66,7 +69,8 @@ const JOINS = /[\p{M}\u200c\u200d\ufe00-\ufe0f]/u;
  * @param {string} s @param {boolean} [intl] false: the fallback (tests)
  */
 export function clusters(s, intl = true) {
-  if (intl && GRAPHEMES) return [...GRAPHEMES.segment(s)].map(x => x.segment);
+  const seg = intl ? GRAPHEMES() : null;
+  if (seg) return [...seg.segment(s)].map(x => x.segment);
   /** @type {string[]} */
   const out = [];
   for (const ch of s) {
@@ -79,7 +83,7 @@ const graphemes = (/** @type {string} */ s) => clusters(s);
 
 /** Scripts written without spaces between words (UAX #14 class SA): Thai, Lao, Myanmar, Khmer, Tai Tham, Tai Viet. */
 const SA = /[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u19e0-\u19ff\u1a20-\u1aaf\ua9e0-\ua9ff\uaa60-\uaadf]/;
-const WORDS = INTL ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null;
+const WORDS = () => (wordSeg === undefined ? (wordSeg = INTL ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null) : wordSeg);
 /**
  * Where a line may break inside text written without spaces: the word boundaries ICU's dictionaries find
  * (Node and browsers ship them for Thai, Lao, Khmer and Myanmar), as UTF-16 indices next to an SA character.
@@ -88,7 +92,7 @@ const WORDS = INTL ? new Intl.Segmenter(undefined, { granularity: 'word' }) : nu
  * @param {string} text @param {Intl.Segmenter|null} [segmenter]
  * @returns {Set<number>}
  */
-export function saBreaks(text, segmenter = WORDS) {
+export function saBreaks(text, segmenter = WORDS()) {
   const out = new Set();
   if (!segmenter) return out;
   for (const { index } of segmenter.segment(text)) {
@@ -153,18 +157,39 @@ export class TextMeasurer {
     let f = this.faces.get(key);
     if (!f) {
       const font = this.store.get(key);
-      f = { font, upm: font.unitsPerEm, ascent: font.ascent, descent: font.descent, adv: new Map(), words: new Map(), met: new Map() };
+      f = { font, upm: font.unitsPerEm, ascent: font.ascent, descent: font.descent, adv: new Map(), words: new Map(), met: new Map(), lat: new Float64Array(256).fill(NaN) };
       this.faces.set(key, f);
     }
     return f;
   }
 
+  /** A code point's advance in font units, or -1 when it is not on the fast path. @param {any} f a face @param {number} cp */
+  advance(f, cp) {
+    let a = f.adv.get(cp);
+    if (a === undefined) {
+      a = special(cp) || (cp >= 0x20 && !f.font.hasGlyphForCodePoint(cp)) ? -1 : f.font.glyphForCodePoint(cp).advanceWidth || 0;
+      f.adv.set(cp, a);
+    }
+    return a;
+  }
+
   /** Font units of `text` on the fast path, or -1 when it needs the complex path. */
   fast(text, key) {
     const f = this.face(key);
+    // Latin-1 text: summed from a table, no string cache (a column of unique values would only fill it)
+    const lat = f.lat;
+    let sum = 0, i = 0;
+    for (; i < text.length; i++) {
+      const c = text.charCodeAt(i);
+      if (c > 255) break;
+      let a = lat[c];
+      if (a !== a) lat[c] = a = this.advance(f, c);
+      if (a < 0) return -1;
+      sum += a;
+    }
+    if (i === text.length) return sum;
     const hit = f.words.get(text);
     if (hit !== undefined) return hit;
-    const m = f.adv, font = f.font;
     let units = 0;
     for (let i = 0; i < text.length; i++) {
       let cp = text.charCodeAt(i);
@@ -172,11 +197,7 @@ export class TextMeasurer {
         const lo = text.charCodeAt(i + 1);
         if (lo >= 0xdc00 && lo <= 0xdfff) { cp = (cp - 0xd800) * 0x400 + lo - 0xdc00 + 0x10000; i++; }
       }
-      let a = m.get(cp);
-      if (a === undefined) {
-        a = special(cp) || (cp >= 0x20 && !font.hasGlyphForCodePoint(cp)) ? -1 : font.glyphForCodePoint(cp).advanceWidth || 0;
-        m.set(cp, a);
-      }
+      const a = this.advance(f, cp);
       if (a < 0) { units = -1; break; }
       units += a;
     }

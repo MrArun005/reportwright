@@ -21,7 +21,7 @@ assert.ok(tpl.some(t => t.id === 'loan-statement' && t.parameters.some(p => p.na
 step('render: pull data');
 let r = await post('/api/v1/render', { template: 'loan-statement', format: 'pdf', parameters: { accountId: 'LN-2025-001982' } });
 assert.equal(r.status, 200);
-assert.equal(r.headers.get('x-pagewright-pages'), '2');
+assert.equal(r.headers.get('x-reportwright-pages'), '2');
 assert.match(pdfText(await r.arrayBuffer()), /Arjun Mehta/);
 
 step('render: push data');
@@ -38,7 +38,7 @@ for (const [format, type] of [['xlsx', 'spreadsheetml'], ['html', 'text/html'], 
 }
 r = await post('/api/v1/render', { template: 'no-such' });
 assert.equal(r.status, 404);
-r = await post('/api/v1/render', { template: { $schema: 'pagewright/report@1', name: 'Inline', parameters: [{ name: 'p', required: true }], sections: { body: { items: [] } } } });
+r = await post('/api/v1/render', { template: { $schema: 'reportwright/report@1', name: 'Inline', parameters: [{ name: 'p', required: true }], sections: { body: { items: [] } } } });
 assert.equal(r.status, 400);
 assert.deepEqual((await r.json()).missingParameters, ['p']);
 
@@ -48,7 +48,7 @@ assert.equal((await get('/api/v1/templates', { authorization: 'Bearer wrong' }))
 
 step('batch: zip + signed webhook');
 let hook = null;
-const srv = http.createServer((req, res) => { let b = ''; req.on('data', c => (b += c)); req.on('end', () => { hook = { body: b, sig: req.headers['x-pagewright-signature'] }; res.end('ok'); }); }).listen(4100);
+const srv = http.createServer((req, res) => { let b = ''; req.on('data', c => (b += c)); req.on('end', () => { hook = { body: b, sig: req.headers['x-reportwright-signature'] }; res.end('ok'); }); }).listen(4100);
 r = await post('/api/v1/batches', { template: 'loan-statement', fileName: 'statement-{Parameters.accountId}', webhook: 'http://127.0.0.1:4100/hook',
   items: [{ parameters: { accountId: 'LN-2026-004417' } }, { parameters: { accountId: 'LN-2025-001982' } }, { parameters: { accountId: 'NOPE' } }] });
 assert.equal(r.status, 202);

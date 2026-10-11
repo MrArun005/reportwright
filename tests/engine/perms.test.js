@@ -102,7 +102,7 @@ afterAll(() => {
 });
 
 const def = (name, body = [{ type: 'textbox', x: 0, y: 0, w: 200, h: 16, value: name }]) => ({
-  $schema: 'pagewright/report@1', name, page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name, page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'db', type: 'sql', connection: 'permsdb', query: 'select 1 as n' }], dataSets: [],
   sections: { body: { items: body } },
 });
@@ -616,7 +616,9 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     const run = async (p) => {
       const job = await createBatch({ template: 'overview', items: [{ name: 'invoice-1001', parameters: {} }], output: { type: 'folder', folder: 'payroll-slips' }, format: 'csv' }, undefined, p);
       await workOnce('test-runner');
-      return (await getJob(job.id, svc)).folder;
+      const done = await getJob(job.id, svc);
+      expect(done.status, `${done.status}: ${JSON.stringify(done.errors)}`).toBe('completed'); // the reason, when it is not
+      return done.folder;
     };
     const shared = await run(svc);
     const bobs = await run({ ...(await perms.userPrincipal('bob@x.io')), viaKey: keyId('bob-key') });
@@ -683,7 +685,8 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     const again = await json(await v1.schedules.POST(req('/api/v1/schedules', { key: 'carol-key', method: 'POST', body: { template: 'salary', cron: '0 7 * * *', items: [{ parameters: {} }], output: { type: 'none' } } })));
     const run = await runSchedule(await getSchedule(again.body.id, { kind: 'service' }));
     await workOnce('test-runner');
-    expect(await getJob(run.id, { kind: 'service' })).toMatchObject({ status: 'completed' });
+    const ran = await getJob(run.id, { kind: 'service' });
+    expect(ran, JSON.stringify(ran.errors)).toMatchObject({ status: 'completed' });
   });
 
   it('review: schedules: owner from the server, other users\' schedules hidden, targets checked, runs as the owner now', async () => {

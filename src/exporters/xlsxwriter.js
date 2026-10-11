@@ -5,7 +5,7 @@
  * written to XML as it is added, so a sheet costs its XML text, not an object per cell (ExcelJS kept ~20 KB a row).
  * Replaces ExcelJS (and its deprecated dependency tree) in the engine.
  */
-import { zipSync, strToU8 } from 'fflate';
+import { zipSync, strToU8 } from '@reportwright/pdf/fflate';
 import { esc } from './xlsxchart.js';
 
 /** Excel's column letters for a 1-based column. */

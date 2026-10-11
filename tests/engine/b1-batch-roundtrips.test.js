@@ -12,7 +12,7 @@ it('a batch item costs few storage round trips', async () => {
   const { writeReport } = await import('../../src/server/reports.js');
   const counts = {}; const LAT = 10;
   for (const [name, o] of [['store', store()], ['blobs', blobs()]]) for (const k of Object.keys(o)) if (typeof o[k] === 'function') { const f = o[k]; o[k] = async (...a) => { const c = `${name}.${k}:${typeof a[0] === 'string' ? a[0].split(/[/:]/)[0] : ''}`; counts[c] = (counts[c] || 0) + 1; await new Promise(r => setTimeout(r, LAT)); return f.apply(o, a); }; }
-  const def = { $schema: 'pagewright/report@1', name: 'B', page: { size: 'A4', margins: [36, 36, 36, 36] }, parameters: [{ name: 'n', type: 'string' }], dataSources: [{ name: 's', type: 'json', data: [{ a: 1 }] }], dataSets: [{ name: 'd', source: 's', fields: [{ name: 'a', type: 'number' }] }],
+  const def = { $schema: 'reportwright/report@1', name: 'B', page: { size: 'A4', margins: [36, 36, 36, 36] }, parameters: [{ name: 'n', type: 'string' }], dataSources: [{ name: 's', type: 'json', data: [{ a: 1 }] }], dataSets: [{ name: 'd', source: 's', fields: [{ name: 'a', type: 'number' }] }],
     sections: { body: { items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 16, value: 'Item {Parameters.n}' }] } } };
   const N = 40;
   await writeReport('bench', def); // a saved template: each item's access check read it again

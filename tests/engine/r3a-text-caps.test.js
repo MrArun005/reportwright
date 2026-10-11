@@ -6,7 +6,7 @@ import { fontStore } from '../helpers.js';
 
 const one = async (value) => {
   const t0 = performance.now();
-  const m = await render({ $schema: 'pagewright/report@1', page: { size: 'A4' }, sections: { body: { height: 40, items: [
+  const m = await render({ $schema: 'reportwright/report@1', page: { size: 'A4' }, sections: { body: { height: 40, items: [
     { type: 'textbox', name: 'T', x: 0, y: 0, w: 300, h: 12, value }] } } }, { fontStore });
   return { text: m.pages[0].items.flatMap(i => i.lines || []).map(l => l.text).join(''), warnings: m.warnings.join(' '), ms: performance.now() - t0 };
 };

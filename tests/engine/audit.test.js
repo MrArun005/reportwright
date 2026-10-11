@@ -121,7 +121,7 @@ describe('what the routes record', () => {
     const h = { cookie };
     const { id } = await (await list.POST(rq('/api/reports', { method: 'POST', body: { name: 'Audited' }, headers: h }))).json();
     expect(await last('report.create')).toMatchObject({ actor: 'user:boss@x.io', report: id });
-    await one.PUT(rq(`/api/reports/${id}`, { method: 'PUT', body: { $schema: 'pagewright/report@1', name: 'Audited 2', sections: { body: { items: [] } } }, headers: { ...h, 'if-match': '*' } }), P(id));
+    await one.PUT(rq(`/api/reports/${id}`, { method: 'PUT', body: { $schema: 'reportwright/report@1', name: 'Audited 2', sections: { body: { items: [] } } }, headers: { ...h, 'if-match': '*' } }), P(id));
     expect(await last('report.update')).toMatchObject({ report: id });
     await access.PUT(rq(`/api/reports/${id}/access`, { method: 'PUT', body: { grants: [{ to: 'user:ann@x.io', level: 'edit' }] }, headers: h }), P(id));
     const share = await last('access.report');
@@ -171,7 +171,7 @@ describe('what the routes record', () => {
     expect((await ok.text()).split('\r\n')[0]).toBe('at,type,status,actor,ip,report,format,params,detail');
     const exp = (await import('../../app/api/audit/export/route.js')).POST;
     const { writeReport } = await import('../../src/server/reports.js');
-    await writeReport('exp-r', { $schema: 'pagewright/report@1', name: 'E', sections: { body: { items: [] } } });
+    await writeReport('exp-r', { $schema: 'reportwright/report@1', name: 'E', sections: { body: { items: [] } } });
     const { store: st } = await import('../../src/server/storage/index.js');
     await st().put('reportacl', 'exp-r', JSON.stringify({ id: 'exp-r', folder: null, inherit: true, grants: [{ to: 'user:ann@x.io', level: 'view' }] })); // viewers see what a grant gives them
     expect((await exp(rq('/api/audit/export', { method: 'POST', body: { report: 'exp-r', format: 'xlsx' }, headers: { cookie: annCookie } }))).status).toBe(200);
@@ -186,7 +186,7 @@ describe('what the routes record', () => {
   it('schedule runs, and failures to run, as the owner', async () => {
     const { createSchedule, runSchedule } = await import('../../src/server/schedules.js');
     const { writeReport } = await import('../../src/server/reports.js');
-    await writeReport('sched-r', { $schema: 'pagewright/report@1', name: 'S', sections: { body: { items: [] } } });
+    await writeReport('sched-r', { $schema: 'reportwright/report@1', name: 'S', sections: { body: { items: [] } } });
     const ok = await createSchedule({ template: 'sched-r', cron: '0 7 * * *', items: [{ parameters: {} }], output: { type: 'none' }, itemsFrom: undefined }, { kind: 'service' });
     await runSchedule(ok, 'manual');
     expect(await last('schedule.run')).toMatchObject({ report: 'sched-r', status: 'ok', detail: { schedule: ok.id, reason: 'manual' } });

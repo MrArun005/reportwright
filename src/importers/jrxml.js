@@ -16,7 +16,7 @@
  * Pure JavaScript, no Node APIs and no DOM. It never throws: whatever it cannot map becomes a warning.
  */
 import { parseXml, XmlError } from './xml.js';
-import { importRdlx, translateExpression, ImportBudgetError, OUTPUT_LIMITS, reportId, safeName } from './rdlx.js';
+import { importRdlx, translateExpression, ImportBudgetError, OUTPUT_LIMITS, reportId, safeName, rewordItems } from './rdlx.js';
 import { javaToVb, javaPattern, halfEvenDigits, kindOf, integral, Untranslatable } from './java.js';
 
 const MAX_EXPR = 20_000;
@@ -27,8 +27,9 @@ const DETAILS = 'Details'; // the banded list: the scope of report totals
 /**
  * Convert a JasperReports design.
  * @param {string} input the .jrxml text
- * @param {{ name?: string }} [opts]
- * @returns {{ definition: any, warnings: string[], stats: { items: number, mapped: number, approximated: number, dropped: number }, error?: string }}
+ * @param {{ name?: string, resolve?: (kind: 'template', ref: string) => string | null | undefined }} [opts]
+ *   resolve: the text of a style template (.jrtx) a <template> names, when the caller has it (pw import <folder>)
+ * @returns {{ definition: any, warnings: string[], stats: { items: number, mapped: number, approximated: number, dropped: number }, items: import('./rdlx.js').ImportedItem[], error?: string }}
  */
 export function importJrxml(input, opts = {}) {
   const name = opts.name || 'Imported JasperReports report';
@@ -48,7 +49,7 @@ export function importJrxml(input, opts = {}) {
   /** @type {Map<string, any>} chart placeholders → ReportWright charts */
   const charts = new Map();
   let ar;
-  try { ar = toRdlx(root, notes, charts, opts.name || root.attrs.name); } catch (e) {
+  try { ar = toRdlx(root, notes, charts, opts.name || root.attrs.name, opts.resolve); } catch (e) {
     if (e instanceof ImportBudgetError) {
       const error = `The report is too large to import: ${e.message}`;
       return { ...importRdlx({}, { name }), warnings: [`${error}.`], error };
@@ -67,7 +68,7 @@ export function importJrxml(input, opts = {}) {
   r.definition.arithmetic = 'double'; // Java computes with IEEE doubles: 1.005 * 100 is 100.49999999999999
   placeCharts(r.definition, charts);
   const warnings = [...notes, ...r.warnings].map(w => w.replace(/ActiveReports/g, 'JasperReports'));
-  return { definition: r.definition, warnings: [...new Set(warnings)], stats: r.stats };
+  return { definition: r.definition, warnings: [...new Set(warnings)], stats: r.stats, items: rewordItems(r.items, w => w.replace(/ActiveReports/g, 'JasperReports')) };
 }
 
 /**
@@ -82,15 +83,16 @@ export function stripJasperDoctype(s) {
   if (e < 0) return s;
   const decl = s.slice(i, e + 1);
   if (decl.includes('[') || !/^<!DOCTYPE\s+jasperReport\s/.test(decl)) return s;
-  return s.slice(0, i) + s.slice(e + 1);
+  return s.slice(0, i) + decl.replace(/[^\n]/g, ' ') + s.slice(e + 1); // blanked, not cut: positions (line, column) stay the file's
 }
 
 /* ================================================================ the design → RDLX-JSON */
 
 /**
  * @param {import('./xml.js').XmlElement} root @param {string[]} notes @param {Map<string, any>} charts @param {string} reportName
+ * @param {((kind: 'template', ref: string) => string | null | undefined)} [resolve]
  */
-function toRdlx(root, notes, charts, reportName) {
+function toRdlx(root, notes, charts, reportName, resolve) {
   const kid = (e, n) => e?.children.find(c => c.name === n);
   const kids = (e, n) => (e ? e.children.filter(c => n == null || c.name === n) : []);
   const txt = (e, n) => { const c = kid(e, n); return c ? c.text : undefined; };
@@ -249,6 +251,7 @@ function toRdlx(root, notes, charts, reportName) {
     if (lit && !/\\u|\$\{/.test(lit[1])) { const t = lit[1].replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\(.)/g, '$1'); return t.startsWith('=') ? `="${t.replace(/"/g, '""')}"` : t; }
     try { const v = vbT(s, c); item.__kind = v; return '=' + v.s; } catch (e) {
       if (!(e instanceof Untranslatable)) throw e;
+      (item.__exprs ||= []).push(s);
       (item.__notes ||= []).push(`${e.message} has no ReportWright equivalent, so the expression ${s.length > 200 ? s.slice(0, 200) + '…' : s} is shown as text.`);
       return s.startsWith('=') ? `="${s.replace(/"/g, '""')}"` : s;
     }
@@ -257,6 +260,7 @@ function toRdlx(root, notes, charts, reportName) {
   function setting(src, item, what, c = {}) {
     try { return '=' + vb(String(src).trim(), c); } catch (e) {
       if (!(e instanceof Untranslatable)) throw e;
+      (item.__exprs ||= []).push(String(src).trim());
       (item.__notes ||= []).push(`${what} uses ${e.message}, which has no ReportWright equivalent, so it is left out.`);
       return undefined;
     }
@@ -265,7 +269,27 @@ function toRdlx(root, notes, charts, reportName) {
   /* ---------------------------------------------------------------- styles */
 
   const styles = new Map(kids(root, 'style').map(s => [s.attrs.name, s]));
-  const defStyle = kids(root, 'style').find(s => s.attrs.isDefault === 'true' || s.attrs.default === 'true');
+  // style templates (.jrtx): their styles, under the report's own (the report's style of the same name wins), nested ones too
+  const seenTemplates = new Set();
+  (function templates(el, depth) {
+    for (const t of kids(el, 'template')) {
+      const src = (kid(t, 'expression')?.text ?? t.text).trim();
+      const lit = /^"([^"]+)"$/.exec(src);
+      const ref = lit ? lit[1] : depth > 0 && !/["$(){}+]/.test(src) ? src : null; // a .jrtx names its templates as plain text
+      if (!ref) { if (src) note(`A style template is chosen by an expression (${src.slice(0, 120)}), so its styles are missing.`); continue; }
+      if (seenTemplates.has(ref) || seenTemplates.size >= 32) continue;
+      seenTemplates.add(ref);
+      let text;
+      try { text = resolve?.('template', ref); } catch { text = null; }
+      if (typeof text !== 'string') { note(`The style template "${ref}" is not in the file, so items that use its styles have the default style.`); continue; }
+      let doc;
+      try { doc = parseXml(text); } catch (e) { note(`The style template "${ref}" could not be read (${e instanceof Error ? e.message : e}), so its styles are missing.`); continue; }
+      if (doc.name !== 'jasperTemplate') { note(`The style template "${ref}" is not a JasperReports template (its root is <${doc.name}>), so its styles are missing.`); continue; }
+      for (const s of kids(doc, 'style')) if (s.attrs.name && !styles.has(s.attrs.name)) styles.set(s.attrs.name, s);
+      if (depth < 8) templates(doc, depth + 1);
+    }
+  })(root, 0);
+  const defStyle = [...styles.values()].find(s => s.attrs.isDefault === 'true' || s.attrs.default === 'true'); // the report's own first, then its templates'
   /** normalised attributes of a style element (JR6 isBold… and JR7 bold… both read), parents first */
   function styleAttrs(name, seen = 0) {
     const s = styles.get(name);
@@ -413,7 +437,7 @@ function toRdlx(root, notes, charts, reportName) {
   /** @param {any} n @param {any} c */
   function item(n, c) {
     const a = n.a, re = n.re, e = n.el;
-    const base = { Name: nameFor(n, n.kind), Left: pt(a.x), Top: pt(a.y), Width: pt(a.width), Height: pt(a.height) };
+    const base = { __pos: e.pos, Name: nameFor(n, n.kind), Left: pt(a.x), Top: pt(a.y), Width: pt(a.width), Height: pt(a.height) };
     /** @type {Record<string, any>} */
     const it = { ...base };
     const st = { ...(defStyle ? styleAttrs(defStyle.attrs.name) : {}), ...(a.style ? styleAttrs(a.style) : {}), ...stripUndef(normAttrs(re.attrs === e.attrs ? e.attrs : { ...re.attrs, ...e.attrs, ...(n.te?.attrs || {}), ...(kid(n.te, 'font')?.attrs || {}) })), ...boxAttrs(kid(e, 'box')) };

@@ -153,8 +153,9 @@ export function sqlStore(url) {
     async ids(k) { return (await q(`SELECT id FROM ${table(k)} ORDER BY id`)).map(r => String(r.id)); },
     /** Ids that start with prefix (an index range, not a scan of the kind). */
     async idsFrom(k, prefix) {
-      const like = `${String(prefix).replace(/[\\%_[]/g, (c) => `\\${c}`)}%`;
-      return (await q(`SELECT id FROM ${table(k)} WHERE id LIKE ? ESCAPE '\\' ORDER BY id`, [like])).map(r => String(r.id)).filter(id => id.startsWith(prefix));
+      // '!' escapes: a backslash is itself an escape inside a MySQL string literal (ESCAPE '\\' there is a syntax error)
+      const like = `${String(prefix).replace(/[!%_[]/g, (c) => `!${c}`)}%`;
+      return (await q(`SELECT id FROM ${table(k)} WHERE id LIKE ? ESCAPE '!' ORDER BY id`, [like])).map(r => String(r.id)).filter(id => id.startsWith(prefix));
     },
     async list(k) { return (await q(`SELECT id, data, updated_at FROM ${table(k)} ORDER BY id`)).map(r => ({ id: String(r.id), text: String(r.data), updatedAt: String(r.updated_at) })); },
 

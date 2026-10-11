@@ -22,7 +22,7 @@ const SALES = { name: 'Sales', source: 'src', path: '$.rows[*]', fields: [
   { name: 'id', type: 'number' }, { name: 'region', type: 'string' }, { name: 'city', type: 'string' }, { name: 'year', type: 'number' },
   { name: 'month', type: 'number' }, { name: 'amount', type: 'number' }, { name: 'qty', type: 'number' }] };
 const base = (name, items = [], extra = {}) => ({
-  $schema: 'pagewright/report@1', name, page: { size: 'A4', orientation: 'portrait', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name, page: { size: 'A4', orientation: 'portrait', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: { rows, regions: [{ name: 'North' }, { name: 'South' }, { name: 'East' }] } }],
   dataSets: [SALES, { name: 'Regions', source: 'src', path: '$.regions[*]', fields: [{ name: 'name', type: 'string' }] }],
   sections: { body: { height: 400, items } },

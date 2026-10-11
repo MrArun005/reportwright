@@ -17,7 +17,7 @@ const kpis = [
 const num = { textAlign: 'right', format: 'N2' };
 
 const def = {
-  $schema: 'pagewright/report@1',
+  $schema: 'reportwright/report@1',
   name: 'Loan statement',
   locale: 'en-IN', currency: 'INR',
   page: { size: 'A4', orientation: 'portrait', margins: [36, 36, 30, 36] },

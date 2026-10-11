@@ -1,6 +1,6 @@
 // Phase 7: the npm packages build, the framework wrappers keep the framework and the viewer external,
 // and the published types type-check a consumer (tests/fixtures/types/consumer.ts, with @ts-expect-error lines).
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,6 +22,32 @@ describe('npm packages', () => {
     expect(pkg.dependencies).toBeUndefined();
     expect(Object.keys(pkg.peerDependencies)).toEqual(expect.arrayContaining(['@reportwright/viewer', ...frameworks]));
     expect(fs.existsSync(path.join(root, `packages/${name}`, pkg.types))).toBe(true);
+  });
+
+  it('E10: every file a dist bundle names with new URL(\'./x\', import.meta.url) ships next to it (webpack and Next.js resolve them)', () => {
+    for (const pk of ['engine', 'cli', 'viewer']) {
+      const dir = path.join(root, 'packages', pk, 'dist');
+      for (const f of fs.readdirSync(dir, { recursive: true }).filter(f => /\.m?js$/.test(f))) {
+        const src = fs.readFileSync(path.join(dir, f), 'utf8');
+        for (const m of src.matchAll(/new URL\(\s*["'](\.\/[^"']+)["']\s*,\s*import\.meta\.url\s*\)/g)) {
+          expect(fs.existsSync(path.join(dir, path.dirname(f), m[1])), `${pk}/dist/${f} -> ${m[1]}`).toBe(true);
+        }
+      }
+      expect(json(`packages/${pk}/package.json`).files).toContain('dist');
+    }
+  });
+
+  it('R12: import \'@reportwright/fonts\' works and names its files; the subpath exports still resolve', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rw-fonts-root-'));
+    try {
+      fs.mkdirSync(path.join(tmp, 'node_modules/@reportwright'), { recursive: true });
+      fs.symlinkSync(path.join(root, 'packages/fonts'), path.join(tmp, 'node_modules/@reportwright/fonts'));
+      const out = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `
+        import * as f from '@reportwright/fonts'; import fs from 'node:fs'; import { fileURLToPath } from 'node:url';
+        const sub = import.meta.resolve('@reportwright/fonts/public/harfbuzz-subset.wasm');
+        console.log(JSON.stringify({ keys: Object.keys(f).sort(), ok: [f.fontsUrl + 'Inter-Regular.ttf', f.subsetWasmUrl, f.iccUrl, sub].map(u => fs.existsSync(fileURLToPath(u))) }));`], { cwd: tmp, encoding: 'utf8' }));
+      expect(out).toEqual({ keys: ['fontsUrl', 'iccUrl', 'subsetWasmUrl'], ok: [true, true, true, true] });
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
   });
 
   it('the viewer package has the designer entry and generated types; the engine has its API and report types', () => {
@@ -126,7 +152,7 @@ describe('npm packages', () => {
     expect(p.files).toContain('CHANGELOG.md');
     expect(fs.existsSync(path.join(root, `packages/${name}/CHANGELOG.md`))).toBe(true);
     expect(fs.readFileSync(path.join(root, `packages/${name}/README.md`), 'utf8')).toMatch(/socket\.dev\/api\/badge/);
-    for (const v of Object.values(p.dependencies || {})) expect(v).toMatch(/^\d+\.\d+\.\d+$|^0\.\d+\.\d+$/); // pinned
+    for (const v of Object.values(p.dependencies || {})) expect(v).toMatch(/^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/); // pinned
   });
 
   it('the viewer\'s first load is under 860 KB gzipped (other languages, exporters, PDF and barcodes load on demand)', async () => {
@@ -144,7 +170,7 @@ describe('npm packages', () => {
   it('every package ships readable code (not minified); all but the engine also ship source maps', () => {
     // the engine ships its readable bundle without a map: the map was ~0.8 MB and pushed the package past its 2 MB mark
     const MAPLESS = new Set(['engine/dist/index.js']);
-    for (const f of ['engine/dist/index.js', 'cli/dist/pw.mjs', 'viewer/dist/viewer.js', 'viewer/dist/designer.js', 'viewer/dist/peer/viewer.js']) {
+    for (const f of ['engine/dist/index.js', 'cli/dist/cli.mjs', 'viewer/dist/viewer.js', 'viewer/dist/designer.js', 'viewer/dist/peer/viewer.js']) {
       const src = fs.readFileSync(path.join(root, 'packages', f), 'utf8');
       const lines = src.split('\n');
       expect(src.length / lines.length, f).toBeLessThan(120); // minified code is a few very long lines
@@ -154,8 +180,8 @@ describe('npm packages', () => {
     }
   });
 
-  it('the viewer imports pdf-lib, fontkit, bwip-js, fflate and bidi-js (pinned dependencies) instead of bundling their data blobs', () => {
-    const LIBS = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js'];
+  it('the viewer imports fontkit, bwip-js, bidi-js and @reportwright/pdf (and its fflate) (pinned dependencies) instead of bundling them, and has no pdf-lib', () => {
+    const LIBS = ['@pdf-lib/fontkit', 'bwip-js', 'bidi-js', '@reportwright/pdf'];
     const v = json('packages/viewer/package.json');
     expect(Object.keys(v.dependencies).sort()).toEqual([...LIBS].sort());
     for (const n of LIBS) expect(v.dependencies[n]).toBe(json(`node_modules/${n}/package.json`).version);
@@ -169,11 +195,16 @@ describe('npm packages', () => {
     const all = files.map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
     expect(all).not.toMatch(/code49_patterns|dictionary_bin|Helvetica\w*_compressed/);
     for (const n of LIBS) expect(all).toMatch(new RegExp(`(from |import\\()"${n.replace('/', '\\/')}"`));
+    // pdf-lib (B4): neither imported by name nor bundled (only pdfWriter 'legacy' loads it, by a specifier bundlers leave alone)
+    expect(all).not.toMatch(/(from |import\()"pdf-lib"|node_modules\/pdf-lib\//);
+    // one fflate: @reportwright/pdf's, imported by name, never bundled or imported on its own
+    expect(all).toMatch(/(from |import\()"@reportwright\/pdf\/fflate"/);
+    expect(all).not.toMatch(/(from |import\()"fflate"|node_modules\/fflate\//);
     for (const f of files) for (const l of fs.readFileSync(path.join(dir, f), 'utf8').split('\n')) expect(l.length, f).toBeLessThanOrEqual(1000);
   });
 
   it('the CLI is render, test, diff and import only: no server modules, no shell access, only its own PW_* options', () => {
-    const src = fs.readFileSync(path.join(root, 'packages/cli/dist/pw.mjs'), 'utf8');
+    const src = fs.readFileSync(path.join(root, 'packages/cli/dist/cli.mjs'), 'utf8');
     expect(src).not.toMatch(/^\/\/ src\/server\//m); // esbuild marks every bundled file with its path
     expect(src).not.toMatch(/child_process/);
     const env = [...src.matchAll(/process\.env(?:\.(\w+)|\[\s*['"](\w+)['"]\s*\])?/g)].map(m => m[1] || m[2] || '(dynamic)');
@@ -184,7 +215,7 @@ describe('npm packages', () => {
     const src = (n) => fs.readFileSync(path.join(root, `packages/${n}/dist/index.js`), 'utf8');
     expect(src('react')).toMatch(/ReportWrightViewer as PagewrightViewer/);
     expect(src('vue')).toMatch(/ReportWrightViewer as PagewrightViewer/);
-    expect(src('svelte')).toMatch(/reportWrightViewer as pagewrightViewer/);
+    expect(src('svelte')).toMatch(/export const pagewrightViewer = .*reportWrightViewer\(node, options\)/);
     // the Angular elements: both tag names registered, each its own class
     const defined = new Map();
     globalThis.HTMLElement ??= class {};
@@ -192,12 +223,17 @@ describe('npm packages', () => {
     globalThis.customElements = { get: (t) => defined.get(t), define: (t, c) => { if ([...defined.values()].includes(c)) throw new Error('class reused'); defined.set(t, c); } };
     try {
       const m = await import(path.join(root, 'packages/angular/dist/index.js'));
-      expect(m.definePagewrightElements).toBe(m.defineReportWrightElements);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       m.definePagewrightElements();
+      m.definePagewrightElements();
+      expect(warn.mock.calls.flat().join(' ')).toMatch(/definePagewrightElements is deprecated, use defineReportWrightElements/);
+      expect(warn).toHaveBeenCalledTimes(1); // once per page
+      warn.mockRestore();
       expect([...defined.keys()].sort()).toEqual(['pagewright-designer', 'pagewright-viewer', 'reportwright-designer', 'reportwright-viewer']);
     } finally { globalThis.customElements = prev; }
     expect(json('packages/cli/package.json').bin).toEqual({ reportwright: 'dist/pw.mjs', pw: 'dist/pw.mjs' });
-    expect(Object.keys(json('packages/fonts-cjk/package.json').bin)).toEqual(['reportwright-fonts-cjk', 'pagewright-fonts-cjk']);
+    expect(Object.keys(json('packages/fonts-cjk/package.json').bin)).toEqual(['reportwright-fonts-cjk']);
+    expect(fs.existsSync(path.join(root, 'packages/fonts-cjk/src/index.d.ts'))).toBe(true);
     for (const n of ['engine', 'viewer', 'react']) expect(json(`packages/${n}/package.json`).repository.url).toBe('git+https://github.com/MrArun005/reportwright.git');
   });
 

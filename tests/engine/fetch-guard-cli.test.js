@@ -20,7 +20,7 @@ beforeAll(async () => {
   srv = await new Promise(r => { const s = http.createServer((q, a) => { a.setHeader('content-type', 'application/json'); a.end('[{"v":"hello from local"}]'); }); s.listen(0, '127.0.0.1', () => r(s)); });
   base = `http://127.0.0.1:${srv.address().port}`;
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-guard-'));
-  fs.writeFileSync(path.join(dir, 'r.pw.json'), JSON.stringify({ $schema: 'pagewright/report@1', name: 'R', page: { size: 'A4' },
+  fs.writeFileSync(path.join(dir, 'r.pw.json'), JSON.stringify({ $schema: 'reportwright/report@1', name: 'R', page: { size: 'A4' },
     dataSources: [{ name: 's', type: 'rest', url: '/rows' }], dataSets: [{ name: 'Rows', source: 's', path: '$' }],
     sections: { body: { items: [{ type: 'textbox', x: 0, y: 0, w: 300, h: 20, dataSet: 'Rows', value: '=First(Fields.v)' }] } } }));
 });

@@ -647,6 +647,18 @@ function PartPreview({ item, scale }) {
   return <div className="box live reuse-part" style={{ overflow: 'visible' }}><SvgHtml as="div" style={{ width: src.w * scale, height: svg.h * scale }} html={svg.html} />{tag}</div>;
 }
 
+/**
+ * A check box's tick as the engine draws it (items/index.js: true, 1, "true", "yes", "y", "1"; missing: unchecked),
+ * from the value as written: true, false, or null for an expression only the data decides (drawn dimmed).
+ */
+export function checkedOnCanvas(v) {
+  if (v == null || typeof v === 'boolean' || typeof v === 'number') return v === true || v === 1;
+  const s = String(v).trim();
+  if (!isDynamic(s)) return ['true', 'yes', 'y', '1'].includes(s.toLowerCase());
+  const lit = /^=\s*(true|false|1|0)\s*$/i.exec(s)?.[1]?.toLowerCase();
+  return lit ? lit === 'true' || lit === '1' : null;
+}
+
 function ItemBody({ item, scale }) {
   const base = useDesigner(s => s.def.styles?.base);
   const images = useDesigner(s => s.def.images);
@@ -713,9 +725,10 @@ function ItemBody({ item, scale }) {
   if (item.type === 'checkbox') {
     const c = textCss([base, item.style], scale, false);
     const size = Math.min(item.h, ((Number(item.style?.fontSize) || Number(base?.fontSize) || 9) + 2)) * scale;
+    const on = checkedOnCanvas(item.value);
     return (
       <div className="box" style={{ ...c.box, alignItems: 'center', gap: 4 * scale, padding: 0 }}>
-        <span style={{ width: size, height: size, border: '1px solid #1f2328', borderRadius: 2, flex: 'none', display: 'grid', placeItems: 'center', fontSize: size * 0.8 }}>✓</span>
+        <span data-checked={String(on)} style={{ width: size, height: size, border: '1px solid #1f2328', borderRadius: 2, flex: 'none', display: 'grid', placeItems: 'center', fontSize: size * 0.8, opacity: on == null ? 0.4 : 1 }}>{on !== false ? '✓' : ''}</span>
         <div className={`tx${isDynamic(item.text) ? ' dyn' : ''}`} style={c.text}>{shown(item.text)}</div>
       </div>
     );

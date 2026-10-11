@@ -78,7 +78,7 @@ async function snapshotData(def, params, model, reports) {
 
 /**
  * @param {any} def report definition
- * @param {{ params?: Record<string,string>, reportId?: string, lang?: string, model?: any }} opt
+ * @param {{ params?: Record<string,string>, reportId?: string, lang?: string, model?: any, drillLinks?: string }} opt drillLinks: inline (default: drill-through opens in place, never a tab to a server the reader may not reach), new-tab, off
  * @returns {Promise<{ html: string, info: { reports: number, missing: string[], bytes: number } }>}
  */
 export async function exportInteractiveHtml(def, opt = {}) {
@@ -86,7 +86,9 @@ export async function exportInteractiveHtml(def, opt = {}) {
   // the single-file bundle (the loader in reportwright-viewer.js would need the server)
   const bundleRes = await fetch(`${base}/embed/reportwright-viewer.full.js`);
   if (!bundleRes.ok) throw Object.assign(new Error('The viewer bundle is missing. Run "npm run build:embed" (it also runs in "npm run build").'), { code: 'NO_BUNDLE' });
-  const bundle = (await bundleRes.text()).replace(/<\/script/gi, '<\\/script');
+  // inline in <script>: "</script" would end it early, and "<!--" then "<script" would keep the real </script> from
+  // ending it (the rest of the page becomes script); \x3C is the same "<" in a string, a regex or a comment
+  const bundle = (await bundleRes.text()).replace(/<(!--|\/?script)/gi, '\\x3C$1');
 
   // the default fonts, the ones this view draws with (fallbacks, uploaded fonts) and the shaper when text needs it
   const used = fontKeysOf(opt.model);
@@ -111,6 +113,8 @@ export async function exportInteractiveHtml(def, opt = {}) {
   const config = {
     server: base, definition: def, params: opt.params || {}, lang: opt.lang || 'en', reports, fonts, customFonts: uploaded, uiFontCss: uiCss, snapshot,
     height: '100vh', title: def.name,
+    // the file drills in place (inline) unless new-tab; the reader's copy then exports pages only (no server to build from)
+    exportOptions: { drillLinks: opt.drillLinks || 'inline', html: 'tables' },
   };
   const json = JSON.stringify(config).replace(/</g, '\\u003c');
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');

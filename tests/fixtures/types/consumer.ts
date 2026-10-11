@@ -10,7 +10,7 @@ import { reportWrightViewer, pagewrightViewer } from '@reportwright/svelte';
 import { defineReportWrightElements, definePagewrightElements } from '@reportwright/angular';
 
 const report: Report = {
-  $schema: 'pagewright/report@1',
+  $schema: 'reportwright/report@1',
   name: 'Typed',
   page: { size: 'A4', margins: [36, 36, 36, 36] },
   images: { logo: 'data:image/png;base64,iVBORw0KGgo=' },
@@ -40,7 +40,7 @@ const fit: Item = { type: 'image', x: 0, y: 0, w: 1, h: 1, fit: 'stretch' };
 // @ts-expect-error QR error levels are L, M, Q and H
 const ecc: Item = { type: 'barcode', x: 0, y: 0, w: 1, h: 1, qrErrorLevel: 'Z' };
 // @ts-expect-error the report needs sections
-const noSections: Report = { $schema: 'pagewright/report@1' };
+const noSections: Report = { $schema: 'reportwright/report@1' };
 
 async function exportIt(store: FontStore) {
   const model = await render(report, { fontStore: store });

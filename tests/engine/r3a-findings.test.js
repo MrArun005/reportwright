@@ -28,7 +28,7 @@ describe('N12 Contains is ordinal, as .NET', () => {
 
 describe('N18 text sorts as text unless naturalSort', () => {
   const sorted = async (extra) => {
-    const m = await render({ $schema: 'pagewright/report@1', page: { size: 'A4' }, ...extra,
+    const m = await render({ $schema: 'reportwright/report@1', page: { size: 'A4' }, ...extra,
       dataSources: [{ name: 'S', type: 'json', data: ['10', '9', 'a10', 'a9', 'B', 'a'].map(s => ({ s })) }], dataSets: [{ name: 'D', source: 'S', path: '$', fields: [{ name: 's', type: 'string' }], sort: [{ by: '=Fields.s' }] }],
       sections: { body: { height: 40, items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 300, h: 12, value: '=Join(LookupSet(1, 1, Fields.s, "D"), ",")' }] } } }, { fontStore });
     return m.pages[0].items.flatMap(i => i.lines || []).map(l => l.text).join('');
@@ -45,9 +45,9 @@ describe('N19 / N20 RDL import', () => {
 
 describe('N3 a master report does not take the content report\'s default data set', () => {
   it('unscoped Sum reads the content data set', async () => {
-    const master = { $schema: 'pagewright/report@1', page: { size: 'A4' }, dataSources: [{ name: 'MS', type: 'json', data: [{ company: 'ACME', amount: 999 }] }], dataSets: [{ name: 'Company', source: 'MS', path: '$' }],
+    const master = { $schema: 'reportwright/report@1', page: { size: 'A4' }, dataSources: [{ name: 'MS', type: 'json', data: [{ company: 'ACME', amount: 999 }] }], dataSets: [{ name: 'Company', source: 'MS', path: '$' }],
       sections: { pageHeader: { height: 14, items: [{ type: 'textbox', name: 'H', x: 0, y: 0, w: 200, h: 12, value: '=First(Fields.company, "Company")' }] }, body: { height: 20, items: [] } } };
-    const content = { $schema: 'pagewright/report@1', master: 'm', dataSources: [{ name: 'CS', type: 'json', data: [{ amount: 1 }, { amount: 2 }] }], dataSets: [{ name: 'Sales', source: 'CS', path: '$' }],
+    const content = { $schema: 'reportwright/report@1', master: 'm', dataSources: [{ name: 'CS', type: 'json', data: [{ amount: 1 }, { amount: 2 }] }], dataSets: [{ name: 'Sales', source: 'CS', path: '$' }],
       sections: { body: { height: 20, items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 12, value: '="Total " & Sum(Fields.amount)' }] } } };
     const m = await render(content, { fontStore, loadReport: async () => master });
     const text = m.pages[0].items.flatMap(i => i.lines || []).map(l => l.text);
@@ -72,7 +72,7 @@ describe('.NET formats in other cultures (N5, N13–N17, N28)', () => {
 });
 
 describe('N11 / §3.4: RunningValue and RowNumber without a scope are over the data region', () => {
-  const tbl = (cell, groups = true) => ({ $schema: 'pagewright/report@1', page: { size: 'A4' },
+  const tbl = (cell, groups = true) => ({ $schema: 'reportwright/report@1', page: { size: 'A4' },
     dataSources: [{ name: 'S', type: 'json', data: [{ g: 'X', h: 'p', v: 1 }, { g: 'X', h: 'p', v: 2 }, { g: 'X', h: 'q', v: 4 }, { g: 'Y', h: 'p', v: 8 }, { g: 'Y', h: 'r', v: 16 }] }],
     dataSets: [{ name: 'D', source: 'S', path: '$' }],
     sections: { body: { height: 200, items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 100, dataSet: 'D', columns: [{ width: 200 }],
@@ -86,7 +86,7 @@ describe('N11 / §3.4: RunningValue and RowNumber without a scope are over the d
 });
 
 describe('§3.3: empty matrix cells drill with their group values, not nulls', () => {
-  const m = (rowGroup) => ({ $schema: 'pagewright/report@1', page: { size: 'A4' },
+  const m = (rowGroup) => ({ $schema: 'reportwright/report@1', page: { size: 'A4' },
     dataSources: [{ name: 'S', type: 'json', data: [{ r: 'A', c: 'X', v: 1 }, { r: 'B', c: 'Y', v: 2 }] }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
     sections: { body: { height: 100, items: [{ type: 'matrix', name: 'M', x: 0, y: 0, w: 300, h: 60, dataSet: 'D', rowGroups: [{ expr: rowGroup }], columnGroups: [{ expr: '=Fields.c' }],
       values: [{ value: '=Sum(Fields.v)', action: { type: 'report', report: 'detail', params: { r: '=Fields.r', c: '=Fields.c' } } }] }] } } });
@@ -110,14 +110,14 @@ describe('N24, N29, N30', () => {
     expect(ev2('Mid("abc", 2)')).toBe('bc');
   });
   it('N29: Rank orders mixed values as the sort does', async () => {
-    const m = await render({ $schema: 'pagewright/report@1', page: { size: 'A4' }, dataSources: [{ name: 'S', type: 'json', data: [{ v: 1 }, { v: 2 }, { v: 10 }, { v: 4 }, { v: 'x' }] }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
+    const m = await render({ $schema: 'reportwright/report@1', page: { size: 'A4' }, dataSources: [{ name: 'S', type: 'json', data: [{ v: 1 }, { v: 2 }, { v: 10 }, { v: 4 }, { v: 'x' }] }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
       sections: { body: { height: 100, items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 100, h: 20, dataSet: 'D', columns: [{ width: 100 }], detail: [{ height: 12, cells: [{ value: '=Rank(Fields.v, "T")' }] }] }] } } }, { fontStore });
     // the column mixes text in, so it is text: ranked in text order ("1" < "10" < "2" < "4" < "x"), largest first,
     // one consistent order (before, ranks of 1, 2, 10, 4 came out 7, 5, 6, 3)
     expect(m.pages[0].items.flatMap(i => i.lines || []).map(l => l.text)).toEqual(['5', '3', '4', '2', '1']);
   });
   it('N24: an in filter with one value is a one-item list', async () => {
-    const m = await render({ $schema: 'pagewright/report@1', page: { size: 'A4' }, parameters: [{ name: 'p', type: 'string' }], dataSources: [{ name: 'S', type: 'json', data: [{ v: 'Smith, John' }, { v: 'Smith' }] }],
+    const m = await render({ $schema: 'reportwright/report@1', page: { size: 'A4' }, parameters: [{ name: 'p', type: 'string' }], dataSources: [{ name: 'S', type: 'json', data: [{ v: 'Smith, John' }, { v: 'Smith' }] }],
       dataSets: [{ name: 'D', source: 'S', path: '$', filters: [{ expr: '=Fields.v', op: 'in', value: '=Parameters.p' }] }],
       sections: { body: { height: 40, items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 100, h: 12, value: '=CountRows("D")' }] } } }, { fontStore, parameters: { p: 'Smith, John' } });
     expect(m.pages[0].items.flatMap(i => i.lines || []).map(l => l.text)).toEqual(['1']);
@@ -127,7 +127,7 @@ describe('N24, N29, N30', () => {
 describe('N23: column sets of a too-wide table break at the same rows', () => {
   it('every set\'s pages hold the same rows', async () => {
     const cols = Array.from({ length: 10 }, (_, i) => ({ width: 90 }));
-    const d = { $schema: 'pagewright/report@1', page: { size: 'A4' }, dataSources: [{ name: 'S', type: 'json', data: Array.from({ length: 60 }, (_, i) => ({ r: `r${i}` })) }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
+    const d = { $schema: 'reportwright/report@1', page: { size: 'A4' }, dataSources: [{ name: 'S', type: 'json', data: Array.from({ length: 60 }, (_, i) => ({ r: `r${i}` })) }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
       sections: { body: { height: 200, items: [{ type: 'textbox', name: 'Top', x: 0, y: 0, w: 200, h: 20, value: 'above' },
         { type: 'table', name: 'T', x: 0, y: 20, w: 900, h: 40, dataSet: 'D', columns: cols, header: [{ height: 14, cells: cols.map((_, i) => ({ value: `C${i}` })) }],
           detail: [{ height: 14, cells: cols.map((_, i) => ({ value: i === 0 || i === 6 ? '=Fields.r' : 'x' })) }] }] } } };
@@ -145,7 +145,7 @@ describe('N8: side-by-side regions with keep-together groups', () => {
     const rows = Array.from({ length: 100 }, (_, i) => ({ i, k: Math.floor(i / g) }));
     const t = (name, x, h, group) => ({ type: 'table', name, x, y: 0, w: 120, h: 40, dataSet: 'D', columns: [{ width: 120 }], header: [{ height: 14, cells: [{ value: name }] }],
       ...(group ? { groups: [{ name: `${name}G`, expr: '=Fields.k', keepTogether: true }] } : {}), detail: [{ height: h, cells: [{ value: `=Fields.i` }] }], footer: [{ height: 14, cells: [{ value: 'end' }] }] });
-    const d = { $schema: 'pagewright/report@1', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [{ name: 'S', type: 'json', data: rows }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
+    const d = { $schema: 'reportwright/report@1', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [{ name: 'S', type: 'json', data: rows }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
       sections: { body: { height: 60, items: [t('A', 0, ha, true), t('B', 130, hb, false)] }, pageFooter: { height: 30, items: [{ type: 'textbox', name: 'F', x: 0, y: 0, w: 200, h: 12, value: 'footer' }] } } };
     const m = await render(d, { fontStore });
     expect(m.warnings.join(' ')).not.toMatch(/taller than the page/);
@@ -158,7 +158,7 @@ describe('N8: side-by-side regions with keep-together groups', () => {
 
 describe('N10: data bars compare across the column', () => {
   it('detail rows and group cells', async () => {
-    const d = { $schema: 'pagewright/report@1', page: { size: 'A4' }, dataSources: [{ name: 'S', type: 'json', data: [{ g: 'A', v: 5 }, { g: 'B', v: 10 }, { g: 'B', v: 10 }, { g: 'C', v: 20 }] }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
+    const d = { $schema: 'reportwright/report@1', page: { size: 'A4' }, dataSources: [{ name: 'S', type: 'json', data: [{ g: 'A', v: 5 }, { g: 'B', v: 10 }, { g: 'B', v: 10 }, { g: 'C', v: 20 }] }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
       sections: { body: { height: 100, items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 40, dataSet: 'D', columns: [{ width: 200 }],
         groups: [{ name: 'G', expr: '=Fields.g', footer: [{ height: 14, cells: [{ value: '=Sum(Fields.v)', visual: { type: 'databar', value: '=Sum(Fields.v)' } }] }] }],
         detail: [{ height: 14, cells: [{ value: '=Fields.v', visual: { type: 'databar', value: '=Fields.v' } }] }] }] } } };
@@ -173,7 +173,7 @@ describe('N10: data bars compare across the column', () => {
 
 describe('N10: Rank of a group total ranks the groups', () => {
   it('Rank(Sum(Fields.v), "T") in a group footer', async () => {
-    const d = { $schema: 'pagewright/report@1', page: { size: 'A4' }, dataSources: [{ name: 'S', type: 'json', data: [{ g: 'A', v: 1 }, { g: 'A', v: 2 }, { g: 'B', v: 10 }, { g: 'C', v: 4 }, { g: 'C', v: 4 }, { g: 'D', v: null }] }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
+    const d = { $schema: 'reportwright/report@1', page: { size: 'A4' }, dataSources: [{ name: 'S', type: 'json', data: [{ g: 'A', v: 1 }, { g: 'A', v: 2 }, { g: 'B', v: 10 }, { g: 'C', v: 4 }, { g: 'C', v: 4 }, { g: 'D', v: null }] }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
       sections: { body: { height: 100, items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 40, dataSet: 'D', columns: [{ width: 200 }],
         groups: [{ name: 'G', expr: '=Fields.g', footer: [{ height: 14, cells: [{ value: '=Fields.g & " " & Rank(Sum(Fields.v), "T")' }] }] }], detail: [] }] } } };
     const m = await render(d, { fontStore });

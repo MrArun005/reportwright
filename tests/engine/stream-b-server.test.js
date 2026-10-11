@@ -141,7 +141,7 @@ describe('the output port', () => {
 
 describe('the pool streams a data CSV', () => {
   const def = {
-    $schema: 'pagewright/report@1', name: 'SqlCsv', page: { size: 'A4' },
+    $schema: 'reportwright/report@1', name: 'SqlCsv', page: { size: 'A4' },
     dataSources: [{ name: 's', type: 'sql', connection: 'big', query: 'select * from t' }], dataSets: [{ name: 'D', source: 's', sort: [{ by: '=Fields.city' }, { by: '=Fields.id', dir: 'desc' }] }],
     sections: { body: { items: [{ type: 'table', name: 'T', dataSet: 'D', x: 0, y: 0, w: 400, h: 40, columns: [{ width: 100 }, { width: 100 }, { width: 100 }, { width: 100 }],
       header: [{ cells: [{ value: 'Id' }, { value: 'Name' }, { value: 'City' }, { value: 'Price' }] }],
@@ -200,7 +200,7 @@ for (const [kind, env, reader, series] of [
 }
 
 describe('streaming keeps its caps (review)', () => {
-  const sqlDef = (query, extra = {}) => ({ $schema: 'pagewright/report@1', name: 'Cap', page: { size: 'A4' }, dataSources: [{ name: 's', type: 'sql', connection: 'big', query }], dataSets: [{ name: 'D', source: 's', ...extra }],
+  const sqlDef = (query, extra = {}) => ({ $schema: 'reportwright/report@1', name: 'Cap', page: { size: 'A4' }, dataSources: [{ name: 's', type: 'sql', connection: 'big', query }], dataSets: [{ name: 'D', source: 's', ...extra }],
     sections: { body: { items: [{ type: 'table', name: 'T', dataSet: 'D', x: 0, y: 0, w: 200, h: 40, columns: [{ width: 200 }], detail: [{ cells: [{ value: '=Fields.id' }] }] }] } } });
   const drain = async (r) => (r.stream ? Buffer.from(await new Response(r.stream).arrayBuffer()).toString('utf8') : null);
 
@@ -303,7 +303,7 @@ describe('streaming keeps its caps (review)', () => {
     const url = `http://127.0.0.1:${srv.address().port}/rows`;
     process.env.PW_RENDER_WORKERS = '0';
     await stopPool();
-    const def = { $schema: 'pagewright/report@1', name: 'Gone', page: { size: 'A4' }, dataSources: [{ name: 's', type: 'rest', url }], dataSets: [{ name: 'D', source: 's' }],
+    const def = { $schema: 'reportwright/report@1', name: 'Gone', page: { size: 'A4' }, dataSources: [{ name: 's', type: 'rest', url }], dataSets: [{ name: 'D', source: 's' }],
       sections: { body: { items: [{ type: 'table', name: 'T', dataSet: 'D', x: 0, y: 0, w: 200, h: 40, columns: [{ width: 100 }, { width: 100 }], detail: [{ cells: [{ value: '=Fields.id' }, { value: '=Fields.name' }] }] }] } } };
     try {
       const r = await streamInPool({ def, opt: { format: 'csv', principal: OPEN, self: new URL(url).origin } });

@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync, execFileSync } from 'node:child_process';
-import { PDFDocument } from 'pdf-lib';
+import { loadPdf } from '@reportwright/pdf';
 import { render } from '../../src/engine/index.js';
 import { planPaged } from '../../src/engine/paged.js';
 import { exportPdf } from '../../src/exporters/pdf.js';
@@ -25,7 +25,8 @@ let tmpN = 0;
 const pdftotext = (bytes, ...args) => {
   const f = path.join(tmpDir, `${++tmpN}.pdf`);
   fs.writeFileSync(f, bytes);
-  const r = spawnSync('pdftotext', [...args, f, '-']);
+  const r = spawnSync('pdftotext', [...args, f, '-'], { maxBuffer: 1 << 30 });
+  if (r.error || r.status) throw new Error(`pdftotext failed (${r.error?.code ?? r.status}): ${r.stderr}`); // ENOBUFS cut the text short, silently
   return { text: r.stdout.toString(), err: r.stderr.toString() };
 };
 const sink = () => { const chunks = []; return { chunks, write: async (u8) => { chunks.push(Buffer.from(u8)); }, bytes: () => Buffer.concat(chunks) }; };
@@ -41,7 +42,7 @@ const ledgerRows = (n) => Array.from({ length: n }, (_, i) => ({
   reference: i % 37 === 0 ? `Reversal of an earlier transfer between linked accounts, batch ${i}` : `REF-${i * 31}`,
 }));
 const ledger = (rows, extra = {}) => ({
-  $schema: 'pagewright/report@1', name: 'Ledger', locale: 'en-IN', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Ledger', locale: 'en-IN', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: { rows } }],
   dataSets: [{ name: 'Tx', source: 'src', path: '$.rows', fields: [
     { name: 'id', type: 'number' }, { name: 'accountId', type: 'string' }, { name: 'region', type: 'string' }, { name: 'branchId', type: 'string' },
@@ -82,6 +83,35 @@ const grouped = (n, o = {}) => {
   return def;
 };
 describe('paged rendering of a flowing table', () => {
+  it('"Page N of M": the held first pass and the two passes (pages past holdItems) give the whole render\'s pages', async () => {
+    const def = grouped(1500);
+    def.sections.pageHeader = { height: 20, items: [{ type: 'textbox', name: 'H', x: 0, y: 0, w: 300, h: 16, value: 'Ledger', bookmark: 'Ledger' }] }; // the outline comes from the held pass
+    const whole = await render(def, { fontStore, now });
+    expect(whole.bookmarks.length).toBeGreaterThan(3);
+    const outlines = [];
+    for (const holdItems of [undefined, 400, 0]) { // held throughout, dropped part way, dropped at once
+      const plan = await planPaged(def, { fontStore, now, window: 120, holdItems });
+      const pages = [];
+      for await (const p of /** @type {any} */ (plan).pages()) pages.push(p);
+      expect(pages.length, `holdItems ${holdItems}`).toBe(whole.pages.length);
+      if (holdItems === undefined) expect(pages.some((p) => p.items.some((/** @type {any} */ it) => it.lines?.[0]?.text === `Page 3 of ${whole.pages.length}`))).toBe(true);
+      pages.forEach((p, i) => { expect(p.reband).toBeUndefined(); expect(JSON.stringify(p.items), `holdItems ${holdItems}, page ${i + 1}`).toBe(JSON.stringify(whole.pages[i].items)); });
+      outlines.push(JSON.stringify(/** @type {any} */ (plan).info.bookmarks));
+    }
+    expect(outlines[1]).toBe(outlines[0]);
+    expect(outlines[2]).toBe(outlines[0]);
+  });
+
+  it('the held pass is bounded by what it holds, a long text\'s lines included: a hostile report falls back to two passes', async () => {
+    const words = (i) => Array.from({ length: 300 }, (_, k) => `w${i}x${k}`).join(' '); // distinct words: one cell, ~60 lines
+    const def = ledger(ledgerRows(200).map((r, i) => ({ ...r, account: words(i) })));
+    const count = async (holdItems) => { const plan = /** @type {any} */ (await planPaged(def, { fontStore, now, window: 50, holdItems })); let n = 0; for await (const p of plan.pages()) n += p.items.length; return { n, held: plan.info.held }; };
+    const big = await count(undefined), small = await count(2000);
+    expect(big.held).toBe(true);
+    expect(small.held).toBe(false); // few items, but their lines are over the cap
+    expect(small.n).toBe(big.n);
+  });
+
   it('window by window, the pages are the whole render\'s pages', async () => {
     const def = ledger(ledgerRows(1500));
     const whole = await render(def, { fontStore, now });
@@ -105,6 +135,12 @@ describe('paged rendering of a flowing table', () => {
   };
   it('groups page window by window as the whole render: headers that repeat, subtotals, RowNumber, header fields', async () => {
     expect(await same(grouped(1500), 120)).toBeGreaterThan(20);
+  });
+  it('a zebra detail row (RowNumber() in its style) pages window by window as the whole render, flat and grouped', async () => {
+    // 0.14.0-rc.1: the row style's RowNumber() was refused ("detail expressions"), so the report was rendered whole
+    const zebra = (def) => { const t = def.sections.body.items[1]; t.detail[0].style = { backgroundColor: '=IIf(RowNumber() Mod 2 = 0, "#f3f4f6", "#ffffff")', borderBottom: '=IIf(RowNumber() Mod 2 = 0, "0.5 solid #d1d5db", "0.5 solid #e5e7eb")' }; return def; };
+    expect(await same(zebra(ledger(ledgerRows(1500))), 120)).toBeGreaterThan(8);
+    expect(await same(zebra(grouped(1500)), 120)).toBeGreaterThan(20);
   });
   it('… with groups kept together, a break between groups, pageBreakEvery, first-last band rows, a sorted inner group', async () => {
     await same(grouped(1500, { outer: { keepTogether: true }, inner: { keepTogether: true } }), 60);
@@ -145,9 +181,9 @@ describe('exportPdfStream', () => {
       expect(b.text).toBe(a.text);
     }
     expect(pdftotext(pdf).text).toMatch(/Page 2 of \d+/);
-    const [x, y] = [await PDFDocument.load(today), await PDFDocument.load(pdf)];
-    expect(y.getPageCount()).toBe(x.getPageCount());
-    expect(r.pages).toBe(x.getPageCount());
+    const [x, y] = [await loadPdf(today), await loadPdf(pdf)];
+    expect(y.pageCount).toBe(x.pageCount);
+    expect(r.pages).toBe(x.pageCount);
     expect(pdf.length / today.length).toBeLessThan(1.05); // object streams, literal text, zlib 9: about exportPdf's size
   });
 
@@ -157,9 +193,8 @@ describe('exportPdfStream', () => {
     t.groups = [{ name: 'R', expr: '=Fields.region', header: [{ cells: [{ value: '=Fields.region' }] }], footer: [{ cells: [{ value: 'Total' }, null, null, null, null, { value: '=Sum(Fields.amount)', style: { format: 'N2' } }] }] }];
     t.detail[0].cells[1].action = { type: 'url', href: '="https://example.com/acct/" & Fields.accountId' };
     const run = async (o) => { const s = sink(); const r = await exportPdfStream(def, { fontStore, now, subset, creationDate: now, title: 'Ledger', window: 200, ...o }, s); expect(r.streamed).toBe(true); return s.bytes(); };
-    // exportPdf's text for the same options; tagged, the untagged file's (the streamed cells' text is one text object a
-    // page, as untagged, and pdftotext reads it so)
-    const want = async (o) => pdftotext(await exportPdf(await render(def, { fontStore, now }), fontStore, { subset, creationDate: now, title: 'Ledger', ...o, tagged: undefined })).text;
+    // exportPdf's text for the same options (tagged: each item its own marked text object on both)
+    const want = async (o) => pdftotext(await exportPdf(await render(def, { fontStore, now, exportData: !!o.tagged }), fontStore, { subset, creationDate: now, title: 'Ledger', ...o })).text;
     for (const [o, profiles] of [[{ pdfa: { icc: ICC } }, ['2b']], [{ tagged: { lang: 'en-IN' } }, ['ua1']], [{ pdfa: { icc: ICC }, tagged: { lang: 'en-IN' } }, ['2a', 'ua1']]]) {
       const pdf = await run(o);
       expect(pdftotext(pdf).text).toBe(await want(o));
@@ -180,6 +215,42 @@ describe('exportPdfStream', () => {
     // without "of M" the pages are counted first all the same (the workers need the page starts)
     def.sections.pageFooter.items[0].value = 'Page {Globals.PageNumber}';
     expect((await run(2)).equals(await run(1))).toBe(true);
+  }, 120000);
+
+  it('parallel: the counting pass\'s windows go to the workers as it counts; the file is the same in every mode', async () => {
+    const def = grouped(2500);
+    const bytes = async (parallel, o = {}) => { const s = sink(); const r = await exportPdfStream(def, { fontStore, now, subset, creationDate: now, id: '0123456789abcdef0123456789abcdef', window: 250, parallel, ...o }, s); expect(r.streamed).toBe(true); return s.bytes(); };
+    const one = await bytes(1);
+    // held in the workers throughout; past aheadRows (the rest laid out by a second pass from there); 'auto' that stays
+    // here (held, small), and 'auto' that starts the workers once the held pages pass holdItems
+    for (const o of [{ parallel: 2 }, { parallel: 3, aheadRows: 300 }, { parallel: 'auto' }, { parallel: 'auto', holdItems: 3000, aheadRows: 400 }]) {
+      expect((await bytes(o.parallel, o)).equals(one), JSON.stringify(o)).toBe(true);
+    }
+    // without "of M": drawn here, then (autoRows) by the workers
+    def.sections.pageFooter.items[0].value = 'Page {Globals.PageNumber}';
+    const single = await bytes(1);
+    expect((await bytes('auto', { autoRows: 600 })).equals(single)).toBe(true);
+    // not holdable (a bookmark on the table): counted first, then laid out by the workers
+    def.sections.pageFooter.items[0].value = 'Page {Globals.PageNumber} of {Globals.TotalPages}';
+    def.sections.body.items[1].bookmark = '="Ledger"';
+    expect((await bytes(3)).equals(await bytes(1))).toBe(true);
+  }, 240000);
+
+  it('parallel: an abort or the time limit ends the export and every worker', async () => {
+    const wt = process.getBuiltinModule('node:worker_threads');
+    const Real = wt.Worker, made = [], exited = [];
+    wt.Worker = class extends Real { constructor(...a) { super(...a); made.push(this); this.once('exit', () => exited.push(this)); } };
+    try {
+      const def = grouped(4000);
+      const ac = new AbortController();
+      let n = 0;
+      const s = { write: async () => { if (++n === 3) ac.abort(new Error('stop')); } };
+      await expect(exportPdfStream(def, { fontStore, now, subset, window: 250, parallel: 2, signal: ac.signal }, s)).rejects.toThrow('stop');
+      await expect(exportPdfStream(def, { fontStore, now, subset, window: 250, parallel: 2, timeoutMs: 150 }, sink())).rejects.toMatchObject({ status: 504 });
+      expect(made.length).toBeGreaterThan(0);
+      await new Promise((ok) => setTimeout(ok, 200));
+      expect(exited.length).toBe(made.length);
+    } finally { wt.Worker = Real; }
   }, 120000);
 
   it('a report that does not page is exportPdf\'s file, byte for byte', async () => {

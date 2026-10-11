@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { newDesignerStore, activateStore, duplicateSelection, pasteItems } from '../../src/designer/store.js';
 
-const report = (items) => ({ $schema: 'pagewright/report@1', name: 'R', page: { size: 'A4' }, dataSources: [], dataSets: [], sections: { body: { height: 300, items } } });
+const report = (items) => ({ $schema: 'reportwright/report@1', name: 'R', page: { size: 'A4' }, dataSources: [], dataSets: [], sections: { body: { height: 300, items } } });
 const tb = (name, x = 10, y = 10) => ({ type: 'textbox', name, x, y, w: 100, h: 20, value: 'x' });
 let st;
 const load = (def) => { st = newDesignerStore(); activateStore(st); st.getState().init('r', def); return st.getState().def; };

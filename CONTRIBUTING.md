@@ -12,6 +12,17 @@ npm run build:packages               # builds packages/* (then: npm pack ./packa
 
 Write the test first. One change per commit, with a plain message.
 
+## Formatting
+
+New and changed code is formatted with Prettier (`.prettierrc.json`: 120 columns, single quotes, semicolons).
+The existing source predates this config and is **not** reformatted in bulk, so `git blame` keeps its history.
+
+- `npm run format:check` checks only the files changed against `main` (set `FORMAT_BASE` for another base) and the
+  untracked ones. It runs Prettier 3.6.2 through `npx`, so nothing extra is installed. Markdown is not checked.
+- A new file is formatted from the start. When you change an older file that the check flags, format it in its own
+  commit first (`npx prettier@3.6.2 --write <file>`, message "Format <file> with Prettier"), then make your change,
+  so the reformat and the real change are separate in history.
+
 ## Versioning (semver)
 
 All `@reportwright/*` packages share one version and are released together.

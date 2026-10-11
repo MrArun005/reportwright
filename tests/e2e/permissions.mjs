@@ -35,6 +35,8 @@ for (const [email, role, groups] of [[ALICE, 'designer', []], [BOB, 'designer', 
   const r = await req('/api/users', { method: 'POST', cookie: admin, body: { email, role, password: PW, groups } });
   assert.ok(r.status === 201 || (email === KEYUSER && r.status === 409), `${email}: ${r.status}`);
 }
+// the top as the suite leaves it (tidy, below): everyone manages it. A new install gives only designers view there (67f6d448)
+assert.equal((await req('/api/folders/root', { method: 'PATCH', cookie: admin, body: { grants: [{ to: 'group:everyone', level: 'manage' }], create: [] } })).status, 200); // no create list: who may add at the top is the grants alone
 // a report everyone may view, at the top
 const pub = await (await req('/api/reports', { method: 'POST', cookie: admin, body: { name: `Public ${run}` } })).json();
 

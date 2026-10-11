@@ -8,6 +8,7 @@ import { build } from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { fixDist } from './line-continuations.mjs';
 const root = path.join(import.meta.dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 // runtime dependencies are pinned to the exact version installed here (the one the tests ran against)
@@ -28,8 +29,10 @@ const write = (f, s) => fs.writeFileSync(path.join(root, f), typeof s === 'strin
 
 /* engine */
 const E = 'packages/engine';
-// third-party libraries stay imports (pinned dependencies), never bundled: our tarballs hold only our code
-const external = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js'];
+// third-party libraries stay imports (pinned dependencies), never bundled: our tarballs hold only our code. fflate is
+// @reportwright/pdf's (src imports '@reportwright/pdf/fflate'): one copy for the PDF writer and the Office exporters
+// pdf-lib is no dependency (B4): only pdfWriter 'legacy' and the deprecated prepare/save take it, installed by the caller
+const external = ['@pdf-lib/fontkit', 'bwip-js', 'bidi-js', '@reportwright/pdf'];
 fs.rmSync(path.join(root, E, 'dist'), { recursive: true, force: true });
 fs.rmSync(path.join(root, E, 'public'), { recursive: true, force: true }); // fonts moved to @reportwright/fonts
 // no source map: the bundle is readable (not minified), and the map was ~0.8 MB of a 2 MB package
@@ -39,7 +42,8 @@ await build({ entryPoints: [path.join(root, E, 'entry.js')], bundle: true, forma
 {
   const w = fs.readFileSync(path.join(root, 'src/exporters/pdfstreamworker.js'), 'utf8')
     .replace("import { render, FontStore } from '../engine/index.js';", "import { render, FontStore, __streamPaint } from './index.js';")
-    .replace("import { createPdfStream, paintPage, paintEnv } from './pdfstream.js';", 'const { createPdfStream, paintPage, paintEnv, latin1 } = __streamPaint;')
+    .replace("import { reband, CAPPED } from '../engine/paged.js';\n", '')
+    .replace("import { createPdfStream, paintPage, paintEnv } from './pdfstream.js';", 'const { createPdfStream, paintPage, paintEnv, latin1, reband, CAPPED } = __streamPaint;')
     .replace("import { latin1 } from './pdfpaint.js';\n", '');
   if (/from '\.\.?\/(engine|pdf)/.test(w)) throw new Error('pdfstreamworker.js: its imports changed; update build-packages.mjs');
   write(`${E}/dist/pdfstreamworker.js`, w);
@@ -73,10 +77,18 @@ write(`${F}/package.json`, {
   name: '@reportwright/fonts', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'OFL-1.1 AND MIT',
   ...meta(F, ['fonts', 'harfbuzz', 'noto', 'inter', 'pdf-a', 'icc']),
   description: 'Fonts (Inter, JetBrains Mono, Noto), the HarfBuzz shaper and subsetter for @reportwright/engine.',
-  exports: { './public/*': './public/*', './package.json': './package.json' },
-  files: ['public', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
+  main: './index.mjs', types: './index.d.ts',
+  exports: { '.': { types: './index.d.ts', default: './index.mjs' }, './public/*': './public/*', './package.json': './package.json' },
+  files: ['index.mjs', 'index.d.ts', 'public', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
   sideEffects: false,
 });
+// the root import: where the files are, as URLs (Node: fileURLToPath; a bundler resolves new URL(…, import.meta.url))
+write(`${F}/index.mjs`, `/** The folder of fonts (fontsUrl / defaultFontStore), the PDF font subsetter and the PDF/A sRGB profile, as URLs. */
+export const fontsUrl = new URL('./public/fonts/', import.meta.url).href;
+export const subsetWasmUrl = new URL('./public/harfbuzz-subset.wasm', import.meta.url).href;
+export const iccUrl = new URL('./public/icc/sRGB-v2-magic.icc', import.meta.url).href;
+`);
+write(`${F}/index.d.ts`, 'export declare const fontsUrl: string;\nexport declare const subsetWasmUrl: string;\nexport declare const iccUrl: string;\n');
 fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, F, 'LICENSE')); fs.copyFileSync(path.join(root, 'THIRD-PARTY-NOTICES.md'), path.join(root, F, 'THIRD-PARTY-NOTICES.md')); docs(F); // MIT; each font's OFL is in public/fonts
 
 /* fonts-cjk: a downloader for the CJK and emoji fonts (pinned commit, SHA-256 checked); the fonts are not in the tarball */
@@ -85,8 +97,9 @@ write(`${K}/package.json`, {
   name: '@reportwright/fonts-cjk', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT AND OFL-1.1',
   description: 'Chinese, Japanese, Korean and emoji fonts (Noto, OFL) for @reportwright/engine, downloaded on demand: npx reportwright-fonts-cjk.',
   ...meta(K, ['fonts', 'cjk', 'noto', 'japanese', 'chinese', 'korean', 'emoji']),
-  bin: { 'reportwright-fonts-cjk': 'src/index.mjs', 'pagewright-fonts-cjk': 'src/index.mjs' }, // old name kept for 0.9
-  exports: { '.': './src/index.mjs', './fonts/*': './fonts/*', './package.json': './package.json' },
+  bin: { 'reportwright-fonts-cjk': 'src/index.mjs' },
+  types: './src/index.d.ts',
+  exports: { '.': { types: './src/index.d.ts', default: './src/index.mjs' }, './fonts/*': './fonts/*', './package.json': './package.json' },
   files: ['src', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
   engines: { node: '>=20.9' },
   sideEffects: false,
@@ -102,7 +115,13 @@ const serverStub = { name: 'server-stub', setup: (b) => {
   b.onResolve({ filter: /\/src\/server\// }, (a) => ({ path: a.path, namespace: 'server-stub' }));
   b.onLoad({ filter: /.*/, namespace: 'server-stub' }, () => ({ contents: "throw new Error('this is a server command: run it with node bin/pw.mjs in the ReportWright app folder');" }));
 } };
-await build({ entryPoints: [path.join(root, 'bin/pw.mjs')], bundle: true, format: 'esm', platform: 'node', target: 'node22', minify: false, sourcemap: 'linked', sourcesContent: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, C, 'dist/pw.mjs'), external: [...external, '@reportwright/fonts'], plugins: [serverStub], logLevel: 'warning' }); // esbuild keeps bin/pw.mjs's #! line
+await build({ entryPoints: [path.join(root, 'bin/pw.mjs')], bundle: true, format: 'esm', platform: 'node', target: 'node22', minify: false, sourcemap: 'linked', sourcesContent: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, C, 'dist/cli.mjs'), external: [...external, '@reportwright/fonts'], plugins: [serverStub], logLevel: 'warning' });
+// pw.mjs turns on Node's compile cache before it loads the bundle, so a second run skips compiling it (about 10 ms of
+// a cold start): in a folder only this user can read (scripts/compile-cache-dir.mjs), never the shared temp folder
+{
+  const dirFn = fs.readFileSync(path.join(root, 'scripts/compile-cache-dir.mjs'), 'utf8').replace(/^export function/m, 'function');
+  write(`${C}/dist/pw.mjs`, `#!/usr/bin/env node\n// pw: the ReportWright CLI (cli.mjs), with Node's compile cache in a private folder\nimport module from 'node:module';\n${dirFn.replace(/^\/\/.*\n/gm, '')}\ntry { const dir = compileCacheDir(); if (dir) module.enableCompileCache?.(dir); } catch { /* no cache */ }\nawait import('./cli.mjs');\n`);
+}
 fs.chmodSync(path.join(root, C, 'dist/pw.mjs'), 0o755);
 write(`${C}/package.json`, {
   name: '@reportwright/cli', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
@@ -194,4 +213,19 @@ for (const [name, w] of Object.entries(WRAPPERS)) {
   });
   fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, P, 'LICENSE')); fs.copyFileSync(path.join(root, 'THIRD-PARTY-NOTICES.md'), path.join(root, P, 'THIRD-PARTY-NOTICES.md')); docs(P);
 }
+// E10: the CLI and viewer bundles hold the engine, so they name ./pdfstreamworker.js too; webpack and Next.js resolve
+// every new URL('./x', import.meta.url) at build time and fail when the file is missing. The parallel paint worker
+// is the engine package's (Node only, never started in a browser), so these bundles ship a stand-in that says so.
+{
+  const stub = "// The streaming PDF's parallel paint worker is @reportwright/engine's (dist/pdfstreamworker.js). This stand-in ships so\n"
+    + "// bundlers resolve new URL('./pdfstreamworker.js', import.meta.url) in this package.\n"
+    + "const { parentPort } = globalThis.process.getBuiltinModule('node:worker_threads');\n"
+    + "parentPort.on('message', (job) => parentPort.postMessage({ id: job.id, error: { message: 'exportPdfStream with parallel needs @reportwright/engine' } }));\n";
+  for (const d of ['packages/cli/dist', 'packages/viewer/dist', 'packages/viewer/dist/peer']) {
+    const dir = path.join(root, d);
+    if (fs.readdirSync(dir).some(f => /\.m?js$/.test(f) && fs.readFileSync(path.join(dir, f), 'utf8').includes('./pdfstreamworker.js'))) fs.writeFileSync(path.join(dir, 'pdfstreamworker.js'), stub);
+  }
+}
+// no backslash line continuation in a string in what npm publishes (lineLimit makes them): fails the build if one is left
+for (const P of ['packages/engine/dist', 'packages/cli/dist', 'packages/viewer/dist']) fixDist(path.join(root, P));
 console.log(`packages: @reportwright/engine, /fonts, /fonts-cjk, /cli, /viewer, ${Object.keys(WRAPPERS).map(n => '/' + n).join(', ')} built (npm pack packages/<name>)`);

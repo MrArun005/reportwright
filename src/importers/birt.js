@@ -15,7 +15,7 @@
  * Pure JavaScript, no Node APIs and no DOM. It never throws: whatever it cannot map becomes a warning.
  */
 import { parseXml, XmlError } from './xml.js';
-import { importRdlx, ImportBudgetError, OUTPUT_LIMITS, toPt } from './rdlx.js';
+import { importRdlx, ImportBudgetError, OUTPUT_LIMITS, toPt, rewordItems } from './rdlx.js';
 import { javaToVb, javaPattern, Untranslatable } from './java.js';
 
 const BIRT_NS = /^http:\/\/www\.eclipse\.org\/birt\/2005\/design$/;
@@ -61,7 +61,7 @@ export function importBirt(input, opts = {}) {
   r.definition.nullOrder = 'low'; // a null sorts first ascending, as Java comparators and BIRT do
   r.definition.arithmetic = 'double'; // JavaScript and Java compute with IEEE doubles
   r.definition.bandRows = 'first-last'; // headers are evaluated on their first row, footers on their last
-  return { definition: r.definition, warnings: [...new Set(warnings)], stats: r.stats };
+  return { definition: r.definition, warnings: [...new Set(warnings)], stats: r.stats, items: rewordItems(r.items, w => w.replace(/ActiveReports/g, 'BIRT')) };
 }
 
 /* ================================================================ properties */
@@ -266,6 +266,7 @@ function toRdlx(root, notes, reportName) {
     if (lit) { const t = lit[1].replace(/\\(.)/g, '$1'); return t.startsWith('=') ? `="${t.replace(/"/g, '""')}"` : t; }
     try { return '=' + vb(s, c); } catch (e) {
       if (!(e instanceof Untranslatable)) throw e;
+      (item.__exprs ||= []).push(s);
       (item.__notes ||= []).push(`${e.message} has no ReportWright equivalent, so the expression ${s.length > 200 ? s.slice(0, 200) + '…' : s} is shown as text.`);
       return s.startsWith('=') ? `="${s.replace(/"/g, '""')}"` : s;
     }
@@ -273,6 +274,7 @@ function toRdlx(root, notes, reportName) {
   function setting(src, item, what, c) {
     try { return '=' + vb(src, c); } catch (e) {
       if (!(e instanceof Untranslatable)) throw e;
+      (item.__exprs ||= []).push(String(src));
       (item.__notes ||= []).push(`${what} uses ${e.message}, which has no ReportWright equivalent, so it is left out.`);
       return undefined;
     }
@@ -445,7 +447,7 @@ function toRdlx(root, notes, reportName) {
     const given = len(prop(e, 'height'), 0, 0);
     const x = len(prop(e, 'x'), W, 0);
     /** @type {Record<string, any>} */
-    const it = { Name: nameFor(e, e.name.replace(/(^|-)(\w)/g, (_, __, ch) => ch.toUpperCase())), Left: pt(x), Width: pt(w) };
+    const it = { __pos: e.pos, Name: nameFor(e, e.name.replace(/(^|-)(\w)/g, (_, __, ch) => ch.toUpperCase())), Left: pt(x), Width: pt(w) };
     const vis = listProp(e, 'visibility')[0];
     if (vis) { const ve = prop(vis, 'valueExpr'); if (ve && ve.trim() === 'true') it.Visibility = { Hidden: true }; else if (ve) { const v = setting(ve, it, 'the condition that hides it', c); if (v) it.Visibility = { Hidden: v }; } }
     const bm = prop(e, 'bookmark') ?? prop(struct(e, 'toc'), 'expressionValue');
@@ -483,7 +485,7 @@ function toRdlx(root, notes, reportName) {
         if (col != null) {
           const b = c.bindings?.get(col);
           if (b) {
-            try { v = '=' + binding(b, c, 0); } catch (er) { if (!(er instanceof Untranslatable)) throw er; (it.__notes ||= []).push(`its column "${col}" uses ${er.message}, so it is shown as text.`); v = col; }
+            try { v = '=' + binding(b, c, 0); } catch (er) { if (!(er instanceof Untranslatable)) throw er; (it.__exprs ||= []).push(String(prop(b, 'expression') ?? col)); (it.__notes ||= []).push(`its column "${col}" uses ${er.message}, so it is shown as text.`); v = col; }
           } else v = `=${fieldRef(col).s}`;
         } else v = value(ve ?? '', it, c);
         return textItem(v, given || textH('', st));
@@ -503,7 +505,7 @@ function toRdlx(root, notes, reportName) {
           const pieces = [];
           for (const p of parts) {
             if (p.t) pieces.push(`"${p.t.replace(/"/g, '""').replace(/\r?\n/g, '" & vbCrLf & "')}"`);
-            else if (p.e != null) { try { pieces.push(`(${vb(decodeHtml(p.e), c)})`); } catch (er) { if (!(er instanceof Untranslatable)) throw er; (it.__notes ||= []).push(`a <value-of> uses ${er.message}, so it is left out.`); } }
+            else if (p.e != null) { try { pieces.push(`(${vb(decodeHtml(p.e), c)})`); } catch (er) { if (!(er instanceof Untranslatable)) throw er; (it.__exprs ||= []).push(decodeHtml(p.e)); (it.__notes ||= []).push(`a <value-of> uses ${er.message}, so it is left out.`); } }
           }
           v = `=${pieces.join(' & ') || '""'}`;
         } else v = parts.map(p => p.t).join('');

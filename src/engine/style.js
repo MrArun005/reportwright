@@ -54,17 +54,42 @@ export function resolveStyle(layers, ctx) {
     if (node?.value) return node.value;
   }
   const out = {};
+  let key = allStatic ? null : ''; // expression layers: the evaluated values, while they are all plain
   for (const l of layers) {
     if (!l || typeof l !== 'object') continue; // a style that is not an object ("bold") is ignored; validate() says so
     for (const k in l) {
       const v = l[k];
       if (v === undefined) continue;
-      out[k] = isDynamic(v) ? safe(v, ctx) : v;
+      if (!isDynamic(v)) { out[k] = v; continue; }
+      const x = out[k] = safe(v, ctx);
+      if (key === null) continue;
+      const t = typeof x;
+      if (t === 'string') key += `${k}${JSON.stringify(x)},`;
+      else if (x == null || t === 'boolean' || (t === 'number' && !Object.is(x, -0))) key += `${k}:${x},`;
+      else key = null; // a date, an object: not kept
     }
   }
-  if (allStatic && node) node.value = Object.freeze(out);
+  if (allStatic) { if (node) node.value = Object.freeze(out); return out; }
+  if (key === null) return out;
+  // the same values: one frozen style shared by every row that gives them (a zebra row: two), so the styles built on
+  // it take the static path above; a layer combination keeps at most DYN_KEEP of them (a colour per row is not kept)
+  let map = CACHE;
+  for (const l of layers) {
+    if (!l || typeof l !== 'object') continue;
+    let next = map.get(l);
+    if (!next) { next = { map: new WeakMap(), value: null }; map.set(l, next); }
+    node = next;
+    map = next.map;
+  }
+  if (!node) return out;
+  const kept = (node.dyn ||= new Map());
+  const hit = kept.get(key);
+  if (hit) return hit;
+  if (kept.size >= DYN_KEEP) return out;
+  kept.set(key, Object.freeze(out));
   return out;
 }
+const DYN_KEEP = 64;
 const CACHE = new WeakMap();
 const DYN = new WeakMap();
 function hasDynamic(l) {

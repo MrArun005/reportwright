@@ -1,5 +1,5 @@
 {
- "$schema": "pagewright/report@1",
+ "$schema": "reportwright/report@1",
  "name": "Product detail (live API)",
  "locale": "en-US",
  "currency": "USD",

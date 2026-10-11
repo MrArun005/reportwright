@@ -13,7 +13,7 @@ const N = Number(process.argv[2] || 50000);
 const formats = (process.argv[3] || 'pdf,xlsx,docx,html,csv').split(',');
 const rows = sampleStress(N).rows;
 const def = {
-  $schema: 'pagewright/report@1', name: 'Stress', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Stress', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 's', type: 'json', data: { rows } }], dataSets: [{ name: 'R', source: 's', path: '$.rows' }],
   sections: {
     pageHeader: { height: 20, items: [{ type: 'textbox', name: 'H', x: 0, y: 0, w: 300, h: 14, value: 'Stress report · {Globals.ReportName}' }] },

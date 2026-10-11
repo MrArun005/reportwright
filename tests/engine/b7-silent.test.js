@@ -6,7 +6,7 @@ import { fontStore, report } from '../helpers.js';
 
 const tableDef = (cells) => report([{ type: 'table', name: 'T1', x: 0, y: 0, w: 300, h: 40, dataSet: 'Rows', columns: [{ width: 100 }, { width: 100 }, { width: 100 }],
   detail: [{ cells }] }], { data: { rows: [{ a: 1 }] } });
-const chartDef = (item) => ({ $schema: 'pagewright/report@1', page: { size: 'A4' }, sections: { body: { items: [{ type: 'chart', name: 'C1', x: 0, y: 0, w: 300, h: 200, ...item }] } } });
+const chartDef = (item) => ({ $schema: 'reportwright/report@1', page: { size: 'A4' }, sections: { body: { items: [{ type: 'chart', name: 'C1', x: 0, y: 0, w: 300, h: 200, ...item }] } } });
 const paramDef = (p) => report([{ type: 'textbox', x: 0, y: 0, w: 300, h: 20, value: '=Parameters.P' }], { def: { parameters: [p] } });
 
 describe('#8 a table row with fewer cells than columns', () => {

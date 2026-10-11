@@ -5,13 +5,17 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { build } from 'esbuild';
 import zlib from 'node:zlib';
 import path from 'node:path';
-import { root, common, readable, ENTRIES, WORKER, bwipApart, firstLoad } from '../../scripts/embed-options.mjs';
+import { splitContinuations } from '../../scripts/line-continuations.mjs';
+import { root, common, readable, workerMin, ENTRIES, WORKER, bwipApart, firstLoad } from '../../scripts/embed-options.mjs';
 
 // gzip -9 KB of the readable (unminified) ES modules, as build-embed.mjs prints them. A ratchet: lower it when the
 // first load shrinks, never raise it. 652 KB on b10-bundle alone; fontkit (1.1 MB, in the first load only because
 // src/engine/text/fonts.js imports it at its top) going lazy (b10-perf) takes it to about 262 KB: lower this then.
 const FIRST_LOAD_KB = 270; // 262 KB with pdf-lib and fontkit lazy (was 827 KB)
-const WORKER_KB = 600; // the render worker without bwip-js (was 908 KB); since N43 it holds the standard-font metrics (+6 KB; the ~100 KB side file is gone)
+// 510: 505.7 KB at 0.13.2; +1.9 KB from 95dd62ba (the Vite line-continuation rewrite, which this test now measures
+// after), +~2 KB from the 0.14 perf work (b37bfedf, 170a41f6, f3b2f317, the zebra frozen-style change); 509.4 KB with
+// the sfnt.js stub (scripts/embed-options.mjs). Owner-approved; lower it when the worker shrinks, never raise it.
+const WORKER_KB = 510; // was 507, 594 before that
 
 const OUT = path.join(root, 'public/embed/esm');
 let viewer, worker;
@@ -23,8 +27,9 @@ beforeAll(async () => {
     gz: files.reduce((s, f) => s + zlib.gzipSync(text.get(f), { level: 9 }).length, 0) / 1024,
     inputs: files.flatMap(f => Object.keys(r.metafile.outputs[f].inputs)),
   };
-  const w = await build({ ...common, entryPoints: [WORKER], format: 'esm', ...readable, sourcemap: false, splitting: false, metafile: true, write: false, outfile: path.join(OUT, 'engine.worker.js'), plugins: [...common.plugins, bwipApart] });
-  worker = { gz: zlib.gzipSync(w.outputFiles[0].contents, { level: 9 }).length / 1024, inputs: Object.keys(Object.values(w.metafile.outputs)[0].inputs), text: w.outputFiles[0].text };
+  const w = await build({ ...common, entryPoints: [WORKER], format: 'esm', ...workerMin, sourcemap: false, splitting: false, metafile: true, write: false, outfile: path.join(OUT, 'engine.worker.js'), plugins: [...common.plugins, bwipApart] });
+  const wtext = splitContinuations(w.outputFiles[0].text); // as build-embed.mjs writes it
+  worker = { gz: zlib.gzipSync(wtext, { level: 9 }).length / 1024, inputs: Object.keys(Object.values(w.metafile.outputs)[0].inputs), text: wtext };
 }, 120000);
 
 describe('B10 A1.6 viewer bundle size', () => {

@@ -7,6 +7,7 @@ import { exportBlob, EXPORT_DEFAULTS, needsExportData } from './exports.js';
 import { pageToSvg, linkTitle } from '@/exporters/svg.js';
 import { NO_CJK_FONTS } from '@/engine/notices.js';
 import { safeUrl } from '@/engine/url.js';
+import { resolveHtmlExport } from '@/engine/htmlExport.js';
 import { viewerTimeZone } from './timeZone.js';
 import { applyStyleAttributes, deferStyleAttributes } from '../embed/styles.js';
 import { t as tr, dirOf, pickLang } from './i18n.js';
@@ -139,6 +140,7 @@ const FORMATS = { pdf: 'pdf', excel: 'xlsx', word: 'docx', powerpoint: 'pptx', h
  * @typedef {{ id: string, label: string, title?: string, after?: string, onClick?: (api: ViewerApi) => void }} ToolbarItem
  * @param {{ definition: any, reportId?: string, params?: Record<string,string>, title?: string, compact?: boolean, autoRun?: boolean, lang?: string,
  *   onDrill?: (report: string, params: object) => void, exportHtmlOptions?: object,
+ *   exportOptions?: { html?: 'interactive'|'tables'|'static', drillLinks?: 'inline'|'new-tab'|'off' }, exportDefaults?: { html?: string, drillLinks?: string },
  *   toolbar?: { hide?: string[], add?: ToolbarItem[] }, viewMode?: 'single' | 'continuous' | 'galley' }} props
  */
 /** Drill-through levels in the address (?_drill=[{id, params}…]), so browser Back and Forward walk them and a drilled view can be shared. */
@@ -146,7 +148,7 @@ const DRILL_KEY = '_drill';
 const drillOfUrl = () => { try { const v = new URL(window.location.href).searchParams.get(DRILL_KEY); const a = v ? JSON.parse(v) : []; return Array.isArray(a) ? a.filter(x => x && typeof x.id === 'string').slice(0, 50) : []; } catch { return []; } };
 const urlWithDrill = (list) => { const u = new URL(window.location.href); if (list.length) u.searchParams.set(DRILL_KEY, JSON.stringify(list)); else u.searchParams.delete(DRILL_KEY); return u.toString(); };
 
-export default function ReportViewer({ definition: rootDef, reportId: rootReportId, params: rootParams, title, compact = false, autoRun = true, lang: langIn = 'en', onDrill, exportHtmlOptions, toolbar, viewMode = 'continuous', onExported, urlState = false, onReady, control, onEvent }) {
+export default function ReportViewer({ definition: rootDef, reportId: rootReportId, params: rootParams, title, compact = false, autoRun = true, lang: langIn = 'en', onDrill, exportHtmlOptions, exportOptions, exportDefaults, toolbar, viewMode = 'continuous', onExported, urlState = false, onReady, control, onEvent, showWarnings = false }) {
   const lang = pickLang(langIn);
   const dir = dirOf(lang);
   const T = (k, v) => tr(lang, k, v);
@@ -157,6 +159,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   useEffect(() => { setLevels([{ def: rootDef, params: rootParams, id: rootReportId }]); }, [rootDef]); // eslint-disable-line react-hooks/exhaustive-deps
   const level = levels[levels.length - 1];
   const definition = level.def;
+  const hx = resolveHtmlExport(exportOptions, definition?.export, exportDefaults);
   const given = level.params;
   const reportId = level.id; // the saved report behind this level: its SQL sources run on the server
   const [params, setParams] = useState(() => initialParams(definition, given));
@@ -166,6 +169,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   // onReady(error | null) once, when the first run ends: null, or the error that stopped it (a font that did not load counts)
   const readied = useRef(false);
   const ready = (error) => { if (!readied.current) { readied.current = true; onReady?.(error); } };
+  const announce = useRef(null); // a finished run, to be announced once its model is rendered
   const [note, setNote] = useState(null); // a one-line notice (the server makes this PDF)
   // a paged report opens showing whole pages; a pageless one (a dashboard) fills the width
   const [zoom, setZoom] = useState(() => (rootDef?.page?.size === 'Pageless' ? 'fit' : 'page'));
@@ -190,7 +194,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const [xopt, setXopt] = useState(() => { try { return exportOptionsFrom(JSON.parse(localStorage.getItem('pw-export-options') || '{}')); } catch { return { ...EXPORT_DEFAULTS }; } });
   const [xmenu, setXmenu] = useState(false);
   const [emenu, setEmenu] = useState(false); // the Export menu (the seven formats)
-  const setX = (k, v) => setXopt((o) => { const n = { ...o, [k]: v }; try { localStorage.setItem('pw-export-options', JSON.stringify({ ...n, v: 2 })); } catch { /* private window */ } return n; });
+  const setX = (k, v) => setXopt((o) => { const n = { ...o, [k]: v }; try { const { html: _h, ...keep } = n; localStorage.setItem('pw-export-options', JSON.stringify({ ...keep, v: 3 })); } catch { /* private window */ } return n; });
+  const [hxFail, setHxFail] = useState(null);
   const [frozen, setFrozen] = useState(null); // { page, region }: the table header kept in view
   const root = useRef(null);
   const scroller = useRef(null);
@@ -222,8 +227,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       // a font that did not load is named on screen (the report still draws, in a fallback font)
       const fonts = failed.length ? T('fontsDidNotLoad', { fonts: [...new Set(failed.map(f => f.key))].join(', ') }) : null;
       setStatus({ state: 'done', fonts });
-      ready(failed[0]?.error || null);
-      onEvent?.('ready', { pages: m.pages.length });
+      // said once this render commits (the effect after `control` below), so export() inside a ready listener sees the run
+      announce.current = { error: failed[0]?.error || null, pages: m.pages.length };
       if (keepScroll) requestAnimationFrame(() => scroller.current?.scrollTo({ top }));
       else { setCurrent(1); setFrozen(null); scroller.current?.scrollTo({ top: 0 }); }
     } catch (e) {
@@ -451,7 +456,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       if (safeUrl(a.href)) window.open(a.href, '_blank', 'noopener');
     } else if (a.type === 'drill') {
       if (onDrill) onDrill(a.report, a.params);
-      else drillTo(a.report, a.params, e.metaKey || e.ctrlKey);
+      else if (hx.drillLinks === 'off') return;
+      else drillTo(a.report, a.params, hx.drillLinks === 'new-tab' || (!exportOptions?.drillLinks && (e.metaKey || e.ctrlKey)));
     } else if (a.type === 'params') {
       // cross-filter: set parameters from the clicked value; clicking the same value again clears it
       const next = { ...params };
@@ -481,16 +487,19 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   };
 
   /** The file of one format, as a Blob (the Export menu downloads it; the embed's handle returns it). */
-  const buildBlob = async (fmt) => {
-    const m = fmt === 'csv' ? await csvModel() : await pagedModel('export', needsExportData(fmt, xopt));
+  const htmlKind = xopt.html || hx.html;
+  const printKind = [xopt.html, hx.html].find(k => k === 'tables' || k === 'static') || 'tables';
+  const buildBlob = async (fmt, htmlMode) => {
+    const m = fmt === 'csv' ? await csvModel() : await pagedModel('export', needsExportData(fmt, { ...xopt, html: htmlMode || htmlKind }));
     const strings = { pages: T('htmlPages'), tables: T('htmlTables'), all: T('htmlAll'), filter: T('htmlFilter'), toggle: T('htmlToggle'), sortAsc: T('htmlSortAsc'), sortDesc: T('htmlSortDesc') };
     return fmt === 'pdf'
       ? pdfBlob(m, definition.name, { tagged: xopt.pdfua ? { lang: definition.locale || lang } : undefined, pdfa: xopt.pdfa })
-      : exportBlob(fmt, m, definition, { params, state, lang, options: xopt, strings, ...(exportHtmlOptions || {}), ...(level.id ? { reportId: level.id } : {}) });
+      : exportBlob(fmt, m, definition, { params, state, lang, options: { ...xopt, html: htmlMode || htmlKind, drillLinks: hx.drillLinks }, strings, ...(exportHtmlOptions || {}), ...(level.id ? { reportId: level.id } : {}) });
   };
 
   const doExport = async (fmt) => {
     if (!model) return;
+    if (fmt === 'html') setHxFail(null);
     if (exportQueue.current.busy) {
       if (fmt !== exportQueue.current.busy && !exportQueue.current.includes(fmt)) { exportQueue.current.push(fmt); setQueued([...exportQueue.current]); }
       return;
@@ -510,16 +519,17 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     exportQueue.current.busy = fmt;
     setExporting(fmt);
     try {
-      const blob = await buildBlob(fmt);
-      const ext = { pdf: 'pdf', xlsx: 'xlsx', docx: 'docx', pptx: 'pptx', html: 'html', csv: 'csv', json: 'json' }[fmt];
+      const blob = fmt === 'html' ? await buildBlob('html', 'interactive') : fmt === 'html-print' ? await buildBlob('html', printKind) : await buildBlob(fmt);
+      const ext = { pdf: 'pdf', xlsx: 'xlsx', docx: 'docx', pptx: 'pptx', html: 'html', 'html-print': 'html', csv: 'csv', json: 'json' }[fmt];
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = `${(definition.name || 'report').replace(/[^\w-]+/g, '-')}.${ext}`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
-      onExported?.(fmt, level.id, params); // the app's own pages tell the server, for the audit log
+      onExported?.(fmt === 'html-print' ? 'html' : fmt, level.id, params); // the app's own pages tell the server, for the audit log
     } catch (e) {
-      setStatus({ state: 'error', message: T('exportFailed', { fmt: fmt.toUpperCase(), message: e.message }) });
+      if (e.code === 'INTERACTIVE_FAILED') setHxFail({ message: e.message });
+      else setStatus({ state: 'error', message: T('exportFailed', { fmt: fmt.toUpperCase(), message: e.message }) });
     } finally {
       exportQueue.current.busy = null;
       setExporting(null);
@@ -579,6 +589,14 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     };
   });
   useEffect(() => () => { if (control) control.current = null; }, [control]);
+  // after the control effect above: control.current already exports this run when onReady and 'ready' fire
+  useEffect(() => {
+    const a = announce.current;
+    if (!a) return;
+    announce.current = null;
+    ready(a.error);
+    onEvent?.('ready', { pages: a.pages });
+  });
   // events: 'page' and 'parameters' fire when they change (not on the first render)
   const lastEvent = useRef({ page: current, params: JSON.stringify(params) });
   useEffect(() => {
@@ -590,14 +608,15 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
   // the formats are items of the Export menu: a format badge, the name, and what the file is. Badge and a name the hint
   // already says ("PDF" in "PDF document") are aria-hidden, so the accessible name is the visible text said once
-  const exportItem = (id, fmt, label, extra = {}) => {
+  const exportItem = (id, fmt, label, extra = {}, { hint: hintIn, isDefault = false } = {}) => {
     const name = exporting === fmt ? T('exporting') : queued.includes(fmt) ? T('r4_queued') : label;
-    const hint = T(`b2_fmt_${fmt}`);
+    const hint = hintIn || T(`b2_fmt_${fmt}`);
+    const badge = fmt.split('-')[0];
     return {
     id, group: 'export', format: true,
-    node: <button type="button" role="menuitem" className="vdrop-item" onClick={() => { setEmenu(false); doExport(fmt); }} disabled={!model || exporting === 'print'} data-testid={`export-${fmt}`} {...extra}>
-      <span className={`fmt-badge ${fmt}`} aria-hidden="true">{fmt === 'xlsx' ? 'XLS' : fmt === 'docx' ? 'DOC' : fmt === 'pptx' ? 'PPT' : fmt.toUpperCase()}</span>
-      <span className="vdrop-txt"><b aria-hidden={(name === label && hint.includes(label)) || undefined}>{name}</b><span className="hint">{hint}</span></span>
+    node: <button type="button" role="menuitem" className={`vdrop-item${isDefault ? ' is-default' : ''}`} onClick={() => { setEmenu(false); doExport(fmt); }} disabled={!model || exporting === 'print'} data-testid={`export-${fmt}`} {...extra}>
+      <span className={`fmt-badge ${badge}`} aria-hidden="true">{badge === 'xlsx' ? 'XLS' : badge === 'docx' ? 'DOC' : badge === 'pptx' ? 'PPT' : badge.toUpperCase()}</span>
+      <span className="vdrop-txt"><b aria-hidden={(name === label && hint.includes(label)) || undefined}>{name}{isDefault && <span className="vdrop-default" data-testid={`export-${fmt}-default`}>{T('hx_default')}</span>}</b><span className="hint">{hint}</span></span>
     </button>,
     };
   };
@@ -655,13 +674,14 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     exportItem('excel', 'xlsx', 'Excel'),
     exportItem('word', 'docx', 'Word', { title: T('wordHint') }),
     exportItem('powerpoint', 'pptx', 'PowerPoint', { title: T('pptxHint') }),
-    exportItem('html', 'html', 'HTML'),
+    exportItem('html', 'html', T('hx_interactive'), {}, { hint: T('hx_interactiveHint'), isDefault: htmlKind === 'interactive' }),
+    exportItem('htmlPrint', 'html-print', T('hx_print'), {}, { hint: T('hx_printHint'), isDefault: htmlKind !== 'interactive' }),
     exportItem('csv', 'csv', 'CSV'),
     exportItem('json', 'json', 'JSON', { title: T('jsonHint') }),
     {
       id: 'exportOptions', group: 'export',
       node: <span className="vexp">
-        <button type="button" className="btn sm icon" aria-label={T('exportOptions')} title={T('exportOptions')} aria-expanded={xmenu} aria-haspopup="true" data-testid="export-options" onClick={() => setXmenu(v => !v)}><Icon name="gear" /></button>
+        <button type="button" className="btn sm icon" aria-label={T('exportOptions')} title={T('exportOptions')} aria-expanded={xmenu} aria-haspopup="true" data-testid="export-options" onClick={() => setXmenu(v => !v)}><Icon name="sliders" /></button>
       </span>,
     },
   ].filter(Boolean);
@@ -768,7 +788,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
               <label><input type="checkbox" checked={xopt.pdfa} onChange={e => setX('pdfa', e.target.checked)} data-testid="opt-pdfa" /> {T('optPdfA')}</label>
               <label><input type="checkbox" checked={xopt.formulas} onChange={e => setX('formulas', e.target.checked)} data-testid="opt-formulas" /> {T('optFormulas')}</label>
               <label>{T('optHtml')}{' '}
-                <select className="select" value={xopt.html} onChange={e => setX('html', e.target.value)} data-testid="opt-html">
+                <select className="select" value={htmlKind} onChange={e => setX('html', e.target.value)} data-testid="opt-html">
                   <option value="interactive">{T('optHtmlInteractive')}</option>
                   <option value="tables">{T('optHtmlTables')}</option>
                   <option value="static">{T('optHtmlStatic')}</option>
@@ -822,16 +842,21 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
             ))}
           </nav>
         ))}
-        <div className="vpages" ref={scroller} role="document" aria-label={definition.name || T('ux_a11yReport')} onScroll={onScroll} onClick={onClick} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        <div className="vpages" ref={scroller} tabIndex={0} role="region" aria-label={definition.name || T('ux_a11yReport')} onScroll={onScroll} onClick={onClick} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
           {status.state === 'error' && <div className="vmsg error" role="alert"><b>{T('didNotRun')}</b><br />{status.message}
             <div style={{ marginTop: 10 }}><button type="button" className="btn sm" onClick={() => run()} data-testid="viewer-retry">{T('r4_retry')}</button></div></div>}
           {status.state === 'done' && status.fonts && <div className="vmsg error" role="alert" data-testid="viewer-fonts">{status.fonts}</div>}
+          {hxFail && <div className="vmsg error" role="alert" data-testid="html-export-failed">{T('hx_failed', { message: hxFail.message })}
+            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="btn sm primary" data-testid="html-export-print-instead" onClick={() => { setHxFail(null); doExport('html-print'); }}>{T('hx_exportPrint')}</button>
+              <button type="button" className="btn sm" onClick={() => setHxFail(null)}>{T('hx_cancel')}</button>
+            </div></div>}
           {note && <div className="vmsg" role="status" data-testid="viewer-note">{note} <button className="btn sm ghost" onClick={() => setNote(null)} aria-label={T('close')}>×</button></div>}
           {status.state === 'running' && status.retry && <div className="vmsg" role="status" data-testid="viewer-busy">{T('r4_busyRetry', { n: status.retry.attempt, max: status.retry.max })}</div>}
           {!model && status.state === 'running' && !status.retry && <Skeleton def={renderDef} scale={zoom === 'fit' || narrow ? fitW / 600 : Math.min(fitW / 600, fitH / 850)} T={T} />}
-          {model?.warnings?.length > 0 && (
+          {showWarnings && model?.warnings?.length > 0 && (
             // content cut off (past the page edge or bottom): the warnings open by themselves and the summary says so
-            <details className="warnings" open={hasErrorCells || model.clipped?.length > 0 || undefined} data-testid="viewer-warnings"><summary>{T('warnings', { n: model.warnings.length })}{model.clipped?.length > 0 && <b data-testid="viewer-clipped"> · {T('r4_clipped', { n: model.clipped.length })}</b>}</summary>
+            <details className="warnings" open={hasErrorCells || model.clipped?.length > 0 || undefined} data-testid="viewer-warnings"><summary>{model.warnings.length === 1 ? T('c132_warning1') : T('c132_warnings', { n: model.warnings.length })}{model.clipped?.length > 0 && <b data-testid="viewer-clipped"> · {T('r4_clipped', { n: model.clipped.length })}</b>}</summary>
               <ul>{model.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></details>
           )}
           {model && !single && (

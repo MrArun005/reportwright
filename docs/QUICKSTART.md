@@ -16,7 +16,7 @@ A report is JSON: data sources, data sets, and items placed in points (1/72 inch
 
 ```json
 {
-  "$schema": "pagewright/report@1",
+  "$schema": "reportwright/report@1",
   "name": "Invoice",
   "page": { "size": "A4", "margins": [36, 36, 36, 36] },
   "dataSources": [{ "name": "orders", "type": "json", "data": { "rows": [] } }],

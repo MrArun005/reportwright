@@ -15,7 +15,7 @@ const t = () => useDesigner.getState().def.sections.body.items[0];
 const cells = (row) => row.cells.map(c => (c === null || c === undefined ? null : c.value + (c.colSpan > 1 ? `/${c.colSpan}` : '')));
 
 beforeEach(() => {
-  useDesigner.getState().init('x', { $schema: 'pagewright/report@1', name: 'x', page: { size: 'A4' }, sections: { body: { height: 200, items: [table()] } } });
+  useDesigner.getState().init('x', { $schema: 'reportwright/report@1', name: 'x', page: { size: 'A4' }, sections: { body: { height: 200, items: [table()] } } });
 });
 
 describe('add column', () => {

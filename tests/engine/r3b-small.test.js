@@ -181,7 +181,7 @@ describe('a batch past PW_BATCH_MAX_OUTPUT_MB builds no zip (it would be built i
     process.env.PW_STORAGE = `sqlite:${path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pw-r3b-cap-')), 's.db')}`;
     process.env.PW_BATCH_MAX_OUTPUT_MB = '0.000001'; process.env.PW_RENDER_WORKERS = '0';
     const jobs = await import('../../src/server/jobs.js');
-    const def = { $schema: 'pagewright/report@1', name: 'Cap', parameters: [{ name: 'n' }], sections: { body: { height: 40, items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 100, h: 20, value: '=Parameters.n' }] } } };
+    const def = { $schema: 'reportwright/report@1', name: 'Cap', parameters: [{ name: 'n' }], sections: { body: { height: 40, items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 100, h: 20, value: '=Parameters.n' }] } } };
     const job = await jobs.createBatch({ template: def, items: [{ parameters: { n: '1' } }, { parameters: { n: '2' } }], format: 'json', output: { type: 'zip' } }, null);
     for (let i = 0; i < 5 && (await jobs.workOnce('T')) !== null; i++) { /* run it */ }
     const done = await jobs.getJob(job.id);

@@ -9,6 +9,8 @@ reports/.history/e2e-*
 packages/*/dist
 packages/engine/public
 packages/fonts/public
+packages/fonts/index.mjs
+packages/fonts/index.d.ts
 packages/*/LICENSE
 *.tgz
 packages/*/package.json

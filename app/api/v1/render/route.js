@@ -10,7 +10,7 @@ import { pdfEncryptOptions } from '@/exporters/encrypt.js';
 import { audit } from '@/server/audit.js';
 import { throughSnapshot } from '@/server/snapshots.js';
 
-import { outputHeaders } from '@/server/headers.js';
+import { outputHeaders, rwHeaders } from '@/server/headers.js';
 
 export const runtime = 'nodejs';
 
@@ -36,7 +36,7 @@ export async function POST(req) {
     // worker renders it (src/server/pool.js) and loads its subreports as this principal
     const def = await loadTemplate(body.template, principal);
     checkParameterValues(def, body.parameters, principal); // fixed lists and hidden parameters hold on the server too
-    const opt = { encrypt, timeZone: checkTimeZone(body.timeZone), parameters: body.parameters, data: body.data, format: body.format, baseUrl: baseUrl(req), state: body.state, pdfa: !!body.pdfa, ua: !!body.ua, formulas: body.formulas, csv: body.csv, static: !!body.static, sign: !!body.sign, principal };
+    const opt = { encrypt, timeZone: checkTimeZone(body.timeZone), parameters: body.parameters, strictParameters: true, data: body.data, format: body.format, baseUrl: baseUrl(req), state: body.state, pdfa: !!body.pdfa, ua: !!body.ua, formulas: body.formulas, csv: body.csv, static: !!body.static, sign: !!body.sign, principal };
     // a saved template may come from the snapshot cache (src/server/snapshots.js: off unless an admin sets a TTL)
     const r = await throughSnapshot({ def: typeof body.template === 'string' ? def : null, opt, principal }, () => { const job = { ref: typeof body.template === 'string' ? body.template : undefined, def, opt }; return streams(opt) ? streamInPool(job, { signal: req.signal }) : renderInPool(job, { signal: req.signal }); });
     await audit('report.render', { req, principal, report: typeof body.template === 'string' ? body.template : null, format: body.format || 'pdf', params: body.parameters, detail: { pages: r.pages, ms: r.ms ?? undefined, via: 'api', ...(r.snapshot !== 'off' ? { snapshot: r.snapshot } : {}), ...flags({ inline: typeof body.template !== 'string', pushedData: !!body.data, signed: !!body.sign, encrypted: !!encrypt }) } }); // the only event of a render (no api.call)
@@ -48,10 +48,7 @@ export async function POST(req) {
         ...outputHeaders(r.contentType),
         ...(r.stream ? {} : { 'content-length': String(r.bytes.byteLength) }),
         'content-disposition': `${body.format === 'json' ? 'inline' : 'attachment'}; filename="${name}.${r.ext}"`,
-        'x-pagewright-pages': String(r.pages),
-        'x-pagewright-ms': String(r.ms),
-        'x-pagewright-warnings': String(r.warnings),
-        'x-pagewright-snapshot': r.snapshot,
+        ...rwHeaders({ pages: String(r.pages), ms: String(r.ms), warnings: String(r.warnings), snapshot: r.snapshot }),
       },
     });
   } catch (e) { return fail(e); }

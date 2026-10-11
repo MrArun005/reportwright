@@ -132,6 +132,8 @@ function renameForWeight(tables, weight) {
   }
 }
 
+let liftoffTried = false; // the process's first subsetter compile on the main thread set --liftoff-only (L1)
+
 /** @param {() => Promise<ArrayBuffer|Uint8Array>} loadWasm */
 export function createSubsetter(loadWasm) {
   /** @type {Promise<any>|null} */
@@ -142,11 +144,23 @@ export function createSubsetter(loadWasm) {
     // Node: compiled synchronously, which V8 does lazily (each function when first called). The async compile also
     // optimizes the whole module in the background, and a cold process then waited ~140 ms for it before its first
     // PDF was written (measured: 1-page invoice export 175 ms → 35 ms). Browsers keep the async compile (a large
-    // synchronous one is refused on the main thread).
+    // synchronous one is refused on the main thread). Liftoff only for this module (the flag is read when it is
+    // compiled, then restored): V8's dynamic tier-up recompiled the hot subsetter functions with TurboFan in the
+    // background (~200 ms, ~80 MB), and a short-lived process waited for that at exit (cold 100-row report 376 → 165 ms).
     const src = /** @type {any} */ (u8);
-    const instance = /** @type {any} */ (globalThis).process?.versions?.node
-      ? new WebAssembly.Instance(new WebAssembly.Module(src), {})
-      : (await WebAssembly.instantiate(src, {})).instance;
+    const proc = /** @type {any} */ (globalThis).process;
+    let instance;
+    if (proc?.versions?.node) {
+      // PW_NO_LIFTOFF=1 leaves V8's flags alone; a process started with --liftoff-only keeps it (never reset to off)
+      const own = /--liftoff-only/.test([...(proc.execArgv ?? []), proc.env?.NODE_OPTIONS ?? ''].join(' '));
+      // the flag is process-wide: set only on the main thread (a worker's compile would race the main thread's and
+      // other workers'), and only for the process's first compile; a worker compiles plainly, as 0.13 did
+      const main = !!proc.getBuiltinModule?.('node:worker_threads')?.isMainThread;
+      const v8 = proc.env?.PW_NO_LIFTOFF || own || !main || liftoffTried ? null : proc.getBuiltinModule?.('node:v8');
+      if (v8) liftoffTried = true;
+      v8?.setFlagsFromString('--liftoff-only');
+      try { instance = new WebAssembly.Instance(new WebAssembly.Module(src), {}); } finally { v8?.setFlagsFromString('--no-liftoff-only'); }
+    } else instance = (await WebAssembly.instantiate(src, {})).instance;
     const x = /** @type {any} */ (instance.exports);
     x._initialize?.();
     return x;

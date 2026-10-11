@@ -2,6 +2,7 @@
 // tests/engine/b10-bundle-size.test.js builds the same in memory to hold the first load to its budget.
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 export const root = path.join(import.meta.dirname, '..');
 // viewer styles, scoped to the shadow root
 let css = fs.readFileSync(path.join(root, 'app/globals.css'), 'utf8')
@@ -34,6 +35,9 @@ export const common = {
 // lineLimit and utf8: no line over a few hundred characters (long lines read as obfuscated to a scanner; \u escapes
 // made translated strings six times longer)
 export const readable = { minify: false, sourcemap: 'linked', sourcesContent: false, legalComments: 'inline', charset: 'utf8', lineLimit: 400 };
+// The render worker and its side file (bwip-js) are minified: 2.2 MB readable was most of what a page downloads after the
+// viewer. The source map is linked (a .map file next to it, not inline) so a stack trace in a worker stays usable.
+export const workerMin = { ...readable, minify: true, lineLimit: 200 }; // lines stay short for the package scanner (it flags over 1000)
 // the ES module builds: the viewer, the designer, and the render worker the viewer starts (src/worker)
 export const ENTRIES = { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js') };
 // the render worker is one file (no chunk imports; bwip-js is a file of its own, below), so copying it alone works (N18)
@@ -45,7 +49,31 @@ export const BWIP_FILE = 'engine.worker.bwip.js';
 // (the standard-14 font metrics were a second such file; they are a generated 5 KB-gzipped table now, in the worker: N43)
 /** each library kept out of the worker, and the file next to it that holds it */
 export const APART = { 'bwip-js': BWIP_FILE };
-export const bwipApart = { name: 'libs-apart', setup: (b) => b.onResolve({ filter: /^bwip-js$/ }, (a) => ({ path: `./${APART[a.path]}`, external: true })) };
+// sfnt.js (fonts.js's Node-only font reader: canFontkitSync() is false in a browser) is a stub in the worker, whose build
+// inlines its import(): liteFont() returning null is the "fontkit reads this font" answer, which a browser always takes
+/** Schema-node keys validate() never reads: prose and the TypeScript hints. */
+const SCHEMA_PROSE = new Set(['description', 'title', 'examples', '$comment', 'x-ts']);
+/**
+ * The report JSON Schema without its prose, for the worker (validate() reads properties, enums, consts and refs only).
+ * A property NAMED title or description (under properties) is kept. @param {any} n @param {string|null} [parent]
+ */
+export function stripSchema(n, parent = null) {
+  if (parent === 'enum' || parent === 'const' || parent === 'default') return n; // values, not schema nodes
+  if (Array.isArray(n)) return n.map(x => stripSchema(x));
+  if (!n || typeof n !== 'object') return n;
+  const keyed = parent === 'properties' || parent === '$defs' || parent === 'patternProperties';
+  return Object.fromEntries(Object.entries(n).filter(([k]) => keyed || !SCHEMA_PROSE.has(k)).map(([k, v]) => [k, stripSchema(v, keyed ? null : k)]));
+}
+export const bwipApart = { name: 'libs-apart', setup: (b) => {
+  b.onResolve({ filter: /^bwip-js$/ }, (a) => ({ path: `./${APART[a.path]}`, external: true }));
+  // the report schema without its descriptions (the designer, docs and API keep the full one: they do not use this build)
+  b.onLoad({ filter: /src[\\/]engine[\\/]schema[\\/]report\.schema\.js$/ }, async (a) => {
+    const { REPORT_SCHEMA } = await import(pathToFileURL(a.path).href);
+    return { contents: `export const REPORT_SCHEMA = ${JSON.stringify(stripSchema(REPORT_SCHEMA))};`, loader: 'js' };
+  });
+  b.onResolve({ filter: /^\.\/sfnt\.js$/ }, () => ({ path: 'sfnt', namespace: 'node-only' }));
+  b.onLoad({ filter: /.*/, namespace: 'node-only' }, () => ({ contents: 'export const liteFont = () => null;', loader: 'js' }));
+} };
 /**
  * The output files a page loads up front for an entry: the entry and the chunks it imports statically (import()
  * chunks load on demand). @param {import('esbuild').Metafile} meta @param {string} entry its output path in meta.outputs

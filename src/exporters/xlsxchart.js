@@ -7,7 +7,7 @@ import { excelFormat } from './xlsx.js';
  * column / line / area with a secondary value axis. Each series carries its cached values, so a reader that does not
  * recalculate (LibreOffice, a previewer) still draws it.
  */
-import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
+import { unzipSync, zipSync, strToU8, strFromU8 } from '@reportwright/pdf/fflate';
 
 /**
  * The one way report text gets into these parts, as a text node or an attribute value: characters XML 1.0 does not

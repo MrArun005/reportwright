@@ -14,7 +14,7 @@ const ORIGIN = 'http://axe.test';
 const FILES = { '/pw/': path.join(root, 'public/embed/esm/'), '/pw-fonts/': path.join(root, 'packages/fonts/public/fonts/') };
 const TYPES = { '.js': 'text/javascript', '.ttf': 'font/ttf', '.wasm': 'application/wasm', '.map': 'application/json' };
 const definition = {
-  $schema: 'pagewright/report@1', name: 'Axe', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Axe', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'orders', type: 'json', data: { rows: [{ customer: 'Asha Rao', amount: 1200.5 }] } }],
   dataSets: [{ name: 'Rows', source: 'orders', path: '$.rows', fields: [{ name: 'customer', type: 'string' }, { name: 'amount', type: 'number' }] }],
   sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 400, h: 40, dataSet: 'Rows', columns: [{ width: 200 }, { width: 200 }],
@@ -54,7 +54,8 @@ await p.waitForTimeout(600); // the menu's fade-in
 const viewer = await axe();
 // the badge and a name the hint repeats are aria-hidden: each format's name is said once
 assert.equal(await p.getByRole('menuitem', { name: 'PDF document', exact: true }).count(), 1);
-assert.equal(await p.getByRole('menuitem', { name: 'HTML Web page', exact: true }).count(), 1);
+assert.equal(await p.getByRole('menuitem', { name: /^HTML \(interactive\)/ }).count(), 1); // the default kind is marked
+assert.equal(await p.getByRole('menuitem', { name: /^HTML \(print\)/ }).count(), 1);
 
 await p.goto(`${ORIGIN}/designer`);
 await p.waitForFunction(() => document.querySelector('#r')?.shadowRoot?.querySelector('[data-testid], button'), null, { timeout: 60000 });

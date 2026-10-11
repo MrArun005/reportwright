@@ -3,8 +3,8 @@
 import { resolvePage } from '../engine/units.js';
 
 /**
- * The toolbar.hide keys that name a group of built-in items. `export` is the Export menu's formats and its options
- * gear (Print is its own key); `navigation` is the paging group (first, previous, page number, next, last).
+ * The toolbar.hide keys that name a group of built-in items. `export` is the Export menu's formats and its Export
+ * options button (Print is its own key); `navigation` is the paging group (first, previous, page number, next, last).
  * @type {Record<string, (i: {id: string, group?: string}) => boolean>}
  */
 export const TOOLBAR_GROUP_KEYS = {
@@ -19,7 +19,7 @@ export const TOOLBAR_ID_KEYS = { sidebar: ['thumbnails', 'documentMap'] };
 /**
  * Built-in toolbar items minus `hide`, plus custom `add` items placed after the item they name (else at the end).
  * A custom item joins the group of the item it follows. A custom id that clashes with a built-in id is ignored.
- * Hiding every export format also hides the Export options gear (no empty gear).
+ * Hiding every export format also hides the Export options button (no empty options menu).
  * @template {{id: string, group?: string}} T
  * @param {T[]} builtIns
  * @param {{ hide?: string[], add?: any[] }} [opt]
@@ -170,22 +170,13 @@ export function readingText(page) {
   return [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([, ls]) => ls.sort((a, b) => a.x - b.x).map(l => l.text).join(' ').trim()).filter(Boolean);
 }
 
-/**
- * Export options the viewer offers (its Export options menu) and their defaults. HTML: "tables" (the pages, fonts
- * subset to the characters used, and the Tables view of the rendered tables); "interactive" (the whole viewer, full
- * fonts and a data snapshot: megabytes) and "static" (pages only) are choices.
- */
-export const EXPORT_DEFAULTS = { pdfua: false, pdfa: false, formulas: true, html: 'tables' };
+/** Export options (Export options menu); html/drillLinks are resolved by src/engine/htmlExport.js. */
+export const EXPORT_DEFAULTS = { pdfua: false, pdfa: false, formulas: true, html: 'interactive', drillLinks: 'inline' };
 
-/**
- * The export options from what this browser stored. Before v2 every option was stored on any change, so a stored
- * "html" was mostly the old default "interactive" (a 10 MB file for one page), not a choice: it is dropped.
- * @param {any} stored
- */
+/** Stored export options; the HTML kind never comes from storage. @param {any} stored */
 export function exportOptionsFrom(stored) {
-  const { v, ...rest } = stored && typeof stored === 'object' ? stored : {};
-  if (v !== 2) delete rest.html;
-  return { ...EXPORT_DEFAULTS, ...rest };
+  const { v: _v, html: _h, drillLinks: _d, ...rest } = stored && typeof stored === 'object' ? stored : {};
+  return { pdfua: EXPORT_DEFAULTS.pdfua, pdfa: EXPORT_DEFAULTS.pdfa, formulas: EXPORT_DEFAULTS.formulas, ...rest };
 }
 
 /**

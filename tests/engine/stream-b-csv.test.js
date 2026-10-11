@@ -10,7 +10,7 @@ import { fontStore } from '../helpers.js';
 
 const rows = (n) => Array.from({ length: n }, (_, i) => ({ id: i, name: i % 7 === 0 ? `Ann, "the ${i}"` : `Name ${i}`, city: ['Pune', 'delhi', 'Delhi', 'Chennai', null][i % 5], qty: (i * 37) % 11, price: ((i * 7.31) % 100) - 20, day: `2026-0${1 + (i % 9)}-1${i % 10}`, ok: i % 3 === 0 }));
 const report = (table, ds = {}, extra = {}) => ({
-  $schema: 'pagewright/report@1', name: 'S', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'S', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: { rows: rows(523) } }],
   dataSets: [{ name: 'D', source: 'src', path: '$.rows', ...ds }],
   sections: { body: { items: [{ type: 'textbox', x: 0, y: 0, w: 200, h: 20, value: 'Title' }, { type: 'table', name: 'T', dataSet: 'D', x: 0, y: 24, w: 500, h: 40,

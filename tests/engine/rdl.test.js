@@ -364,7 +364,7 @@ describe('kitchen sink (RDL 2016)', () => {
   const W = warnings.join('\n');
   it('is a valid report, with every item counted', () => {
     expect(validate(def).errors).toEqual([]);
-    expect(def).toMatchObject({ $schema: 'pagewright/report@1', name: 'Kitchen sink', locale: 'en-GB', currency: 'GBP' });
+    expect(def).toMatchObject({ $schema: 'reportwright/report@1', name: 'Kitchen sink', locale: 'en-GB', currency: 'GBP' });
     expect(stats.items).toBe(stats.mapped + stats.approximated + stats.dropped);
     expect(stats.dropped).toBe(1); // the map
   });

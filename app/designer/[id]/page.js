@@ -1,7 +1,8 @@
 import { notFound, redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { safeId } from '@/server/reports.js';
-import { principalFromCookie, readReportFor, checkReport, revOfRead } from '@/server/perms.js';
+import { principalFromCookie, readReportFor, checkReport, revOfRead, canDesign } from '@/server/perms.js';
+import { internalHosts } from '@/server/safeFetch.js';
 import { audit } from '@/server/audit.js';
 import Designer from '@/designer/Designer.jsx';
 
@@ -29,5 +30,7 @@ export default async function DesignerPage({ params, searchParams }) {
   const rev = revOfRead(def); // of the text this page shows
   // ai: whether Ask AI can work here (the server has an Anthropic key); without one the button says why it is off
   const ai = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
-  return <Designer id={id} initial={def} rev={rev} lang={lang} user={p?.kind === 'user' ? p.email : ''} ai={ai} />;
+  // the private hosts a designer's data may reach (PW_INTERNAL_HOSTS, as in server renders): the browser's guard allows them
+  const allowHosts = canDesign(p) ? internalHosts() : [];
+  return <Designer id={id} initial={def} rev={rev} lang={lang} user={p?.kind === 'user' ? p.email : ''} ai={ai} allowHosts={allowHosts} />;
 }

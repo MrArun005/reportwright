@@ -20,7 +20,7 @@ const row = (i) => ({ id: i, name: `Customer ${i}`, city: ['Pune', 'Delhi', 'Koc
 const sql = async () => Array.from({ length: N }, (_, i) => row(i));
 async function* sqlRows() { for (let i = 0; i < N; i += 1000) yield Array.from({ length: Math.min(1000, N - i) }, (_, k) => row(i + k)); }
 const cols = ['id', 'name', 'city', 'qty', 'price', 'day'];
-const def = { $schema: 'pagewright/report@1', name: 'Big', page: { size: 'A4', margins: [36, 36, 36, 36] },
+const def = { $schema: 'reportwright/report@1', name: 'Big', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 's', type: 'sql', connection: 'db', query: 'select * from t' }],
   dataSets: [{ name: 'D', source: 's', fields: cols.map(c => ({ name: c, type: ['id', 'qty', 'price'].includes(c) ? 'number' : 'string' })) }],
   sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 516, h: 40, dataSet: 'D', columns: cols.map(() => ({ width: 86 })),

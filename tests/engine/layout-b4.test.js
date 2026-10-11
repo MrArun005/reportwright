@@ -280,7 +280,7 @@ describe('an item in a table cell continues on the next page', () => {
 import { normalize, sectionList, secOf, findItem, isBodyKey, bodyKeyOf } from '../../src/designer/store.js';
 describe('designer store: section bands, placeholders and AI items', () => {
   const def = () => ({
-    $schema: 'pagewright/report@1', name: 'x', page: { size: 'A4' }, master: 'm',
+    $schema: 'reportwright/report@1', name: 'x', page: { size: 'A4' }, master: 'm',
     sections: {
       pageHeader: { height: 20, items: [] },
       body: [{ name: 'A', items: [] }, { name: 'B', pageHeader: { height: 30, items: [{ type: 'textbox', x: 0, y: 0, w: 50, h: 12, value: 'H' }] }, pageFooter: { hidden: true }, items: [] }],

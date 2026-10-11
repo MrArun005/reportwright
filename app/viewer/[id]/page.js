@@ -4,6 +4,7 @@ import { safeId } from '@/server/reports.js';
 import { principalFromCookie, readReportFor, checkReport, atLeast } from '@/server/perms.js';
 import ViewerShell from '@/viewer/ViewerShell.jsx';
 import { audit } from '@/server/audit.js';
+import { serverHtmlExport } from '@/server/settings.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,5 +23,7 @@ export default async function ViewerPage({ params, searchParams }) {
   try { def = await readReportFor(p, safeId(id), 'view'); level = await checkReport(p, id, 'view'); } catch { notFound(); }
   const h = await headers();
   await audit('report.view', { req: new Request('http://reportwright.local/', { headers: { 'x-forwarded-for': h.get('x-forwarded-for') || '', 'x-pw-peer': h.get('x-pw-peer') || '' } }), principal: p, report: id });
-  return <ViewerShell id={id} def={def} params={sp} canEdit={atLeast(level, 'edit') && (p.kind !== 'user' || p.role !== 'viewer')} />;
+  // the server's HTML export default (Settings page, then env); the report's own `export` and the user's choice win over it
+  const exportDefaults = await serverHtmlExport().catch(() => undefined);
+  return <ViewerShell id={id} def={def} params={sp} exportDefaults={exportDefaults} canEdit={atLeast(level, 'edit') && (p.kind !== 'user' || p.role !== 'viewer')} />;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PDFDocument } from 'pdf-lib';
+import { loadPdf } from '@reportwright/pdf';
 import { render } from '../../src/engine/index.js';
 import { validate } from '../../src/engine/schema/validate.js';
 import { blankDashboard } from '../../src/engine/schema/template.js';
@@ -48,8 +48,8 @@ describe('pageless layout', () => {
 
   it('exports a PDF page of the same size', async () => {
     const out = await render(pageless([table()], rows(30)), { fontStore });
-    const doc = await PDFDocument.load(await exportPdf(out, fontStore, {}));
-    const { width, height } = doc.getPage(0).getSize();
+    const doc = await loadPdf(await exportPdf(out, fontStore, {}));
+    const { width, height } = doc.page(0);
     expect([width, height]).toEqual([out.width, out.height]);
   });
 

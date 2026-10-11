@@ -4,7 +4,7 @@ const W = 523.28, ACC = '#1d4ed8', MUTED = '#6b7280';
 const tb = (name, x, y, w, h, value, style = {}, extra = {}) => ({ type: 'textbox', name, x, y, w, h, value, canGrow: true, style, ...extra });
 const num = (fmt = 'N0') => ({ textAlign: 'right', format: fmt });
 const def = {
-  $schema: 'pagewright/report@1', name: 'Sales by region', locale: 'en-IN', currency: 'INR',
+  $schema: 'reportwright/report@1', name: 'Sales by region', locale: 'en-IN', currency: 'INR',
   page: { size: 'A4', orientation: 'portrait', margins: [36, 36, 30, 36] },
   parameters: [
     { name: 'year', type: 'number', prompt: 'Year', required: true, default: 2026, options: [{ value: 2025, label: '2025' }, { value: 2026, label: '2026' }] },

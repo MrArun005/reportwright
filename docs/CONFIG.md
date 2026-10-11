@@ -4,13 +4,15 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 
 **Mode.** `PW_MODE=dev|prod`. Unset: development only under `next dev` (`NODE_ENV=development`) or tests; any other `NODE_ENV` (unset under a custom server, `staging`, a typo) is production, so an unknown mode never opens the server. Every development-only behaviour (keyless API, open server, base URL from the request, fetch hosts by expression) follows this one switch.
 
+**HTML export.** Most specific wins: the viewer's `exportOptions` prop > the report's `export: { html, drillLinks }` (designer: Report properties → HTML export) > Settings → HTML export (admins) > `PW_HTML_EXPORT` / `PW_HTML_DRILL_LINKS` > interactive / inline. The viewer user's choice in Export options applies per export.
+
 | Setting | Kind | Default | What it does |
 |---|---|---|---|
 | `PW_MODE` | dev / prod | (from NODE_ENV) | dev or prod. Unset: dev only under next dev or tests; anything else is prod. |
 | `PW_AUTH` | users / proxy | (none) | users: accounts and roles; proxy: a signing-in reverse proxy in front. Unset in prod: static files and /api/v1 only. |
 | `PW_SESSION_SECRET` | secret | (required with users) | Signs session cookies (32+ characters). |
 | `PW_BASIC_AUTH` | text | (off) | "user:password" for the whole app (no accounts). |
-| `PW_PROXY_SECRET` | secret | (off) | With PW_AUTH=proxy: the header x-pagewright-proxy-secret the proxy adds (16+ characters in prod). |
+| `PW_PROXY_SECRET` | secret | (off) | With PW_AUTH=proxy: the header x-reportwright-proxy-secret (x-pagewright-proxy-secret, deprecated, is still read) the proxy adds (16+ characters in prod). |
 | `PW_PUBLIC_READONLY` | flag | 0 | 1: without sign-in, anyone may open and render saved reports. |
 | `PW_ALLOW_KEYLESS` | flag | 0 | 1: /api/v1 answers reads without a key in prod. |
 | `PW_API_KEYS` | list | (none) | API keys for /api/v1, comma-separated: "key" (a service key) or "user@x/key" (acts as that user). |
@@ -49,6 +51,8 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 | `PW_SSO_DEFAULT_ROLE` | viewer / designer / admin / none | viewer | Role without a mapped group. |
 | `PW_SSO_ALLOWED_DOMAINS` | list | (any) | Email domains SSO may sign in. |
 | `PW_BASE_URL` | url | (none) | This server's own URL (links, relative data URLs). Needed in prod. |
+| `PW_HTML_EXPORT` | interactive / tables / static | interactive | The HTML file the viewer exports when neither the report nor the Settings page says: interactive (drills in place), tables, or static (print). |
+| `PW_HTML_DRILL_LINKS` | inline / new-tab / off | inline | Drill-through in exported HTML: inline (in place / same tab), new-tab, or off (shown disabled). |
 | `PW_EMBED_ORIGINS` | list | (none) | Sites that may embed the viewer (set at build time too). |
 | `PW_FIXED_FETCH_HOSTS` | flag | 1 in prod, 0 in dev | 1: data source hosts must be written out, not made by expressions. |
 | `PW_INTERNAL_HOSTS` | list | (none) | Private hosts server-side fetches may reach (designers only). |
@@ -65,6 +69,7 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 | `PW_DB_<NAME>` | url |  | A SQL connection named <name> (PW_DB_MAIN, …): sqlite:, postgres://, mysql://, mssql://, oracle://, … |
 | `PW_DB_<NAME>_PROCS` | list |  | Stored procedures that connection may call. |
 | `PW_DB_POOL_MAX` | int | 5 | Connections per SQL pool per server thread. |
+| `PW_DB_ACQUIRE_MS` | ms |  | A lower cap on how long a PostgreSQL or MySQL query waits for a free pooled connection before a 503 with Retry-After (unset: up to the query deadline). |
 | `PW_SQL_TIMEOUT_MS` | ms | 30000 | A SQL query. |
 | `PW_SQL_MAX_ROWS` | int | 100000 | Rows a query may return. |
 | `PW_SQL_MAX_MB` | int | 64 | Megabytes a query may return. |
@@ -91,6 +96,7 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 | `PW_CPUS` | int | (cgroup or cores) | Cores the pool plans for. |
 | `PW_SIGN_P12` | text | (off) | A PKCS#12 file that signs PDFs (API renders with sign: true). |
 | `PW_SIGN_PASSWORD` | secret |  | Its password. |
+| `PW_FORCE_PDFLIB` | flag | 0 | 1: every PDF takes the pdf-lib whole-model path (the writer parity gate's baseline; for testing). |
 | `PW_AI_MODEL` | text | (default) | Model for AI drafting. |
 | `PW_WORKER` | onoff | on | off: this server runs no queued batches. |
 | `PW_SCHEDULER` | onoff | on | off: this server runs no schedules. |
@@ -134,3 +140,5 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 | `PW_MAX_5XX` | internal | 0.05 | scripts/uptime-check.mjs: the largest share of 5xx answers before it fails. |
 | `PW_SITE_BASE` | internal |  | scripts/build-site.mjs. |
 | `PW_SITE_ORIGIN` | internal |  | scripts/build-site.mjs. |
+| `PW_NO_COMPILE_CACHE` | bool | (off) | pw: do not use Node's compile cache (a private 0700 folder under the user cache folder). |
+| `PW_NO_LIFTOFF` | bool | (off) | Leave V8's flags alone when the font subsetter loads (it briefly sets --liftoff-only; cold renders are slower without it). |

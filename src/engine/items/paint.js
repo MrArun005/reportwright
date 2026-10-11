@@ -33,6 +33,12 @@ export function layoutTextLines(text, st, width, m, opt) {
   // out once per render. Tables repeat most cell texts (a region, a status, a date), so most cells hit this.
   // only short texts (a cell's value), at most 200,000 per render: memory stays bounded whatever the data holds
   if (typeof text !== 'string' || text.length > MAX_CACHED_TEXT || !m.boxes || !Object.isFrozen(st)) return layoutText(text, st, width, m, wrap, atom);
+  // a token that fits costs less to measure than to look up (and a column of unique ones would only fill the cache)
+  if (wrap && st.wrap !== false && TOKEN.test(text)) {
+    const look = lookOf(st, m);
+    const tl = tokenLine(text, look, Math.max(1, width - look.pad[1] - look.pad[3]), m);
+    if (tl) return tl;
+  }
   let byW = m.boxes.get(st);
   if (!byW) { byW = new Map(); m.boxes.set(st, byW); }
   const wk = wrap ? (atom ? `a${width}` : width) : -1 - width;
@@ -61,6 +67,7 @@ function lookOf(st, m) {
 }
 /** A number as formatted (sign, currency, digits with separators, percent, exponent): it never breaks across lines. */
 const NUMBER = /^[\s(+\-\u2212]*[\p{Sc}]?\s?[\p{Sc}A-Z]{0,3}\.?\s?[\d][\d.,'\u00a0\u202f\s]*(?:[eE][+-]?\d+)?\s?%?\)?\s?[\p{Sc}A-Z]{0,3}$/u;
+const TOKEN = /^[!-~]+$/; // one printable-ASCII token: no space, no line break, no complex script
 const MIN_FONT = 5; // pt: a word is not shrunk below this; it breaks instead
 const MIN_NUMBER_FONT = 3; // pt: a number shrinks until it fits, down to this (cut digits would read as another number)
 /**
@@ -85,11 +92,22 @@ function fitSize(text, key, size, inner, m, atom = false) {
   // in half points: cells shrunk alike share one size (fewer font changes, a smaller PDF)
   return Math.max(floor, Math.min(size, Math.floor((size * (inner / longest) - 0.01) * 2) / 2));
 }
+/** A token's one line when it fits, else null. */
+function tokenLine(text, look, inner, m) {
+  const w = m.width(text, look.key, look.size);
+  return w <= inner ? { key: look.key, size: look.size, lines: [{ text, width: w, end: true }], lh: look.lh, pad: look.pad, inner, needed: look.lh + look.pad[0] + look.pad[2] } : null;
+}
 function layoutText(text, st, width, m, wrap, atom = false) {
   const look = lookOf(st, m);
   const { key, pad } = look;
   const inner = Math.max(1, width - pad[1] - pad[3]);
   const wraps = wrap && st.wrap !== false;
+  // a token that fits (an id, an amount, a date, a code): what fitSize and wrap below give, measured once. fitSize's
+  // widest word is the whole token (advances are never negative); wrap keeps a space-free text that fits as one line
+  if (wraps && typeof text === 'string' && TOKEN.test(text)) {
+    const tl = tokenLine(text, look, inner, m);
+    if (tl) return tl;
+  }
   // a number never breaks, a word only when it is wider than the box even a little smaller (R4: "4,966,681.4|5")
   const size = wraps && !m.direction(String(text), key) ? fitSize(text, key, look.size, inner, m, atom && !/\n/.test(String(text))) : look.size;
   const lh = size === look.size ? look.lh : look.lh * (size / look.size);

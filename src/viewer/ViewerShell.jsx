@@ -10,7 +10,7 @@ const exported = (format, report, parameters) => {
   fetch('/api/audit/export', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ report, format, parameters }) }).catch(() => {});
 };
 
-export default function ViewerShell({ id, def, params, canEdit = true }) {
+export default function ViewerShell({ id, def, params, canEdit = true, exportDefaults }) {
   const { lang: langIn, _drill: _d, ...rest } = params || {}; // _drill: the drill-through levels (ReportViewer urlState)
   const lang = pickLang(langIn);
   const q = lang === 'en' ? '' : `?lang=${encodeURIComponent(lang)}`;
@@ -25,7 +25,7 @@ export default function ViewerShell({ id, def, params, canEdit = true }) {
         {canEdit && <Link className="btn sm" href={`/designer/${id}${q}`}>{t(lang, 'editInDesigner')}</Link>}
       </header>
       <main className="vshell-main">
-        <ReportViewer definition={def} reportId={id} params={rest} lang={lang} exportHtmlOptions={{ reportId: id }} onExported={exported} urlState />
+        <ReportViewer definition={def} reportId={id} params={rest} lang={lang} exportHtmlOptions={{ reportId: id }} exportDefaults={exportDefaults} onExported={exported} urlState />
       </main>
     </div>
     );

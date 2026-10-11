@@ -1,6 +1,6 @@
 // Builds dist-site/: the static live demo (no server). npm run build:site
 // Every URL in the site is relative, so dist-site works at any path on any static host.
-// PW_SITE_BASE (default /pagewright-demo/) and PW_SITE_ORIGIN only fill the canonical link.
+// PW_SITE_BASE (default /reportwright-demo/) and PW_SITE_ORIGIN only fill the canonical link.
 //
 // The demo has no ReportWright server, so the parts of its API the viewer calls are written as static files:
 //   api/reports/<id>         the report definitions in reports/
@@ -19,7 +19,7 @@ import { sampleTorture } from '../src/sample/torture.js';
 
 const root = path.join(import.meta.dirname, '..');
 const out = path.join(root, 'dist-site');
-const base = (process.env.PW_SITE_BASE || '/pagewright-demo/').replace(/^\/?/, '/').replace(/\/?$/, '/');
+const base = (process.env.PW_SITE_BASE || '/reportwright-demo/').replace(/^\/?/, '/').replace(/\/?$/, '/');
 const siteOrigin = (process.env.PW_SITE_ORIGIN || 'https://mrarun005.github.io').replace(/\/$/, '');
 
 if (!process.argv.includes('--no-embed')) execFileSync(process.execPath, [path.join(root, 'scripts/build-embed.mjs')], { stdio: 'inherit' });

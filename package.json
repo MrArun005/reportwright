@@ -1,6 +1,6 @@
 {
   "name": "reportwright",
-  "version": "0.13.1",
+  "version": "0.14.0-rc.6",
   "license": "MIT",
   "private": true,
   "engines": { "node": "22.x" },
@@ -10,6 +10,7 @@
     "pw": "bin/pw.mjs"
   },
   "scripts": {
+    "predev": "node scripts/ensure-embed.mjs",
     "dev": "next dev -p 3000",
     "build": "node scripts/build-embed.mjs && node scripts/build-worker.mjs && next build",
     "start": "next start -p 3000",
@@ -21,13 +22,14 @@
     "fonts:cjk": "node scripts/fetch-fonts-cjk.mjs",
     "lint:engine": "node scripts/check-engine-boundary.mjs",
     "typecheck": "node scripts/typecheck.mjs",
-    "test:e2e": "for t in build-from-scratch smoke expr-editor phase2 phase3 phase4 api progressive phase-bc data-setup galleries charts-p5 tablix ai designer-gaps reuse ssrs-import outline-charts layout-charts-b4 exports-b2 import-b6 data-xml gov-b5 ux-r1c r3b-conflict r4-fixes b2-ui b2-a11y b6j-viewer-handle b6k-designer-a11y b7a-axe b6k-designer-csp viewer-strict-csp viewer-font-errors drilldown fonts standalone-viewer vite-build react-wrapper; do node tests/e2e/$t.mjs || exit 1; done",
+    "test:e2e": "for t in build-from-scratch smoke expr-editor phase2 phase3 phase4 api progressive phase-bc data-setup galleries charts-p5 tablix ai designer-gaps reuse ssrs-import outline-charts layout-charts-b4 exports-b2 import-b6 data-xml gov-b5 ux-r1c r3b-conflict r4-fixes b2-ui b2-a11y b6j-viewer-handle b6k-designer-a11y b7a-axe b6k-designer-csp viewer-strict-csp viewer-font-errors viewer-export-in-ready drilldown fonts standalone-viewer vite-build react-wrapper; do node tests/e2e/$t.mjs || exit 1; done",
     "sample": "node scripts/make-sample.mjs",
     "build:embed": "node scripts/build-embed.mjs",
     "build:packages": "node scripts/build-embed.mjs && node scripts/build-packages.mjs",
     "scan:packages": "node scripts/scan-packages.mjs",
     "perf": "node scripts/perf.mjs",
-    "build:site": "node scripts/build-site.mjs"
+    "build:site": "node scripts/build-site.mjs",
+    "format:check": "node scripts/format-check.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
@@ -40,7 +42,7 @@
     "@node-saml/node-saml": "^5.1.0",
     "@pdf-lib/fontkit": "^1.1.1",
     "@pdf-lib/standard-fonts": "^1.0.0",
-    "@signpdf/placeholder-pdf-lib": "^3.3.0",
+    "@reportwright/pdf": "0.1.0-beta.14",
     "@signpdf/signer-p12": "^3.3.0",
     "@signpdf/signpdf": "^3.3.0",
     "bidi-js": "~1.0.3",
@@ -52,7 +54,6 @@
     "next": "^16.3.8",
     "node-forge": "^1.4.0",
     "nodemailer": "^10.0.14",
-    "pdf-lib": "^1.17.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zustand": "^5.0.15"
@@ -60,9 +61,11 @@
   "devDependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo-google-fonts/jetbrains-mono": "^0.4.1",
+    "@signpdf/placeholder-pdf-lib": "^3.3.0",
     "axe-core": "^4.14.0",
     "esbuild": "^0.28.2",
     "exceljs": "^4.4.0",
+    "pdf-lib": "^1.17.1",
     "playwright": "^1.56.0",
     "typescript": "^5.9.3",
     "vitest": "^5.0.3",

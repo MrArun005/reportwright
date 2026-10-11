@@ -35,7 +35,7 @@ export async function invoice(out, o = {}) {
         cells: [null, null, { value: l, style: { textAlign: 'right' } }, { value: v, style: { textAlign: 'right' } }] })) },
     tb(0, 196 + 18 * 16 + 24, BODY_W, 24, I.note, { canGrow: true }),
   ];
-  const def = { $schema: 'pagewright/report@1', name: 'Invoice', locale: 'en-US', page,
+  const def = { $schema: 'reportwright/report@1', name: 'Invoice', locale: 'en-US', page,
     dataSources: [{ name: 'inv', type: 'json', data: I.items }],
     dataSets: [{ name: 'Items', source: 'inv', fields: INV_COLS.map(c => ({ name: c.key, type: 'string' })) }],
     sections: { body: { items } } };
@@ -48,7 +48,7 @@ const total = (label) => [{ height: ROW_H, style: { fontWeight: 'bold', fontSize
 
 export async function table(rows, out, o = {}) {
   const def = {
-    $schema: 'pagewright/report@1', name: 'Ledger', locale: 'en-US', page,
+    $schema: 'reportwright/report@1', name: 'Ledger', locale: 'en-US', page,
     dataSources: [{ name: 'db', type: 'json', data: rows }],
     dataSets: [{ name: 'Tx', source: 'db', fields: COLS.map(c => ({ name: c.key, type: c.key === 'id' || c.key === 'amount' ? 'number' : 'string' })) }],
     sections: {

@@ -16,7 +16,7 @@ beforeAll(async () => {
   ({ renderTo } = await import('../../src/server/renderer.js'));
   const users = await import('../../src/server/users.js');
   await users.createUser({ email: 'bob@x.test', role: 'designer', password: 'a long password 1' });
-  for (const [id, text] of [['newerx', JSON.stringify({ $schema: 'pagewright/report@9', name: 'Payroll 2027' })], ['broken', '{not json']]) {
+  for (const [id, text] of [['newerx', JSON.stringify({ $schema: 'reportwright/report@9', name: 'Payroll 2027' })], ['broken', '{not json']]) {
     await store().put('reports', id, text);
     await store().put('reportacl', id, JSON.stringify({ id, folder: null, inherit: false, grants: [] })); // bob may not view
   }
@@ -34,7 +34,7 @@ it('reading a forbidden report answers as a missing one, whatever it holds', asy
 });
 
 it('a definition referencing a forbidden report renders exactly as one referencing a missing id', async () => {
-  const def = (ref) => ({ $schema: 'pagewright/report@1', name: 'Mine', sections: { body: { items: [{ type: 'subreport', name: 'S', x: 0, y: 0, w: 300, h: 40, report: ref }] } } });
+  const def = (ref) => ({ $schema: 'reportwright/report@1', name: 'Mine', sections: { body: { items: [{ type: 'subreport', name: 'S', x: 0, y: 0, w: 300, h: 40, report: ref }] } } });
   const view = async (ref) => { const m = (await renderTo(def(ref), { format: 'json', principal: bob })).model; return JSON.stringify({ w: m.warnings.map(w => String(w).replaceAll(ref, 'X')), p: JSON.stringify(m.pages).replaceAll(ref, 'X').replace(/\\?"w\\?":[\d.]+/g, 'w') }); }; // a text's width follows its letters
   const missing = await view('nopexx');
   expect(await view('newerx')).toBe(missing);

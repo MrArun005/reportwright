@@ -41,11 +41,19 @@ for (const list of ['pivot-rowGroups', 'pivot-columnGroups', 'pivot-values']) aw
 const regionCard = p.getByTestId('pivot-rowGroups').locator('.group-card').first();
 await regionCard.getByLabel('Total').selectOption('after');
 await regionCard.getByText('Drill-down: show a toggle').click();
+// the toggle starts its groups closed (as a table's does, ace0140f): North is drawn closed, then opened for the checks below
+await p.waitForFunction(() => [...document.querySelectorAll('[data-item=Matrix1] .live svg text')].some(n => n.textContent === '▶ North'), null, { timeout: 20000 });
+await regionCard.getByText('Start collapsed').click();
 await p.getByTestId('pivot-columnGroups').locator('.group-card').first().getByLabel('Total').selectOption('after');
 await p.waitForFunction(() => {
   const t = [...document.querySelectorAll('[data-item=Matrix1] .live svg text')].map(n => n.textContent);
   return t.includes('Delhi') && t.includes('1,000') && t.includes('▼ North');
-}, null, { timeout: 20000 });
+}, null, { timeout: 20000 }).catch(async (e) => { // what the matrix drew instead, for the CI artifact
+  fs.mkdirSync('/tmp/shots', { recursive: true });
+  await p.screenshot({ path: '/tmp/shots/tablix-fail.png', fullPage: true });
+  console.log('matrix text:', await p.evaluate(() => [...document.querySelectorAll('[data-item=Matrix1] .live svg text')].map(n => n.textContent)), 'errors:', errs);
+  throw e;
+});
 
 step('designer preview shows the pivot with its totals');
 await p.getByTestId('tab-preview').click();

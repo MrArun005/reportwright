@@ -14,7 +14,7 @@ export const TORTURE_CONFIG = Object.freeze({
   title: 'ReportWright Torture Test',
   subtitle: 'Interactive report PDF: every feature a report engine must get right',
   author: 'Generated for Arun / ReportWright',
-  demoUrl: 'https://mrarun005.github.io/pagewright-demo/',
+  demoUrl: 'https://mrarun005.github.io/reportwright-demo/',
   repoUrl: 'https://github.com/MrArun005',
   seed: 20261004,
   nLoans: 180,

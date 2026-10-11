@@ -15,7 +15,7 @@ import { fontStore } from '../helpers.js';
 
 const rows = (n) => Array.from({ length: n }, (_, i) => ({ id: i, name: `Name ${i}`, city: ['Pune', 'Delhi', 'Chennai', 'Agra'][i % 4], team: `T${i % 3}`, qty: (i * 37) % 11, price: ((i * 7.31) % 100) - 20, day: `2026-0${1 + (i % 9)}-1${i % 10}` }));
 const report = (table, extra = {}, n = 200) => ({
-  $schema: 'pagewright/report@1', name: 'Book', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Book', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: rows(n) }],
   dataSets: [{ name: 'D', source: 'src', fields: [{ name: 'id', type: 'number' }, { name: 'name', type: 'string' }, { name: 'city', type: 'string' }, { name: 'team', type: 'string' }, { name: 'qty', type: 'number' }, { name: 'price', type: 'number' }, { name: 'day', type: 'date' }] }],
   sections: { body: { items: [{ type: 'table', name: 'Sales', dataSet: 'D', x: 0, y: 0, w: 500, h: 40,

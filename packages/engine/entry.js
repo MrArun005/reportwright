@@ -88,6 +88,20 @@ function defaultStore() {
 }
 /** @type {ReturnType<typeof createSubsetter>|undefined} */
 let defaultSubset;
+/** E13: set when harfbuzz-subset.wasm did not load (fonts then embed in full); said once on the console, and in each result's warnings. */
+let subsetMissing = '';
+/** The subsetter over @reportwright/fonts' harfbuzz-subset.wasm (createSubsetter loads it once, so a failure is warned once). */
+const defaultSubsetter = () => (defaultSubset ||= createSubsetter(async () => {
+  const url = fontsUrl('harfbuzz-subset.wasm');
+  try {
+    if (!url) throw new Error('@reportwright/fonts is not installed');
+    return await readUrl(url);
+  } catch (e) {
+    subsetMissing = `harfbuzz-subset.wasm did not load from ${url?.href || '@reportwright/fonts/public/harfbuzz-subset.wasm'} (${/** @type {any} */ (e)?.message || e}), so fonts are embedded in full and PDFs are many times larger. Install @reportwright/fonts next to the engine, or pass subset: createSubsetter(() => wasmBytes) with the file's bytes (subset: false embeds fonts in full on purpose).`;
+    console.warn(`ReportWright: ${subsetMissing}`);
+    throw e;
+  }
+}));
 
 /** @type {Set<string>} */
 const warned = new Set();
@@ -164,11 +178,7 @@ const modelFonts = async (model, o) => {
 export async function exportPdf(model, options) {
   const opt = optionsOf('exportPdf', [...arguments], 'fonts');
   for (const w of checkOptions(opt)) (opt.onWarning || console.warn)(w);
-  const subset = opt.subset === false ? undefined : opt.subset || (defaultSubset ||= createSubsetter(async () => {
-    const url = fontsUrl('harfbuzz-subset.wasm');
-    if (!url) throw new Error('@reportwright/fonts is not installed');
-    return readUrl(url);
-  }));
+  const subset = opt.subset === false ? undefined : opt.subset || defaultSubsetter();
   const { fonts, fontStore, ...rest } = opt;
   // pdfa: true (or without icc): the sRGB profile from @reportwright/fonts/public/icc
   if (rest.pdfa && !(typeof rest.pdfa === 'object' && rest.pdfa.icc)) {
@@ -176,7 +186,9 @@ export async function exportPdf(model, options) {
     if (!url) throw new Error('PDF/A needs an sRGB colour profile: install @reportwright/fonts, or pass pdfa: { icc: bytes }');
     rest.pdfa = { ...(typeof rest.pdfa === 'object' ? rest.pdfa : {}), icc: new Uint8Array(await readUrl(url)) };
   }
-  return exportPdfFull(model, fontsOf(opt), /** @type {any} */ ({ ...rest, subset }));
+  const pdf = await exportPdfFull(model, fontsOf(opt), /** @type {any} */ ({ ...rest, subset }));
+  if (subsetMissing && subset === defaultSubset && model?.warnings && !model.warnings.includes(subsetMissing)) model.warnings.push(subsetMissing);
+  return pdf;
 }
 /**
  * Page model → .xlsx bytes: exportXlsx(model, { fonts, currency, formulas, ... }) (needs render(def, { exportData: true })).
@@ -216,8 +228,9 @@ export { pageToSvg } from '../../src/exporters/svg.js';
 import { exportPdfStream as exportPdfStreamFull, createPdfStream, paintPage, paintEnv } from '../../src/exporters/pdfstream.js';
 import { latin1 } from '../../src/exporters/pdfpaint.js';
 import { spillSorter, canSpill } from '../../src/exporters/spill.js';
+import { reband, CAPPED } from '../../src/engine/paged.js';
 /** internal: the paint worker (dist/pdfstreamworker.js) uses this bundle's painter, not a copy of the engine */
-export const __streamPaint = { createPdfStream, paintPage, paintEnv, latin1 };
+export const __streamPaint = { createPdfStream, paintPage, paintEnv, latin1, reband, CAPPED };
 export { planPaged } from '../../src/engine/paged.js';
 
 /**
@@ -250,11 +263,7 @@ export async function exportPdfStream(def, options, sink) {
   const unknown = checkOptions(options);
   const { fonts, fontStore, subset: sub, pdfa, spill, ...rest } = /** @type {any} */ (options || {});
   const store = fonts || fontStore || defaultStore();
-  const subset = sub === false ? undefined : sub || (defaultSubset ||= createSubsetter(async () => {
-    const url = fontsUrl('harfbuzz-subset.wasm');
-    if (!url) throw new Error('@reportwright/fonts is not installed');
-    return readUrl(url);
-  }));
+  const subset = sub === false ? undefined : sub || defaultSubsetter();
   let pdfaOpt = pdfa;
   if (pdfa && !(typeof pdfa === 'object' && pdfa.icc)) {
     const url = fontsUrl('icc/sRGB-v2-magic.icc');
@@ -265,6 +274,7 @@ export async function exportPdfStream(def, options, sink) {
   const sorter = rest.sorter || (spill !== false && canSpill() ? spillSorter(spillOptions(spill)) : undefined);
   const r = await exportPdfStreamFull(def, { ...rest, sorter, fontStore: store, subset, pdfa: pdfaOpt, exportData: !!rest.tagged }, sink);
   if (unknown.length) r.warnings = [...unknown, ...r.warnings];
+  if (subsetMissing && subset === defaultSubset) r.warnings = [...r.warnings, subsetMissing];
   return r;
 }
 export { tableFor, matrixFor } from '../../src/designer/tableGen.js';

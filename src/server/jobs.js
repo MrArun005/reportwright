@@ -15,8 +15,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
-import { zipSync } from 'fflate';
-import { PDFDocument } from 'pdf-lib';
+import { zipSync } from '@reportwright/pdf/fflate';
 import { loadTemplate, baseUrl as defaultBase, checkTimeZone } from './renderer.js';
 import { renderInPool, submit } from './pool.js';
 import { serverFetch, checkTarget } from './safeFetch.js';
@@ -488,9 +487,12 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
 export async function packOutput({ type, key, items }) {
   const get = async (k) => { const b = await blobs().get(k); if (!b) throw new Error(`an item of the batch is gone from storage (${k})`); return b; };
   if (type === 'merged') {
-    const merged = await PDFDocument.create();
-    for (const it of items) { const d = await PDFDocument.load(await get(it.key)); (await merged.copyPages(d, d.getPageIndices())).forEach(p => merged.addPage(p)); }
-    await blobs().put(key, await merged.save());
+    // @reportwright/pdf: the pages in order; the first file's catalog with what the others bring (their outlines and
+    // form fields, which pdf-lib's copyPages left behind)
+    const { loadPdf, mergePdfs } = await import('@reportwright/pdf');
+    const docs = [];
+    for (const it of items) docs.push(await loadPdf(await get(it.key)));
+    await blobs().put(key, (await mergePdfs(docs)).bytes);
   } else {
     const files = {};
     for (let i = 0; i < items.length; i += 16) { // 16 reads at a time: a remote store's round trips overlap
@@ -593,7 +595,7 @@ export async function claimOnce(name, owner) {
 async function notify(job) {
   const body = JSON.stringify({ event: 'batch.finished', job: publicJob(job), downloadUrl: job.download ? `${job.base}/api/v1/batches/${job.id}/download` : null });
   const headers = { 'content-type': 'application/json', 'user-agent': 'ReportWright', 'idempotency-key': `${job.id}:batch.finished` };
-  if (process.env.PW_WEBHOOK_SECRET) headers['x-pagewright-signature'] = 'sha256=' + crypto.createHmac('sha256', process.env.PW_WEBHOOK_SECRET).update(body).digest('hex');
+  if (process.env.PW_WEBHOOK_SECRET) headers['x-reportwright-signature'] = headers['x-pagewright-signature'] = 'sha256=' + crypto.createHmac('sha256', process.env.PW_WEBHOOK_SECRET).update(body).digest('hex'); // the old name too (deprecated 0.13.2)
   try {
     const owner = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession, since: job.ownerSince || null, madeAt: job.createdAt }) : defaultPrincipal(); // as the owner is now
     const res = await serverFetch(job.self, { internal: canDesign(owner) })(job.webhook, { method: 'POST', headers, body });

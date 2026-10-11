@@ -19,7 +19,8 @@ if (process.env.PW_MONITOR_KEY) {
   if (!r.ok) problems.push(`${base}/api/v1/metrics: ${r.status}`);
   else {
     let all = 0, bad = 0;
-    for (const m of (await r.text()).matchAll(/^pagewright_http_requests_total\{[^}]*status="(\w+)"[^}]*\} (\d+)/gm)) { all += +m[2]; if (m[1].startsWith('5')) bad += +m[2]; }
+    const text = await r.text(), name = /^reportwright_http/m.test(text) ? 'reportwright' : 'pagewright'; // a server before 0.13.2: the old name only
+    for (const m of text.matchAll(new RegExp(String.raw`^${name}_http_requests_total\{[^}]*status="(\w+)"[^}]*\} (\d+)`, 'gm'))) { all += +m[2]; if (m[1].startsWith('5')) bad += +m[2]; }
     const max = Number(process.env.PW_MAX_5XX || 0.05);
     if (all >= 20 && bad / all > max) problems.push(`5xx answers: ${bad} of ${all} (${(100 * bad / all).toFixed(1)}%, limit ${100 * max}%)`);
   }

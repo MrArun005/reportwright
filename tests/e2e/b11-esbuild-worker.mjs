@@ -21,7 +21,7 @@ await build({ entryPoints: [path.join(tmp, 'viewer.js')], bundle: true, format: 
   nodePaths: [path.join(tmp, 'node_modules')], define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'error' });
 const FONTS = path.join(root, 'packages/fonts/public/fonts/');
 const definition = {
-  $schema: 'pagewright/report@1', name: 'B9', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'B9', page: { size: 'A4', margins: [36, 36, 36, 36] },
   parameters: [{ name: 'region', type: 'string', default: 'North', options: ['North', 'South'] },
     { name: 'city', type: 'string', default: 'Delhi', optionsFrom: { dataSet: 'Cities', value: '=Fields.city' } }],
   dataSources: [{ name: 'c', type: 'json', data: { rows: [{ region: 'North', city: 'Delhi' }, { region: 'North', city: 'Jaipur' }, { region: 'South', city: 'Chennai' }, { region: 'South', city: 'Kochi' }] } }],

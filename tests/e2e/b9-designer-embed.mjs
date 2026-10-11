@@ -14,7 +14,7 @@ const FILES = { '/pw/': path.join(root, 'public/embed/esm/'), '/pw-fonts/': path
 const TYPES = { '.js': 'text/javascript', '.ttf': 'font/ttf', '.wasm': 'application/wasm', '.map': 'application/json' };
 const rows = [{ region: 'N', city: 'A', loans: 3 }, { region: 'N', city: 'B', loans: 4 }, { region: 'S', city: 'C', loans: 5 }];
 const definition = {
-  $schema: 'pagewright/report@1', name: 'B9', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'B9', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: rows }],
   dataSets: [{ name: 'D', source: 'src', fields: [{ name: 'region', type: 'string' }, { name: 'city', type: 'string' }, { name: 'loans', type: 'number' }] }],
   sections: { body: { height: 400, items: [
@@ -129,7 +129,7 @@ try {
   assert.equal(await page.locator('#d [data-outline="T1"] [data-opt]').getAttribute('aria-pressed'), 'true');
   const x0 = item(await def(), 'T1').x;
   await page.keyboard.press('ArrowRight'); // not a listbox key: moves the selection on the page
-  assert.equal(item(await def(), 'T1').x, x0 + 1, 'ArrowRight nudged T1');
+  assert.equal(item(await def(), 'T1').x, x0 + 4, 'ArrowRight nudged T1 one grid step (Snap to grid is on)');
   await page.keyboard.press('Delete');
   assert.equal(item(await def(), 'T1'), undefined, 'Delete removed T1');
   await page.keyboard.press('Control+z');
@@ -138,7 +138,7 @@ try {
   step('N35: canvas items are Tab stops with a name; Enter selects');
   const t1 = page.locator('#d [data-item="T1"]');
   assert.equal(await t1.getAttribute('tabindex'), '0');
-  assert.match(await t1.getAttribute('aria-label'), /T1, x 1[01], y 10/);
+  assert.match(await t1.getAttribute('aria-label'), /T1, x 1[04], y 10/);
   await page.keyboard.press('Escape');
   await t1.focus();
   await page.keyboard.press('Enter');

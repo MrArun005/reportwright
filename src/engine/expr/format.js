@@ -350,6 +350,22 @@ function compileNumber(fmt, locale, currency, grouping) {
     // grouping as Intl's CLDR rules by default (es-ES: 1234,50 and 12.345,50); the report can force 'always' or 'never' (N13)
     const useGrouping = grouping === 'always' ? 'always' : grouping === 'never' ? false : 'auto';
     const fixed = { minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2, signDisplay: 'negative', useGrouping };
+    // en-US N and F without Intl: its first NumberFormat starts ICU's number data, about 10 ms of a cold render.
+    // Rounded as ICU does: the shortest decimal that reads back as the double, half away from zero
+    // (tests/engine/format-fast.test.js holds it to Intl's text)
+    if ((k === 'N' || k === 'F') && (locale === 'en-US' || locale === 'en') && (d ?? 2) <= 20) {
+      const digits = d ?? 2, group = k === 'N' && useGrouping !== false;
+      return (v) => {
+        const a = Math.abs(v);
+        if (!(a < 1e21)) return nf(locale, k === 'F' ? { ...fixed, useGrouping: false } : fixed).format(v);
+        let s = fixedShortest(a, digits);
+        if (group) {
+          const dot = s.indexOf('.'), int = dot < 0 ? s : s.slice(0, dot);
+          if (int.length > 3) s = int.replace(/\B(?=(\d{3})+$)/g, ',') + (dot < 0 ? '' : s.slice(dot));
+        }
+        return v < 0 && /[1-9]/.test(s) ? '-' + s : s; // signDisplay 'negative': never -0.00
+      };
+    }
     switch (k) {
       // ja-JP JPY comes out as the full-width ￥ (U+FFE5), which the bundled fonts lack; .NET ja-JP writes ¥ (U+00A5)
       case 'C': { const f = nf(locale, currency ? { style: 'currency', currency, ...fixed } : fixed); return (v) => f.format(v).replace(/\uFFE5/g, '\u00A5'); }
@@ -369,6 +385,29 @@ function compileNumber(fmt, locale, currency, grouping) {
   }
   if (/[#0]/.test(fmt)) return (v) => customNumber(v, fmt, locale);
   return (v) => String(v);
+}
+
+/**
+ * a (finite, 0 ≤ a < 1e21) with `digits` decimals, rounded half up on its shortest round-trip decimal digits.
+ * @param {number} a @param {number} digits
+ */
+function fixedShortest(a, digits) {
+  // String(a) is the same shortest digits; with no more than `digits` decimals nothing rounds: only zeros to pad
+  const p = String(a), dot = p.indexOf('.');
+  if (!p.includes('e')) {
+    if (dot < 0) return digits ? `${p}.${'0'.repeat(digits)}` : p;
+    const have = p.length - dot - 1;
+    if (have <= digits && dot > 0) return have === digits ? p : p + '0'.repeat(digits - have);
+  }
+  const [m, e] = a.toExponential().split('e');
+  const ds = m.replace('.', ''), keep = Number(e) + 1 + digits; // digits of ds left of the cut
+  let n = 0n;
+  if (keep >= 0) {
+    n = BigInt(ds.slice(0, keep).padEnd(keep, '0') || '0');
+    if ((ds[keep] || '0') >= '5') n += 1n;
+  }
+  const t = n.toString().padStart(digits + 1, '0');
+  return digits ? `${t.slice(0, -digits)}.${t.slice(-digits)}` : t;
 }
 
 /** "E": d.ddddE+ddd. Mantissa digits round on the decimal value. */

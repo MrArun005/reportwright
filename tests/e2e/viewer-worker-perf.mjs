@@ -13,7 +13,7 @@ const ORIGIN = 'http://perf.test';
 const FILES = { '/embed/': path.join(root, 'public/embed/'), '/fonts/': path.join(root, 'public/fonts/') };
 const TYPES = { '.js': 'text/javascript', '.html': 'text/html', '.ttf': 'font/ttf', '.woff2': 'font/woff2' };
 const definition = {
-  $schema: 'pagewright/report@1', name: 'Perf', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Perf', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'rows', type: 'json', data: [] }],
   dataSets: [{ name: 'Rows', source: 'rows' }],
   sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 500, h: 40, dataSet: 'Rows', columns: [{ width: 100 }, { width: 250 }, { width: 150 }],

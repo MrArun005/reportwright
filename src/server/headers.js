@@ -47,3 +47,9 @@ export function outputHeaders(type) {
         : "default-src 'none'; sandbox; frame-ancestors 'none'";
   return { 'x-content-type-options': 'nosniff', 'content-security-policy': csp };
 }
+
+/**
+ * Our own x-reportwright-* answer headers, each also sent under its old name x-pagewright-* (deprecated 0.13.2, gone in
+ * 1.0) so a client written before the rename keeps reading it. @param {Record<string, string>} h name → value
+ */
+export const rwHeaders = (h) => Object.fromEntries(Object.entries(h).flatMap(([k, v]) => [[`x-reportwright-${k}`, v], [`x-pagewright-${k}`, v]]));

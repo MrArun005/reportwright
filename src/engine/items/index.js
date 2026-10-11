@@ -535,7 +535,7 @@ register('table', {
       // h: height of this piece; lines: per-cell lines when the row is split; first: links, visuals and toggles go on the first piece
       const paint = (h, lines, first, rowId, chunk) => {
         const items = [];
-        if (lc.dataOnly) return items; // the data CSV: no drawing
+        if (lc.dataOnly || lc.win?.count) return items; // the data CSV, and paged.js's page count: no drawing
         cells.forEach((c, k) => {
           if (c.cell.visual?.type) {
             items.push(...paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: null, m: lc.m }));

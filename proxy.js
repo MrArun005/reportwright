@@ -5,7 +5,7 @@
 // signs people in). With neither it fails closed: static files and /api/v1 (its own keys) only, and with
 // PW_PUBLIC_READONLY=1 what a viewer may do (open and render the saved reports). See openTrusted in session.js.
 import { basicAuth } from './src/server/basicAuth.js';
-import { accountsOn, sameOrigin, openTrusted, publicReadonly, devOpen, devHostOk, proxySecretOk, NO_AUTH_HELP } from './src/server/session.js';
+import { accountsOn, sameOrigin, openTrusted, publicReadonly, devOpen, devHostOk, proxySecretOk, proxySecretHeader, NO_AUTH_HELP } from './src/server/session.js';
 import { guard, decide, canonical, UNSAFE, CROSS_SITE_WRITES } from './src/server/access.js';
 
 export async function proxy(request) {
@@ -42,6 +42,6 @@ export async function proxy(request) {
 /** The proxy secret, when one is configured and presented, through the one credential check (limits.checkCredential). */
 async function proxySecretChecked(request) {
   if (!process.env.PW_PROXY_SECRET || process.env.PW_AUTH !== 'proxy') return proxySecretOk(request);
-  if (!request.headers.get('x-pagewright-proxy-secret')) return false; // nothing presented: nothing to count
+  if (!proxySecretHeader(request)) return false; // nothing presented: nothing to count
   return (await import('./src/server/limits.js')).checkCredential({ kind: 'proxy', req: request }, () => proxySecretOk(request)).catch((e) => { if (e.status === 429) return false; throw e; });
 }

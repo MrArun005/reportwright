@@ -7,7 +7,7 @@ import { checkUrl, privateHost, redirectRequest } from '../../src/engine/data/gu
 import { fontStore } from '../helpers.js';
 
 const def = (url, extra = {}) => ({
-  $schema: 'pagewright/report@1', name: 'F', page: { size: 'A4' },
+  $schema: 'reportwright/report@1', name: 'F', page: { size: 'A4' },
   parameters: [{ name: 'u', type: 'string', default: '' }],
   dataSources: [{ name: 's', type: 'rest', url, ...extra }], dataSets: [{ name: 'Rows', source: 's', path: '$' }],
   sections: { body: { items: [] } },

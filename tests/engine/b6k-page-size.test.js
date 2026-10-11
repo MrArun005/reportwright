@@ -16,7 +16,7 @@ describe('page size names are forgiving', () => {
     expect(p.height).toBeCloseTo(PAGE_SIZES.A4[1]);
   });
   it('validate does not warn about a name that now resolves', () => {
-    const def = { $schema: 'pagewright/report@1', name: 'x', page: { size: 'A4 ' }, sections: { body: { items: [] } } };
+    const def = { $schema: 'reportwright/report@1', name: 'x', page: { size: 'A4 ' }, sections: { body: { items: [] } } };
     const warnings = validate(def).warnings ?? [];
     expect(warnings.filter(w => /page size/i.test(w))).toEqual([]);
   });

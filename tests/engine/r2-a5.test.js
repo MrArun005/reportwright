@@ -23,16 +23,16 @@ it('a new SQL storage records its schema version and has the audit indexes', asy
 
 it('definitions go through the upgrade chain; a newer one is refused', async () => {
   const { upgrade } = await import('../../src/engine/schema/upgrade.js');
-  const d = { $schema: 'pagewright/report@1', name: 'A' };
+  const d = { $schema: 'reportwright/report@1', name: 'A' };
   expect(upgrade(d)).toBe(d);
-  expect(() => upgrade({ $schema: 'pagewright/report@9' })).toThrow(/newer ReportWright/);
+  expect(() => upgrade({ $schema: 'reportwright/report@9' })).toThrow(/newer ReportWright/);
 });
 
-it('the renamed $schema (reportwright/report@1) is the same format: read and validated as pagewright/report@1', async () => {
+it('the old $schema (pagewright/report@1, deprecated) is the same format: read and validated as reportwright/report@1', async () => {
   const { upgrade } = await import('../../src/engine/schema/upgrade.js');
   const { validate } = await import('../../src/engine/schema/validate.js');
-  const def = { $schema: 'reportwright/report@1', name: 'A', sections: { body: { items: [] } } };
-  expect(upgrade(def).$schema).toBe('pagewright/report@1');
+  const def = { $schema: 'pagewright/report@1', name: 'A', sections: { body: { items: [] } } };
+  expect(upgrade(def).$schema).toBe('reportwright/report@1');
   expect(validate(def).warnings.join(' ')).not.toMatch(/Unknown schema/);
   expect(() => upgrade({ $schema: 'reportwright/report@9' })).toThrow(/newer ReportWright/);
 });

@@ -1,8 +1,12 @@
 # @reportwright/fonts-cjk (optional)
 
+Chinese, Japanese, Korean and emoji fonts for ReportWright, downloaded on demand and checked by SHA-256.
+
 [![npm](https://img.shields.io/npm/v/%40reportwright%2Ffonts-cjk)](https://www.npmjs.com/package/@reportwright/fonts-cjk) [![license](https://img.shields.io/badge/license-OFL--1.1%20%2B%20MIT-blue)](https://github.com/MrArun005/reportwright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@reportwright/fonts-cjk)](https://socket.dev/npm/package/@reportwright/fonts-cjk)
 
-Chinese, Japanese, Korean and emoji fonts for ReportWright (Noto, SIL Open Font License). They are not in
+**Live demo:** [mrarun005.github.io/reportwright-demo](https://mrarun005.github.io/reportwright-demo) (the gallery and the [designer playground](https://mrarun005.github.io/reportwright-demo/play.html); the demo serves the bundled fonts, so CJK text there needs this package's files in its `fontsUrl` folder).
+
+The fonts are Noto (SIL Open Font License). They are not in
 `@reportwright/fonts` because they are large:
 
 | File | Covers | Size |
@@ -50,3 +54,45 @@ The engine loads a face only when text needs it (`FontStore` asks for `cjk/NotoS
 and a PDF embeds only the glyphs it uses: a line of Japanese, Korean and emoji adds about 8 KB. Without the files,
 those characters draw as boxes and the render warns how to add them. The fonts are variable fonts drawn at their
 default (regular) weight; bold CJK text is drawn regular.
+
+## Quick start (30 seconds)
+
+After `npx reportwright-fonts-cjk`, CJK text renders with no other change:
+
+```js
+import { render, defaultFontStore, exportPdf } from '@reportwright/engine';
+const fonts = defaultFontStore();   // also reads the CJK cache folder
+const def = { $schema: 'reportwright/report@1', name: 'Hello', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  sections: { body: { items: [{ type: 'textbox', name: 'Hi', x: 0, y: 0, w: 400, h: 24, value: 'こんにちは · 안녕하세요 · 你好' }] } } };
+const pdf = await exportPdf(await render(def, { fontStore: fonts }), { fonts });
+```
+
+Verified against this version in Node 20 (Japanese, Korean and Simplified Chinese; the emoji download returned HTTP 504
+from the upstream host on the day it was checked, and the command stops at the first failed file).
+
+## Examples
+
+**Docker image:** download at build time into a fixed folder the server also reads.
+
+```dockerfile
+ENV REPORTWRIGHT_FONTS_DIR=/opt/reportwright/fonts
+RUN npx reportwright-fonts-cjk
+```
+
+**Simplified Chinese shapes** instead of the default (Japanese) Han shapes: `"style": { "fontFamily": "Noto Sans SC" }`.
+
+**Browser viewer:** download into the served fonts folder, under `cjk/`:
+`npx reportwright-fonts-cjk public/pw/fonts/cjk` with `fontsUrl: '/pw/fonts/'`.
+
+## API
+
+| Export | What |
+|---|---|
+| `fetchCjkFonts(dir?, { log?, fetch? })` | downloads and checks every file into `dir` (default `cacheDir()`) |
+| `cacheDir(env?, platform?, home?)` | the folder the fonts go to (rules below) |
+| `fontPath(name)` | a downloaded file's path |
+| `CJK_FONTS` | the files: upstream path, file name, SHA-256 |
+| CLI `reportwright-fonts-cjk [dir]` | `fetchCjkFonts` from the command line |
+
+Requires Node 20.9 or later (it uses the global `fetch`). Related: [`@reportwright/fonts`](https://github.com/MrArun005/reportwright/tree/main/packages/fonts) (the bundled
+fonts), [`@reportwright/engine`](https://github.com/MrArun005/reportwright/tree/main/packages/engine), [`@reportwright/viewer`](https://github.com/MrArun005/reportwright/tree/main/packages/viewer).

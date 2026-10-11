@@ -3,6 +3,7 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import fs from 'node:fs';
 
 const BASE = process.env.BASE || 'http://localhost:3000';
 const MOCK_PORT = Number(process.env.MOCK_PORT || 4291);
@@ -77,7 +78,12 @@ const addSet = async (name, source, pathText, rows) => {
   await dlg.getByLabel('Name').fill(name);
   await dlg.locator('label.field', { has: p.locator('span', { hasText: /^Source$/ }) }).locator('select').selectOption(source);
   await dlg.getByRole('button', { name: 'Explore the response' }).click();
-  await dlg.getByRole('listitem').filter({ hasText: pathText }).first().getByRole('button', { name: 'Use' }).click();
+  await dlg.getByRole('listitem').filter({ hasText: pathText }).first().getByRole('button', { name: 'Use' }).click({ timeout: 30000 }).catch(async (e) => {
+    fs.mkdirSync('/tmp/shots', { recursive: true }); // what the explorer shows instead (CI artifact)
+    await p.screenshot({ path: '/tmp/shots/data-xml-fail.png', fullPage: true });
+    console.log('explorer:', (await dlg.innerText().catch(() => '(no dialog)')).slice(0, 3000), 'errors:', errs);
+    throw e;
+  });
   await dlg.getByText(`Found ${rows} rows.`).waitFor();
   await dlg.getByRole('button', { name: 'Save' }).click();
 };

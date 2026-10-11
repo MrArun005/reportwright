@@ -498,8 +498,11 @@ export function poolStats() {
 
 /** Stop every worker (tests). */
 export async function stopPool() {
+  // the dying first, before any await: a dying worker's exit refills the pool, which would outlive this stop
+  const dying = [...P.dying];
+  for (const w of dying) w.removeAllListeners('exit');
   for (const s of P.slots.splice(0)) { s.w.removeAllListeners(); s.w.on('error', () => {}); clearTimeout(s.timer); if (s.job) s.job.reject(new Error('The render pool stopped.')); await s.w.terminate(); }
   for (const j of P.queue.splice(0)) { unwait(j); j.reject(new Error('The render pool stopped.')); }
-  for (const w of P.dying) { w.removeAllListeners('exit'); await w.terminate(); }
-  P.dying.clear(); P.running.clear(); P.noWorker = null; P.startFails = 0;
+  for (const w of dying) await w.terminate();
+  P.dying.clear(); P.dyingBig.clear(); P.running.clear(); P.noWorker = null; P.startFails = 0;
 }

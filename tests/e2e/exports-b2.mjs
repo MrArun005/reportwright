@@ -18,12 +18,32 @@ const ctx = await b.newContext({ viewport: { width: 1280, height: 860 }, acceptD
 const p = await ctx.newPage();
 const errs = [];
 p.on('pageerror', e => errs.push(e.message));
+const logs = [];
+// every TypeError thrown, caught or not, with where (an export that fails shows only its message)
+const thrown = [];
+const cdp = await ctx.newCDPSession(p);
+await cdp.send('Debugger.enable');
+await cdp.send('Debugger.setPauseOnExceptions', { state: 'all' });
+cdp.on('Debugger.paused', (ev) => {
+  const d = String(ev.data?.description || '');
+  if (/TypeError/.test(d)) thrown.push(`${d.slice(0, 1500)} @ ${ev.callFrames.slice(0, 5).map(f => `${f.functionName}:${f.url.split('/').pop()}:${f.location.lineNumber}:${f.location.columnNumber}`).join(' | ')}`);
+  cdp.send('Debugger.resume').catch(() => {});
+});
+p.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') logs.push(m.text()); });
 const ready = async () => {
   await p.waitForSelector('.vpage svg', { timeout: 60000 });
   await p.waitForFunction(() => !document.querySelector('.stat[title*="still rendering"]'));
 };
 const download = async (testid) => {
-  const [d] = await Promise.all([p.waitForEvent('download', { timeout: 120000 }), openExport(p).then(() => p.getByTestId(testid).click())]);
+  const [d] = await Promise.all([p.waitForEvent('download', { timeout: 120000 }), openExport(p).then(() => p.getByTestId(testid).click())]).catch(async (e) => {
+    await p.screenshot({ path: `/tmp/shots/exports-b2-${testid}-fail.png` }); // what the viewer shows instead (CI artifact)
+    console.log('no download:', testid, 'page errors:', errs, 'console:', logs, 'thrown:', thrown);
+    for (const [, url, line, col] of new Set(thrown.join('\n').matchAll(/(http:\/\/[^\s)]+\.js):(\d+):(\d+)/g))) { // the code around each frame
+      const src = (await (await fetch(url)).text()).split('\n')[line - 1] || '';
+      console.log(`${url.split('/').pop()}:${line}:${col}`, src.slice(Math.max(0, col - 400), Number(col) + 200));
+    }
+    throw e;
+  });
   return { name: d.suggestedFilename(), bytes: fs.readFileSync(await d.path()) };
 };
 
@@ -79,10 +99,13 @@ z = unzipSync(f.bytes);
 assert.ok(Object.keys(z).some(k => k.startsWith('xl/media/')), 'pictures in the workbook');
 
 step('HTML "pages and sortable tables": the Tables view works offline from the file');
+await openExport(p);
+assert.ok(await p.getByTestId('export-html-default').isVisible(), 'HTML (interactive) is the default entry');
+await p.keyboard.press('Escape');
 await p.getByTestId('export-options').click();
 await p.getByTestId('opt-html').selectOption('tables');
 await p.keyboard.press('Escape');
-f = await download('export-html');
+f = await download('export-html-print');
 const file = '/tmp/shots/exports-b2.html';
 fs.writeFileSync(file, f.bytes);
 const off = await ctx.newPage();
@@ -96,6 +119,35 @@ await off.waitForSelector('#pw-tables table');
 assert.ok(await off.locator('#pw-tables tbody tr').count() > 0);
 await off.screenshot({ path: '/tmp/shots/exports-b2-html-tables.png', fullPage: true });
 assert.deepEqual(offErrs, [], 'no CSP or script errors in the file');
+
+step('HTML (interactive) of Sales Explorer: a group expands and a drill-through opens in place, never a new tab');
+await p.goto(`${BASE}/viewer/sales-explorer`);
+await ready();
+f = await download('export-html');
+assert.match(f.bytes.toString('utf8', 0, 400), /ReportWright interactive HTML/, 'the interactive file, not a silent static fallback');
+const ifile = '/tmp/shots/exports-b2-interactive.html';
+fs.writeFileSync(ifile, f.bytes);
+const opened = [];
+ctx.on('page', (pg) => opened.push(pg.url()));
+const ip = await ctx.newPage();
+const ipErrs = [];
+ip.on('pageerror', e => ipErrs.push(e.message));
+const before = opened.length;
+await ip.goto(`file://${ifile}`);
+// the file mounts the viewer in a shadow root: locators (which pierce it), not document.querySelectorAll
+const ilink = (title) => ip.locator(`.vlink.hit[title*=${JSON.stringify(title)}]`);
+const shot = (n) => ip.screenshot({ path: `/tmp/shots/exports-b2-interactive-${n}.png` }).catch(() => {});
+const until = async (fn, n) => { for (let i = 0; i < 150; i++) { if (await fn()) return; await ip.waitForTimeout(200); } await shot(n); throw new Error(`interactive HTML: ${n}`); };
+await until(async () => (await ilink('Show or hide details').count()) > 1, 'first-render');
+const n0 = await ip.locator('.vpage text').count();
+await ilink('Show or hide details').nth(1).click();
+await until(async () => (await ip.locator('.vpage text').count()) > n0, 'expand'); // the group opens in place
+await ilink('Open Jaipur month by month').first().click({ modifiers: ['ControlOrMeta'] }); // even with a modifier: in place
+await until(async () => (await ip.locator('nav.vcrumbs li', { hasText: 'Jaipur' }).count()) > 0, 'drill');
+await ip.screenshot({ path: '/tmp/shots/exports-b2-interactive.png' });
+assert.equal(opened.length, before, `no new page or tab opened: ${opened.join(', ')}`); // `before` already counts the file's own tab
+assert.deepEqual(ipErrs, [], 'no errors in the interactive file');
+await ip.close();
 
 assert.deepEqual(errs, []);
 await b.close();

@@ -1,5 +1,6 @@
 // @ts-check
 // Server-side rendering to every format. The same engine as the browser, in Node.
+import { resolveHtmlExport, envHtmlExport } from '../engine/htmlExport.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { localAclGen } from './storage/index.js';
@@ -183,7 +184,7 @@ async function streamTo(d, format, def, renderOpts, opt) {
   /** @type {any} */
   let plan;
   // the caps are the server's, never the request's (the same for every streaming format)
-  const caps = { sqlRows: (src, p) => runSqlRows(src, p, { ms: Math.max(0, renderOpts.deadline - Date.now()) }), sorter: spillSorter({ maxMB: cnum('PW_SPILL_MAX_MB', 2048, { min: 1 }), totalMB: cnum('PW_SPILL_TOTAL_MB', 8192, { min: 1 }), staleMs: 2 * renderTimeoutMs() + 60000 }),
+  const caps = { sqlRows: (src, p, o) => runSqlRows(src, p, { ms: Math.max(0, renderOpts.deadline - Date.now()), signal: o?.signal }), sorter: spillSorter({ maxMB: cnum('PW_SPILL_MAX_MB', 2048, { min: 1 }), totalMB: cnum('PW_SPILL_TOTAL_MB', 8192, { min: 1 }), staleMs: 2 * renderTimeoutMs() + 60000 }),
     maxRows: Number(streamLimits.rows), maxJsonWholeBytes: fetchMaxBytes() };
   try {
     // pdf: the page layout runs window by window over the same rows (engine/paged.js), with render()'s options
@@ -239,7 +240,7 @@ export async function renderTo(def, opt = {}) {
   let sources;
   const run = (only) => render(d, /** @type {any} */ ({ ...renderOpts, ...(only ? { dataOnly: true, onSources: (s) => { sources = s; } } : sources ? { sources } : {}) }));
   const renderOpts = {
-    parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), timeZone: checkTimeZone(opt.timeZone),
+    parameters: opt.parameters || {}, strictParameters: !!opt.strictParameters, state: opt.state || {}, fontStore: fontStore(), timeZone: checkTimeZone(opt.timeZone),
     baseUrl: base, fetch, timeoutMs: renderTimeoutMs(), deadline: Date.now() + renderTimeoutMs(), // one deadline for both CSV passes (dataOnly, then the full fallback)
     maxFetchBytes: fetchMaxBytes(), fetchTimeoutMs: fetchDeadlineMs(), // the engine's own fetch limits: the server's settings (PW_FETCH_MAX_MB, PW_FETCH_DEADLINE_MS)
     exportData: !opt.modelOnly && (format !== 'pdf' || !!opt.ua), // a plain PDF needs no table data
@@ -273,10 +274,13 @@ export async function renderTo(def, opt = {}) {
   const fetchImage = async (src) => { try { const r = await imageFetch(new URL(src, base)); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch { return null; } };
   if (format === 'pdf') {
     bytes = await exportPdf(model, fontStore(), { title: def.name, subset, fetchImage, drillBase: opt.self || base, // drill-through opens this server's viewer
-      pdfa: opt.pdfa ? { icc: await iccProfile() } : undefined, tagged: opt.ua ? { lang: def.locale || 'en' } : undefined, prepare: signing?.prepare, save: signing?.save, encrypt: opt.encrypt });
-    if (signing) bytes = await signing.sign(bytes);
+      pdfa: opt.pdfa ? { icc: await iccProfile() } : undefined, tagged: opt.ua ? { lang: def.locale || 'en' } : undefined, sign: signing?.options, encrypt: opt.encrypt });
   }
-  else if (format === 'html') bytes = Buffer.from(await exportHtml(model, { fonts: fontStore(), title: def.name, subset, drillBase: opt.self || base, static: !!opt.static, locale: def.locale, currency: def.currency })); // drill-through opens this server's viewer (never a caller's baseUrl)
+  else if (format === 'html') {
+    // the server makes static or tables files (interactive needs the viewer in a browser); report > Settings > env
+    const hx = resolveHtmlExport(def.export, (await import('./settings.js').then(m => m.getSettings()).catch(() => null))?.htmlExport, envHtmlExport());
+    bytes = Buffer.from(await exportHtml(model, { fonts: fontStore(), title: def.name, subset, drillBase: opt.self || base, static: !!opt.static || hx.html === 'static', drillLinks: hx.drillLinks, locale: def.locale, currency: def.currency })); // drill-through opens this server's viewer (never a caller's baseUrl)
+  }
   else if (format === 'csv') bytes = Buffer.from(exportCsv(model, /** @type {any} */ ({ locale: def.locale, currency: def.currency, layout: opt.csv === 'layout' })));
   else if (format === 'docx') bytes = Buffer.from(await exportDocx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));
   else if (format === 'pptx') bytes = Buffer.from(await exportPptx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));

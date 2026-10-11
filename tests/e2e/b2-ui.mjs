@@ -21,7 +21,7 @@ const errs = [];
 p.on('pageerror', e => errs.push(e.message));
 try {
   const id = await create({
-    $schema: 'pagewright/report@1', name: 'e2e b2 ui', page: { size: 'A4' },
+    $schema: 'reportwright/report@1', name: 'e2e b2 ui', page: { size: 'A4' },
     dataSources: [{ name: 'src', type: 'json', data: { rows: [{ city: 'Pune' }, { city: 'Delhi' }] } }],
     dataSets: [{ name: 'S', source: 'src', path: '$.rows[*]', fields: [{ name: 'city', type: 'string' }], filters: [{ expr: '=Fields.city', op: '=', value: '=Parameters.City' }] }],
     parameters: [{ name: 'City', type: 'string', nullable: true }],

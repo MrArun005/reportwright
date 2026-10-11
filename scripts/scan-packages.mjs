@@ -44,6 +44,9 @@ export function scanDir(dir, name) {
   if (!pkg.license) r.meta.push('license');
   if (!files.some(f => /^(LICEN[CS]E|COPYING)/i.test(path.basename(f)))) r.meta.push('licence file');
   if (!files.includes('README.md')) r.meta.push('README');
+  for (const b of Object.keys(typeof pkg.bin === 'object' ? pkg.bin || {} : {})) if (/pagewright/i.test(b)) r.meta.push(`old bin name ${b}`);
+  const types = pkg.types ?? pkg.exports?.['.']?.types;
+  if ((pkg.main || pkg.exports?.['.']) && !(types && files.includes(path.normalize(types)))) r.meta.push('types');
   r.problems = [
     ...r.install.map(s => `install script: ${s}`), ...r.eval.map(x => `eval/new Function: ${x}`), ...r.childProcess.map(x => `child_process: ${x}`),
     ...r.longLines.map(x => `line over ${MAX_LINE}: ${x}`), ...r.unpinned.map(x => `unpinned: ${x}`), ...r.meta.map(x => `missing: ${x}`),

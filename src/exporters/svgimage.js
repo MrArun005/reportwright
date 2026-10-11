@@ -6,8 +6,9 @@
  * Not drawn: text, gradients, patterns, clip paths, masks, filters, <use>, <style> sheets; evenodd fills
  * are drawn nonzero. Anything it cannot read is skipped; it never throws on bad input.
  */
-import { pushGraphicsState, popGraphicsState, concatTransformationMatrix, rgb } from '../engine/lazylibs.js'; // set once exportPdf has loaded pdf-lib
+import { pushGraphicsState, popGraphicsState, concatTransformationMatrix, rgb } from '../engine/pdflib.js'; // set once exportPdf has loaded pdf-lib
 import { parseColor } from './color.js';
+import { drawSvgPathOps, pdfNum } from './svgpath.js';
 import { svgRootAttrs, svgLength, xmlTags, xmlAttrs, IMAGE_LIMITS } from '../engine/image.js';
 
 /** @typedef {[number, number, number, number, number, number]} M */
@@ -171,4 +172,32 @@ export function drawSvg(page, svg, at) {
     } catch { /* bad path data: skip the shape */ }
     page.pushOperators(popGraphicsState());
   }
+}
+
+/**
+ * drawSvg as operator text, for the paged writer (@reportwright/pdf): the same operators pdf-lib's page gets from
+ * drawSvg, without pdf-lib (svgpath.js). gs(opacity, borderOpacity): the graphics state's name, or undefined.
+ * @param {any} svg parseSvg's result @param {{ x: number, y: number, sx: number, sy: number }} at
+ * @param {(opacity: number, borderOpacity: number) => string | undefined} gs
+ */
+export function svgOps(svg, at, gs) {
+  /** @type {M} */
+  const place = [at.sx, 0, 0, -at.sy, at.x, at.y + svg.h * at.sy];
+  const rgbOf = (/** @type {any} */ c) => ({ red: c.r, green: c.g, blue: c.b });
+  let s = '';
+  for (const sh of svg.shapes) {
+    if (!sh.fill && !sh.stroke) continue;
+    const m = mul(/** @type {M} */ (mul(place, /** @type {M} */ (sh.m))), /** @type {M} */ ([1, 0, 0, -1, 0, 0]));
+    if (!m.every(Number.isFinite)) continue;
+    s += `q\n${m.map(pdfNum).join(' ')} cm\n`;
+    try {
+      const opacity = sh.fill ? clamp01(sh.fill.a * sh.fo) : undefined, borderOpacity = sh.stroke ? clamp01(sh.stroke.a * sh.so) : undefined;
+      s += drawSvgPathOps(sh.d, {
+        x: 0, y: 0, gs: gs(opacity ?? 1, borderOpacity ?? 1), // pdf.js's page asks for a state every time (its maybeEmbedGraphicsState)
+        color: sh.fill ? rgbOf(sh.fill) : undefined, borderColor: sh.stroke ? rgbOf(sh.stroke) : undefined, borderWidth: sh.stroke ? sh.sw : 0,
+      });
+    } catch { /* bad path data: skip the shape */ }
+    s += 'Q\n';
+  }
+  return s;
 }

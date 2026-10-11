@@ -1,5 +1,6 @@
 // @ts-check
-import { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, rgb, fontkit, loadPdfLib } from '../engine/lazylibs.js';
+import { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, PDFImage, PngEmbedder, rgb, loadPdfLib } from '../engine/pdflib.js';
+import { fontkit } from '../engine/lazylibs.js';
 import { makePdfA, setUaMetadata, setInfoDates } from './pdfa.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
 import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
@@ -8,7 +9,7 @@ import { encryptPdf } from './encrypt.js';
 import { createTagger } from './pdfua.js';
 import { withDeadline } from './deadline.js';
 import { pngProblem } from './png.js';
-import { writePagedPdf } from './pdfstream.js';
+import { writePagedPdf, checkPdfWriter } from './pdfstream.js';
 import { needsTableData } from './regions.js';
 import { embeddedFace, isStandard, modelFontKeys } from '../engine/text/fonts.js';
 import { standardFontEntries, standardLiteral, embeddedPage, embeddedWarnings, standIns } from './pdfstandard.js';
@@ -24,7 +25,9 @@ import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, hex4, KAPP
  *   pdfa?: { icc?: Uint8Array }, prepare?: (doc: PDFDocument) => any, save?: object,
  *   encrypt?: { userPassword?: string, ownerPassword?: string, permissions?: Partial<Record<keyof typeof import('./encrypt.js').PERMISSION_BITS, boolean>> },
  *   tagged?: { lang?: string }, drillBase?: string, onWarning?: (message: string) => void, timeoutMs?: number,
- *   creationDate?: Date }} [opt]
+ *   creationDate?: Date, sign?: { signer: (r: any) => Promise<Uint8Array> | Uint8Array, reason?: string, location?: string, contactInfo?: string, name?: string } }} [opt]
+ *   sign: sign the file (a detached PKCS#7 signature over all of it) with a @reportwright/pdf signer (cmsSigner,
+ *   nodeSigner; the server's p12Signer); not with encrypt. prepare and save are deprecated (removed in 0.15).
  *   subset: a HarfBuzz subsetter (see subset.js). Without it, fonts embed in full.
  *   pdfa: a PDF/A-2b file (2a with tagged): true uses the sRGB profile of @reportwright/fonts, or pass { icc } (this
  *   function itself needs icc; the engine package fills it in). prepare: last change to the pdf-lib PDFDocument before
@@ -43,8 +46,29 @@ export function exportPdf(model, fontStore, opt = {}) {
 }
 /** @type {typeof exportPdf} */
 async function pdfOf(model, fontStore, opt) {
+  checkPdfWriter(opt);
+  if (opt.sign) {
+    if (opt.encrypt) throw Object.assign(new Error('A signed PDF cannot have a password here. Turn off signing or the password.'), { status: 400 });
+    if (opt.prepare || opt.save) throw Object.assign(new TypeError('sign replaces prepare and save: pass one or the other'), { status: 400 });
+    if (typeof opt.sign.signer !== 'function') throw Object.assign(new TypeError('sign.signer is a @reportwright/pdf signer (cmsSigner, nodeSigner)'), { status: 400 });
+  }
+  if ((opt.prepare || opt.save) && !deprecationSaid) {
+    deprecationSaid = true;
+    globalThis.process?.emitWarning?.('exportPdf: the prepare and save options are deprecated and will be removed in 0.15; sign with the sign option ({ signer, reason, … }, @reportwright/pdf).', 'DeprecationWarning');
+  }
+  // refused before anything is loaded (pdf-lib's path said these too)
+  if (opt.pdfa && opt.encrypt) throw Object.assign(new Error('A PDF/A file cannot have a password. Turn off PDF/A or the password.'), { status: 400 });
+  if (opt.pdfa && !opt.pdfa.icc?.length) throw new Error('PDF/A needs an sRGB colour profile: pass pdfa.icc (public/icc/sRGB-v2-magic.icc)');
   await fontStore.load(modelFontKeys(model)); // N40: a store render() did not fill (loaded keys are skipped)
   if (ownWriterFits(model, opt)) return ownWriter(model, fontStore, opt);
+  // signed on pdf-lib's path (a tagged file, a URL picture…): the file as it was, then signed by @reportwright/pdf in an
+  // incremental update (B8)
+  if (opt.sign) {
+    const { sign, ...rest } = opt;
+    const { loadPdf } = await import('@reportwright/pdf');
+    const doc = await loadPdf(await pdfOf(model, fontStore, rest));
+    return (await doc.saveIncremental({ sign: { field: { name: 'Signature1' }, signer: sign.signer, ...signDetails(sign) } })).bytes;
+  }
   await loadPdfLib(); // on first use: importing the engine does not load pdf-lib
   // a fixed date (creationDate, else SOURCE_DATE_EPOCH) makes the file reproducible: its ID then derives from the content
   const fixed = fixedDate(opt);
@@ -108,7 +132,10 @@ async function pdfOf(model, fontStore, opt) {
         try {
           // fontkit reads a glyph header even for an empty glyph: when the last glyph is empty (often the space) and
           // glyf is the last table, that read runs past the end. Zero padding after the tables makes it read zeros.
-          const sub = withPadding(await opt.subset(bytes, cps, glyphs ? { glyphs: glyphs.keys() } : undefined));
+          const raw = await /** @type {any} */ (opt.subset)(bytes, cps, glyphs ? { glyphs: glyphs.keys() } : undefined);
+          const why = (await import('../engine/text/sfnt.js')).subsetProblem(raw); // a cut or damaged subset: the full font
+          if (why) throw new Error(why);
+          const sub = withPadding(raw);
           // Check every glyph we need: a subset fontkit cannot read embeds the full font instead. (The advance reads the
           // glyph header too; pdf-lib needs no more. The outline, which g.bbox would decode, is never read.)
           const f = fontkit.create(sub);
@@ -116,7 +143,7 @@ async function pdfOf(model, fontStore, opt) {
           for (const id of glyphs?.keys() || []) void f.getGlyph(id).advanceWidth;
           bytes = sub;
           psName = f.postscriptName || psName;
-        } catch { /* embed the full font */ }
+        } catch (e) { opt.onWarning?.(`The font ${psName || key} is embedded whole: its subset could not be used (${/** @type {any} */ (e)?.message || e})`); }
       }
       // a subset's name starts with a tag (ABCDEF+), which tells readers (and pdffonts) it is one
       const pf = await doc.embedFont(bytes, { subset: false, customName: bytes === full ? undefined : `${subsetTag(bytes)}+${psName || 'Font'}` });
@@ -153,8 +180,23 @@ async function pdfOf(model, fontStore, opt) {
       // a small PNG can inflate to gigabytes: refuse very large pixel counts before decoding
       // the size is read the way the decoder reads it (last IHDR); animated or multi-IHDR files are refused
       // a cut or damaged PNG can hang pdf-lib's decoder: checked first, left out with a warning
+      const hit = local ? pngCache.get(src) : undefined;
+      if (hit) { pngCache.delete(src); pngCache.set(src, hit); return { img: embedCachedPng(doc, hit) }; } // most recently used last
       const why = 'w' in info && !(/** @type {any} */ (info).suspect) && info.w * info.h <= IMAGE_LIMITS.pixels ? pngProblem(bytes) : 'too large or animated';
-      return why ? { img: null, why: `the PNG is not usable (${why})` } : { img: await doc.embedPng(bytes) };
+      if (why) return { img: null, why: `the PNG is not usable (${why})` };
+      if (!local) return { img: await doc.embedPng(bytes) };
+      const e = await PngEmbedder.for(bytes);
+      // held: the data URI, the decoded pixels and (once embedded) their deflated copies, at most the pixels again
+      const size = src.length + 2 * ((/** @type {any} */ (e).image.rgbChannel?.length || 0) + (/** @type {any} */ (e).image.alphaChannel?.length || 0));
+      if (size > PNG_CACHE_ENTRY) return { img: await doc.embedPng(bytes) };
+      const entry = { e, z: /** @type {any[]} */ ([]), size };
+      pngCacheBytes += size;
+      pngCache.set(src, entry);
+      for (const [k, v] of pngCache) { // least recently used first
+        if (pngCache.size <= PNG_CACHE_SIZE && pngCacheBytes <= PNG_CACHE_TOTAL) break;
+        pngCache.delete(k); pngCacheBytes -= v.size;
+      }
+      return { img: embedCachedPng(doc, entry) };
     }
     if (info?.type === 'jpeg') return { img: await doc.embedJpg(bytes) };
     // GIF and WebP are not decoded here (no decoder without a new dependency): left out, with a warning
@@ -206,12 +248,12 @@ async function pdfOf(model, fontStore, opt) {
     const c = new Content(shared);
     if (tags) c.tagged = true;
     // pdf-lib draws the rare shapes (SVG paths, rounded boxes, SVG images): its operators join this page's stream
-    p.maybeEmbedGraphicsState = (o) => c.gsFor(o.opacity ?? 1, o.borderOpacity ?? 1);
+    /** @type {any} */ (p).maybeEmbedGraphicsState = (/** @type {any} */ o) => c.gsFor(o.opacity ?? 1, o.borderOpacity ?? 1);
     const viaPdfLib = (draw) => {
       c.et();
       c.lineWidth(1); // what a stroke without a width of its own inherits, as before
       draw();
-      const ops = /** @type {any} */ (p.getContentStream()).operators;
+      const ops = /** @type {any} */ (/** @type {any} */ (p).getContentStream()).operators;
       for (const op of ops) c.s += op.toString() + '\n';
       ops.length = 0;
     };
@@ -412,7 +454,7 @@ async function pdfOf(model, fontStore, opt) {
     const ref = doc.context.register(annot);
     if (tags) tags.annot(l.pi, l.ii, ref, 'link');
     const annots = l.page.node.lookup(PDFName.of('Annots'));
-    if (annots) annots.push(ref); else l.page.node.set(PDFName.of('Annots'), doc.context.obj([ref]));
+    if (annots) /** @type {any} */ (annots).push(ref); else l.page.node.set(PDFName.of('Annots'), doc.context.obj([ref]));
   }
   // the outline: bookmarks and headings (headingLevel) in page order, each at its level
   const marks = outlineEntries(model);
@@ -434,36 +476,107 @@ async function pdfOf(model, fontStore, opt) {
 }
 
 /**
- * Can the engine's own PDF writer (pdfstream.js, the one exportPdfStream uses) write this model, with the same text,
- * fonts and page content as pdf-lib? Then pdf-lib (about 35 ms to load) is not needed (A1.1). Kept to what it draws
- * the same: text in the standard fonts, boxes, ellipses, lines and links. Anything else stays on pdf-lib: embedded
- * fonts and shaped runs (pdf-lib subsets them its own way), images, SVG paths, rounded boxes, form fields, PDF/A,
- * tagged PDF, encryption, prepare (signing), save options, page sizes that differ (the outline's places) and page
- * numbering that restarts (page labels).
+ * Can the paged writer (writePagedPdf: @reportwright/pdf, or with pdfWriter 'legacy' the engine's own) draw this model?
+ * Then pdf-lib (about 35 ms to load) is not needed (A1.1). Kept to what it draws: text (any font, shaped runs; with
+ * 'legacy' only the standard fonts, as 0.13 did), boxes (rounded too), ellipses, lines, SVG paths, links, and PNG, JPEG and SVG data URIs. Anything else
+ * stays on pdf-lib: the 'legacy' writer's pictures, fields, PDF/A, tagged PDF and encryption, and the deprecated prepare and save options.
  * @param {any} model @param {any} opt
  */
 function ownWriterFits(model, opt) {
-  if (opt.pdfa || opt.tagged || opt.encrypt || opt.prepare || opt.save || !model.pages.length) return false;
-  if ((model.pageStarts || []).some((/** @type {number} */ i) => i > 0)) return false;
+  if (forcedPdfLib()) return false;
+  if (opt.prepare || opt.save) return false;
+  // tagged (B4): pdfua.js's tree through @reportwright/pdf (pdfstreamtags.js createModelTagger)
+  if (opt.tagged && opt.pdfWriter === 'legacy') return false;
+  if (opt.sign && opt.pdfWriter === 'legacy') return false; // signed later, on pdf-lib's file (an incremental update)
+  // encrypted (B7): AES-256 by @reportwright/pdf (with PDF/A refused by pdfOf, a 400)
+  if (opt.encrypt && opt.pdfWriter === 'legacy') return false;
+  // PDF/A-2b (B5): with its colour profile (pdfOf requires one), through @reportwright/pdf as exportPdfStream writes it
+  if (opt.pdfa && opt.pdfWriter === 'legacy') return false;
   for (const pg of model.pages) {
-    if ((pg.height ?? model.height) !== model.height) return false;
     for (const it of pg.items) {
-      if (it.t === 'text') { if (!isStandard(it.font) || it.lines.some((/** @type {any} */ l) => l.runs)) return false; }
-      else if (it.t === 'link') { const a = it.action; if (a?.type === 'bookmark' && !(a.page >= 1 && a.page <= model.pages.length)) return false; }
-      else if (!(it.t === 'line' || it.t === 'ellipse' || (it.t === 'rect' && !it.radius))) return false;
+      // the old writer (pdfWriter: 'legacy') keeps embedded fonts and shaped runs on pdf-lib, as before; @reportwright/pdf takes them
+      if (it.t === 'text') { if (opt.pdfWriter === 'legacy' && (!isStandard(it.font) || it.lines.some((/** @type {any} */ l) => l.runs))) return false; }
+      // a jump to a bookmark by name, or to a page the file lacks: resolved by ownWriter as pdf-lib's path does
+      else if (it.t === 'link') continue;
+      // pictures (B2, B3): PNG, JPEG and SVG, from data URIs or fetchImage; any other is left out with pdf-lib's warning
+      else if (it.t === 'image') { if (opt.pdfWriter === 'legacy') return false; }
+      // rounded boxes and SVG paths (B3): drawn with pdf-lib's own operators (svgpath.js)
+      else if (it.t === 'path' || (it.t === 'rect' && it.radius)) { if (opt.pdfWriter === 'legacy') return false; }
+      // form fields (B6): the library's fields with pdf-lib's look (pdffields.js)
+      else if (it.t === 'field') { if (opt.pdfWriter === 'legacy') return false; }
+      else if (!(it.t === 'line' || it.t === 'ellipse' || it.t === 'rect')) return false;
     }
   }
   return true;
 }
+let deprecationSaid = false;
+/** a sign option's reason, location, contact and name, as @reportwright/pdf takes them (adbe.pkcs7.detached, as @signpdf signed) @param {any} s */
+export const signDetails = (s) => ({ ...(s.reason ? { reason: s.reason } : {}), ...(s.location ? { location: s.location } : {}), ...(s.contactInfo ? { contactInfo: s.contactInfo } : {}), ...(s.name ? { name: s.name } : {}), subFilter: /** @type {const} */ ('adbe.pkcs7.detached') });
+/** PW_FORCE_PDFLIB=1: every export takes the pdf-lib whole-model path (the parity gate's baseline, scripts/writer-parity.mjs). */
+export const forcedPdfLib = () => globalThis.process?.env?.PW_FORCE_PDFLIB === '1';
+/**
+ * A data: URI PNG decoded and deflated once per process: the next document embeds the same image streams, with the
+ * bytes pdf-lib's embedPng writes (its flateStream: the deflated pixels, the dictionary plus Filter FlateDecode), without
+ * decoding and deflating the pixels again (half of a warm one-logo invoice). Least recently used out, at most
+ * PNG_CACHE_SIZE images and PNG_CACHE_TOTAL bytes held, none over PNG_CACHE_ENTRY (counting the decoded pixels). The
+ * key is the whole data URI, so a render only reuses an image whose bytes it supplied itself.
+ * ponytail: pushes onto pdf-lib's private doc.images, as embedPng does; pdf-lib is pinned (1.17.1).
+ */
+/** @type {Map<string, { e: any, z: any[], size: number }>} */
+const pngCache = new Map();
+const PNG_CACHE_SIZE = 16, PNG_CACHE_ENTRY = 4 << 20, PNG_CACHE_TOTAL = 16 << 20;
+let pngCacheBytes = 0;
+/** For tests: what the PNG cache holds. */
+export const pngCacheStats = () => ({ entries: pngCache.size, bytes: pngCacheBytes, maxEntries: PNG_CACHE_SIZE, maxBytes: PNG_CACHE_TOTAL });
+/** @param {any} doc @param {{ e: any, z: any[] }} entry */
+function embedCachedPng(doc, { e, z }) {
+  // the decoded embedder as its prototype: pdf-lib checks instanceof PngEmbedder, and reads width and height from it
+  const embedder = Object.assign(Object.create(e), {
+    /** @param {any} context @param {any} ref */
+    embedIntoContext(context, ref) {
+      let i = 0;
+      const flate = context.flateStream;
+      // the stream dictionary is the document's own; only the deflated pixels are shared (never changed in place)
+      context.flateStream = (/** @type {any} */ contents, /** @type {any} */ dict) => {
+        const k = i++;
+        if (z[k]) return context.stream(z[k], { ...dict, Filter: 'FlateDecode' });
+        const st = flate.call(context, contents, dict);
+        z[k] = st.contents;
+        return st;
+      };
+      try { return e.embedIntoContext(context, ref); } finally { delete context.flateStream; } // its body runs synchronously
+    },
+  });
+  const img = PDFImage.of(doc.context.nextRef(), doc, embedder);
+  doc.images.push(img);
+  return img;
+}
+
 /** The model through the engine's own writer (ownWriterFits): the same metadata, dates and file ID rules as pdf-lib's path. */
 async function ownWriter(model, fontStore, opt) {
   const fixed = fixedDate(opt), when = fixed ?? new Date();
   /** @type {Uint8Array[]} */
+  // a form field's font is embedded (its standard font's stand-in), as on pdf-lib's path
+  if (model.pages.some((/** @type {any} */ pg) => pg.items.some((/** @type {any} */ i) => i.t === 'field'))) await fontStore.load(standIns(fontStore));
   const parts = [];
-  const info = { width: model.width, height: model.height, bookmarks: model.bookmarks || [], headings: model.headings || [], warnings: [] };
+  if (opt.tagged) needsTableData(model, 'An accessible PDF');
+  // a jump to a bookmark by name goes to the first bookmark of that name (none: no link), as on pdf-lib's path
+  // a jump to a page the file does not have is no link, as on pdf-lib's path
+  const lost = (/** @type {any} */ i) => i.t === 'link' && i.action?.type === 'bookmark' && (!i.action.page || !(i.action.page >= 1 && i.action.page <= model.pages.length));
+  if (model.pages.some((/** @type {any} */ pg) => pg.items.some(lost))) {
+    model = { ...model, pages: model.pages.map((/** @type {any} */ pg) => ({ ...pg, items: pg.items.map((/** @type {any} */ i) => {
+      if (!lost(i)) return i;
+      if (i.action.page) return { ...i, action: { ...i.action, page: 0 } };
+      const b = model.bookmarks?.find((/** @type {any} */ x) => x.label === i.action.target);
+      return { ...i, action: b ? { ...i.action, page: b.page, y: b.y } : { ...i.action, page: 0 } };
+    }) })) };
+  }
+  const info = { width: model.width, height: model.height, bookmarks: model.bookmarks || [], headings: model.headings || [], warnings: [],
+    pageStarts: model.pageStarts || [], pageHeights: model.pages.map((/** @type {any} */ pg) => pg.height ?? model.height) };
   await writePagedPdf({ info, pages: async function* () { yield* model.pages; } },
-    { fontStore, subset: opt.subset, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase },
+    { fontStore, subset: opt.subset, fetchImage: opt.fetchImage, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase, pdfWriter: opt.pdfWriter, pdfa: opt.pdfa, encrypt: opt.encrypt, sign: opt.sign, tagged: opt.tagged, model: opt.tagged ? model : undefined },
     { write: (/** @type {Uint8Array} */ u8) => { parts.push(u8); } });
+  for (const x of info.warnings) opt.onWarning?.(x);
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let at = 0;
   for (const p of parts) { out.set(p, at); at += p.length; }
@@ -502,7 +615,7 @@ async function contentId(model, opt, when) {
  * The font a form field names in its default appearance (DA): the report font, or the bundled script font its
  * value is drawn in (Arabic in Inter would be blank boxes once a viewer redraws the field).
  */
-function fieldFont(it) {
+export function fieldFont(it) {
   for (const d of it.draw) if (d.t === 'text') for (const l of d.lines) for (const r of l.runs || []) if (r.font !== it.font && r.text.trim()) return embeddedFace(r.font);
   return embeddedFace(it.font); // a field's font is embedded: what is typed into it later can be any character
 }
@@ -658,7 +771,8 @@ function subsetTag(bytes) {
 }
 
 
-function roundRect(x, y, w, h, r) {
+/** a rounded box as SVG path data (y down) */
+export function roundRect(x, y, w, h, r) {
   r = Math.min(r, w / 2, h / 2);
   return `M ${x + r} ${y} H ${x + w - r} A ${r} ${r} 0 0 1 ${x + w} ${y + r} V ${y + h - r} A ${r} ${r} 0 0 1 ${x + w - r} ${y + h} H ${x + r} A ${r} ${r} 0 0 1 ${x} ${y + h - r} V ${y + r} A ${r} ${r} 0 0 1 ${x + r} ${y} Z`;
 }
