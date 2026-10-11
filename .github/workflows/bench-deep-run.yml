@@ -546,10 +546,13 @@ jobs:
           msystem: UCRT64
           update: false
           install: mingw-w64-ucrt-x86_64-qpdf mingw-w64-ucrt-x86_64-poppler mingw-w64-ucrt-x86_64-mupdf
-      - name: Validators on PATH (qpdf, Poppler, MuPDF from MSYS2)
-        shell: pwsh
-        run: '"${{ steps.msys2.outputs.msys2-location }}\ucrt64\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH'
-      - run: qpdf --version | head -1; pdftotext -v 2>&1 | head -1; mutool -v 2>&1 | head -1
+      - name: Validators (qpdf, Poppler, MuPDF from MSYS2) first on PATH in the steps that use them (the image has Xpdf's pdftotext earlier)
+        run: |
+          echo "MSYS_BIN=$(cygpath -u '${{ steps.msys2.outputs.msys2-location }}')/ucrt64/bin" >> "$GITHUB_ENV"
+      - run: |
+          export PATH="$MSYS_BIN:$PATH"
+          for t in qpdf pdftotext mutool; do command -v $t; done
+          qpdf --version | head -1; (pdftotext -v 2>&1 || true) | head -1; (mutool -v 2>&1 || true) | head -1 # both exit non-zero on -v
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -580,7 +583,7 @@ jobs:
           mkdir -p results-win
           { echo "windows tier $TIER runs $RUNS"; date -u; systeminfo | grep -E 'OS Name|OS Version|Processor|Total Physical Memory'; nproc; } | tee results-win/windows-runner.txt
       - name: Benchmark (ours and SSRS, the report job)
-        run: python bench/deep/drive.py --group create-engines --only report --langs ours,ssrs --tier "$TIER" --runs "$RUNS" --fixtures "${{ runner.temp }}/fx" --work "${{ runner.temp }}/work" --out results-win/windows.jsonl
+        run: PATH="$MSYS_BIN:$PATH" python bench/deep/drive.py --group create-engines --only report --langs ours,ssrs --tier "$TIER" --runs "$RUNS" --fixtures "${{ runner.temp }}/fx" --work "${{ runner.temp }}/work" --out results-win/windows.jsonl
       - uses: actions/upload-artifact@v4
         if: always()
         with:
