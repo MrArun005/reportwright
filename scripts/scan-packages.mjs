@@ -11,7 +11,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 const root = path.join(import.meta.dirname, '..');
-const ORDER = ['fonts', 'fonts-cjk', 'engine', 'cli', 'viewer', 'react', 'vue', 'svelte', 'angular'];
+const ORDER = ['fonts', 'fonts-cjk', 'engine', 'cli', 'viewer', 'react', 'vue', 'svelte', 'angular', 'create-reportwright'];
 const NET_OK = new Set(['engine', 'cli', 'viewer', 'fonts-cjk']);
 const ENV_OK = new Set(['engine', 'cli', 'viewer', 'fonts-cjk']);
 const MAX_LINE = 1000;
@@ -71,14 +71,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
   const cell = (n, ok = true) => (n === 0 ? '0' : ok ? `${n} (ok)` : `${n} FAIL`);
   const rows = results.map(r => ({
-    package: `@reportwright/${r.name}@${r.version}`, files: r.files, unpacked: mb(r.unpackedSize), install: cell(r.install.length, false),
+    package: `${r.name.startsWith('create-') ? '' : '@reportwright/'}${r.name}@${r.version}`, files: r.files, unpacked: mb(r.unpackedSize), install: cell(r.install.length, false),
     'eval/Function': cell(r.eval.length, false), child_process: cell(r.childProcess.length, false), 'lines>1000': cell(r.longLines.length, false),
     network: cell(r.network.length, NET_OK.has(r.name)), 'process.env': cell(r.env.length, ENV_OK.has(r.name)),
     unpinned: cell(r.unpinned.length, false), meta: r.meta.length ? r.meta.join('+') + ' FAIL' : 'ok', result: r.problems.length ? 'FAIL' : 'pass',
   }));
   console.table(rows);
   for (const r of results) {
-    console.log(`@reportwright/${r.name} dependencies: ${Object.entries(r.deps).map(([n, v]) => `${n}@${v}`).join(', ') || '(none)'}`);
+    console.log(`${r.name.startsWith('create-') ? '' : '@reportwright/'}${r.name} dependencies: ${Object.entries(r.deps).map(([n, v]) => `${n}@${v}`).join(', ') || '(none)'}`);
     for (const p of r.problems.slice(0, 20)) console.log(`  ${p}`);
     if (r.problems.length > 20) console.log(`  … and ${r.problems.length - 20} more`);
   }

@@ -20,3 +20,4 @@ public/fonts/cjk/
 packages/*/CHANGELOG.md
 packages/engine/schema.json
 packages/fonts-cjk/fonts
+packages/create-reportwright/templates
