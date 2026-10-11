@@ -1,0 +1,432 @@
+{
+ "_doc": "The shared workload. Coordinates are points from the top-left of an A4 page; y is the top of a text line, its baseline is y + 0.8 * size. See README.md.",
+ "page": {
+  "w": 595.28,
+  "h": 841.89,
+  "margin": 36,
+  "footer": 18
+ },
+ "fonts": {
+  "r": "fonts/Inter-Regular.ttf",
+  "b": "fonts/Inter-Bold.ttf",
+  "hi": "fonts/NotoSansDevanagari-Regular.ttf",
+  "ar": "fonts/NotoSansArabic-Regular.ttf",
+  "cjk": "fonts/NotoSansSC.ttf"
+ },
+ "plain": {
+  "size": 9,
+  "leading": 12,
+  "linesPerPage": 60,
+  "x": 36,
+  "y": 36,
+  "pool": "plain.txt"
+ },
+ "report": {
+  "size": 9,
+  "headH": 16,
+  "groupH": 16,
+  "rowH": 14,
+  "headBg": "#eef2f7",
+  "groupBg": "#dbeafe",
+  "rule": "#e5e7eb",
+  "cols": [
+   {
+    "key": "id",
+    "label": "Id",
+    "w": 50,
+    "right": false
+   },
+   {
+    "key": "account",
+    "label": "Account",
+    "w": 62,
+    "right": false
+   },
+   {
+    "key": "region",
+    "label": "Region",
+    "w": 50,
+    "right": false
+   },
+   {
+    "key": "type",
+    "label": "Type",
+    "w": 62,
+    "right": false
+   },
+   {
+    "key": "date",
+    "label": "Date",
+    "w": 62,
+    "right": false
+   },
+   {
+    "key": "amount",
+    "label": "Amount",
+    "w": 70,
+    "right": true
+   },
+   {
+    "key": "reference",
+    "label": "Reference",
+    "w": 167,
+    "right": false
+   }
+  ],
+  "footerText": "Page {n} of {m}",
+  "footerSize": 8
+ },
+ "invoice": {
+  "texts": [
+   {
+    "x": 36,
+    "y": 36,
+    "size": 18,
+    "bold": true,
+    "right": false,
+    "w": 300,
+    "text": "Northwind Analytics Ltd"
+   },
+   {
+    "x": 359,
+    "y": 36,
+    "size": 18,
+    "bold": true,
+    "right": true,
+    "w": 200,
+    "text": "INVOICE"
+   },
+   {
+    "x": 36,
+    "y": 62,
+    "size": 9,
+    "bold": false,
+    "right": false,
+    "w": 300,
+    "text": "14 Harbour Road"
+   },
+   {
+    "x": 36,
+    "y": 74,
+    "size": 9,
+    "bold": false,
+    "right": false,
+    "w": 300,
+    "text": "Bristol BS1 5TY"
+   },
+   {
+    "x": 36,
+    "y": 86,
+    "size": 9,
+    "bold": false,
+    "right": false,
+    "w": 300,
+    "text": "United Kingdom"
+   },
+   {
+    "x": 36,
+    "y": 98,
+    "size": 9,
+    "bold": false,
+    "right": false,
+    "w": 300,
+    "text": "VAT GB 123 4567 89"
+   },
+   {
+    "x": 359,
+    "y": 62,
+    "size": 9,
+    "bold": false,
+    "right": true,
+    "w": 200,
+    "text": "Invoice no INV-2026-0042"
+   },
+   {
+    "x": 359,
+    "y": 74,
+    "size": 9,
+    "bold": false,
+    "right": true,
+    "w": 200,
+    "text": "Date 2026-10-01"
+   },
+   {
+    "x": 359,
+    "y": 86,
+    "size": 9,
+    "bold": false,
+    "right": true,
+    "w": 200,
+    "text": "Due 2026-10-31"
+   },
+   {
+    "x": 36,
+    "y": 132,
+    "size": 9,
+    "bold": true,
+    "right": false,
+    "w": 300,
+    "text": "Bill to"
+   },
+   {
+    "x": 36,
+    "y": 146,
+    "size": 10,
+    "bold": true,
+    "right": false,
+    "w": 300,
+    "text": "Contoso Retail plc"
+   },
+   {
+    "x": 36,
+    "y": 160,
+    "size": 9,
+    "bold": false,
+    "right": false,
+    "w": 300,
+    "text": "Accounts payable"
+   },
+   {
+    "x": 36,
+    "y": 172,
+    "size": 9,
+    "bold": false,
+    "right": false,
+    "w": 300,
+    "text": "220 Market Street"
+   },
+   {
+    "x": 36,
+    "y": 184,
+    "size": 9,
+    "bold": false,
+    "right": false,
+    "w": 300,
+    "text": "Manchester M1 1AA"
+   },
+   {
+    "x": 36,
+    "y": 196,
+    "size": 9,
+    "bold": false,
+    "right": false,
+    "w": 300,
+    "text": "United Kingdom"
+   },
+   {
+    "x": 36,
+    "y": 560,
+    "size": 9,
+    "bold": false,
+    "right": false,
+    "w": 523,
+    "text": "Payment within 30 days to Northwind Analytics Ltd, sort code 12-34-56, account 12345678."
+   },
+   {
+    "x": 36,
+    "y": 572,
+    "size": 9,
+    "bold": false,
+    "right": false,
+    "w": 523,
+    "text": "Thank you for your business."
+   }
+  ],
+  "logo": {
+   "file": "logo.png",
+   "x": 439,
+   "y": 132,
+   "w": 120,
+   "h": 36
+  },
+  "table": {
+   "x": 36,
+   "y": 232,
+   "rowH": 18,
+   "size": 9,
+   "cols": [
+    {
+     "label": "Description",
+     "w": 283,
+     "right": false
+    },
+    {
+     "label": "Qty",
+     "w": 60,
+     "right": true
+    },
+    {
+     "label": "Unit price",
+     "w": 90,
+     "right": true
+    },
+    {
+     "label": "Amount",
+     "w": 90,
+     "right": true
+    }
+   ],
+   "rows": [
+    [
+     "Annual platform licence (50 seats)",
+     "1",
+     "12,000.00",
+     "12,000.00"
+    ],
+    [
+     "Implementation services, phase 1",
+     "40",
+     "150.00",
+     "6,000.00"
+    ],
+    [
+     "Report design workshop (2 days)",
+     "2",
+     "1,800.00",
+     "3,600.00"
+    ],
+    [
+     "Data source connectors",
+     "3",
+     "450.00",
+     "1,350.00"
+    ],
+    [
+     "Premium support, 12 months",
+     "1",
+     "2,400.00",
+     "2,400.00"
+    ],
+    [
+     "Training: report authors",
+     "12",
+     "95.00",
+     "1,140.00"
+    ],
+    [
+     "Training: administrators",
+     "4",
+     "140.00",
+     "560.00"
+    ],
+    [
+     "Custom chart palette",
+     "1",
+     "600.00",
+     "600.00"
+    ],
+    [
+     "Barcode label templates",
+     "5",
+     "120.00",
+     "600.00"
+    ],
+    [
+     "SSO integration (SAML)",
+     "1",
+     "900.00",
+     "900.00"
+    ],
+    [
+     "Migration of 25 SSRS reports",
+     "25",
+     "60.00",
+     "1,500.00"
+    ],
+    [
+     "Travel and expenses",
+     "1",
+     "734.50",
+     "734.50"
+    ]
+   ],
+   "totals": [
+    [
+     "Subtotal",
+     "31,384.50"
+    ],
+    [
+     "VAT 20%",
+     "6,276.90"
+    ],
+    [
+     "Total",
+     "37,661.40"
+    ]
+   ]
+  }
+ },
+ "unicode": {
+  "size": 18,
+  "lines": [
+   {
+    "script": "hindi",
+    "font": "hi",
+    "x": 36,
+    "y": 60,
+    "text": "हिन्दी में किताब पढ़ना क्षत्रिय"
+   },
+   {
+    "script": "arabic",
+    "font": "ar",
+    "x": 36,
+    "y": 120,
+    "rtl": true,
+    "text": "مرحبا بالعالم العربي"
+   },
+   {
+    "script": "cjk",
+    "font": "cjk",
+    "x": 36,
+    "y": 180,
+    "text": "你好世界，中文排版测试。"
+   }
+  ]
+ },
+ "images": {
+  "png": "img/rgba-6mp.png",
+  "jpeg": "img/photo-24mp.jpg",
+  "x": 36,
+  "y": 36,
+  "w": 523.28
+ },
+ "edit": {
+  "mergeDir": "edit/merge",
+  "mergeCount": 100,
+  "mergePagesEach": 3,
+  "doc": "edit/doc-100.pdf",
+  "docPages": 100,
+  "form": "edit/form.pdf",
+  "title": "Bench edited title",
+  "passwords": {
+   "user": "",
+   "owner": "bench-owner"
+  },
+  "formValues": {
+   "name": "Aanya Sharma",
+   "amount": "1,234.50",
+   "approved": true
+  },
+  "cert": {
+   "key": "cert/key.pem",
+   "cert": "cert/cert.pem",
+   "p12": "cert/cert.p12",
+   "p12pass": "bench"
+  },
+  "signDoc": "edit/sign.pdf",
+  "signField": "sig1"
+ },
+ "read": {
+  "big": "read/big.pdf",
+  "bigText": "read/big.txt",
+  "mixedDir": "read/mixed"
+ },
+ "robust": {
+  "fuzzDir": "fuzz",
+  "hostileDir": "hostile"
+ },
+ "html": {
+  "dir": "html",
+  "_doc": "Puppeteer and WeasyPrint print these files (fixtures/make.py builds them once from the same data)"
+ }
+}

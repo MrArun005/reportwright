@@ -1,0 +1,4 @@
+{"rival": "QuestPDF", "case": "fluent invoice (two-column header, 40-line table, totals, page X of Y)",
+ "build": "dotnet publish Invoice.csproj -c Release -o bin/out --nologo -v q",
+ "theirs": "dotnet bin/out/Invoice.dll \"$OUT/theirs.pdf\"",
+ "ours": "node ours.mjs"}

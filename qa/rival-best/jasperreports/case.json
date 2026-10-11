@@ -1,0 +1,5 @@
+{"rival": "JasperReports", "case": "crosstab: 12 regions x 4 quarters, sum of 5,000 sales rows with row/column totals",
+ "build": "mvn -q -B package",
+ "theirs": "java -cp target/classes:target/lib/* Crosstab \"$OUT/theirs.pdf\"",
+ "ours": "node ours.mjs",
+ "partial": "crosstab only; the subreport half of Jasper's showcase is not in this case yet"}
