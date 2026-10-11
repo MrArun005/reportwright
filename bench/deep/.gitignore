@@ -8,3 +8,8 @@ go/bench
 go/go.sum
 rust/target/
 rust/Cargo.lock
+java/birt/target/
+java/birt/runtime/
+dotnet/*/bin/
+dotnet/*/obj/
+dotnet/*/out/

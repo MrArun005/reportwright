@@ -95,12 +95,15 @@ static class Program
         var res = new Dictionary<string, object>();
         try
         {
-            Lib a = lib switch { "QuestPDF" => new QuestLib(), "PDFsharp" => new SharpLib(), "PdfPig" => new PigLib(), _ => throw new ArgumentException(lib) };
+            // by name: this file is also compiled into fastreport/, which has only its own Lib
+            var type = Type.GetType(lib switch { "QuestPDF" => "QuestLib", "PDFsharp" => "SharpLib", "PdfPig" => "PigLib", _ => lib + "Lib" }) ?? throw new ArgumentException(lib);
+            Lib a = (Lib)Activator.CreateInstance(type)!;
             if (job == "version") { res["ok"] = true; res["version"] = a.Version(); }
             else
             {
                 Directory.CreateDirectory(outDir);
                 var c = Inputs(job, size);
+                a.Setup(c); // outside the clock
                 int reps = int.Parse(Environment.GetEnvironmentVariable("REPS") ?? "1");
                 var t = new double[reps];
                 string? note = null;
@@ -129,6 +132,7 @@ static class Program
 abstract class Lib
 {
     public abstract string Version();
+    public virtual void Setup(Program.Ctx c) { }
     public virtual string? Plain(Program.Ctx c, string out_) => throw new NotSupportedException();
     public virtual string? Report(Program.Ctx c, string out_) => throw new NotSupportedException();
     public virtual string? Invoice(string out_) => throw new NotSupportedException();

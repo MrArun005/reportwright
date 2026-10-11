@@ -22,7 +22,7 @@ How the results are laid out: a generated headline (per table, how many sizes ou
 where not, with the ratio), a "Where we lose" list per league, the capability table (`capabilities.json`; "?" cells
 are listed as to verify), then the tables. Create jobs are ranked within a league (`league` in `contestants.json`):
 **report engines** lay out pages themselves from a report/table definition (@reportwright/engine, pdfmake,
-@react-pdf/renderer, JasperReports, QuestPDF, WeasyPrint, Puppeteer); **PDF writers** execute the same pre-laid-out
+@react-pdf/renderer, JasperReports, BIRT, FastReport, QuestPDF, WeasyPrint, Puppeteer; SSRS on Windows); **PDF writers** execute the same pre-laid-out
 draw ops (@reportwright/pdf, pdf-lib, PDFKit, jsPDF, ReportLab, PyMuPDF, PDFBox, OpenPDF, iText, PDFsharp, fpdf,
 printpdf). Read and edit jobs are one league, published whatever the outcome. Each table starts with its source and the
 runner hardware of its columns (each language runs as its own job, so CPUs can differ within a table). Results from
@@ -40,8 +40,9 @@ Exact versions are pinned in each harness's manifest; the version each run actua
 | ours | `@reportwright/pdf` 0.1.0-beta.5 (+ `harfbuzzjs` for Hindi/Arabic shaping) | `ours/package.json` | create, PDF/A, read, merge, split, AES-256, incremental save, forms, signing |
 | js | pdf-lib 1.17.1, PDFKit 0.20.2, jsPDF 4.2.1, pdfmake 0.3.11, @react-pdf/renderer 4.9.0, pdf.js (pdfjs-dist) 6.4.299, Puppeteer 25.13.0 (Chrome) | `js/package.json` | |
 | python | ReportLab 5.0.1, WeasyPrint 70.0, PyMuPDF 1.28.2, pikepdf 10.16.0, pypdf 6.20.0, pdfminer.six 20260107, pdfplumber 0.11.10 | `python/requirements.txt` | |
-| java | Apache PDFBox 3.0.8, OpenPDF 2.2.2, iText 9.8.0 core (AGPL; private benchmarking), JasperReports 6.21.5 | `java/pom.xml`, `java/jasper/pom.xml` | |
-| dotnet | QuestPDF 2026.9.1 (Community licence), PDFsharp 6.2.4, PdfPig 0.1.16 | `dotnet/Bench.csproj` | |
+| java | Apache PDFBox 3.0.8, OpenPDF 2.2.2, iText 9.8.0 core (AGPL; private benchmarking), JasperReports 6.21.5 (LGPL-3.0), Eclipse BIRT runtime 4.25.0 (EPL-2.0) | `java/pom.xml`, `java/jasper/pom.xml`, `java/birt/build.sh` (zip + sha512) | |
+| dotnet | QuestPDF 2026.9.1 (Community licence), PDFsharp 6.2.4, PdfPig 0.1.16, FastReport.OpenSource + .Export.PdfSimple 2026.2.8 (MIT) | `dotnet/Bench.csproj`, `dotnet/fastreport/FastReportBench.csproj` | FastReport: report job only, see below |
+| ssrs (Windows) | Microsoft ReportViewer LocalReport (SSRS client reports, `.rdlc`), Microsoft.ReportingServices.ReportViewerControl.Winforms 150.1652.0 on .NET Framework 4.8 (Microsoft licence terms: free, redistributable, not open source) | `dotnet/ssrs/Ssrs.csproj` | report job only, on `windows-latest` |
 | go | go-pdf/fpdf 0.9.0, pdfcpu 0.15.0 | `go/go.mod` | |
 | rust | printpdf 0.12.8, lopdf 0.45.0, pdf-extract 0.12.1 | `rust/Cargo.toml` | |
 | cli | MuPDF `mutool`, `qpdf`, Poppler `pdftotext` (Ubuntu's packages), PDFium through pypdfium2 5.14.0 | apt, `cli/requirements.txt` | |
@@ -50,6 +51,24 @@ Exact versions are pinned in each harness's manifest; the version each run actua
 reason). No commercial libraries. Not included: **borb** (its v3 API could not be verified without installing it; add
 it to `python/harness.py` when wanted), OpenPDF 3 (renamed packages; 2.2.2 is the last `com.lowagie` line),
 JasperReports 7 (a new jrxml format; 6.21.5 reads the classic one).
+
+The report generators (JasperReports, BIRT, FastReport, SSRS) do the report job only, each from its own report
+definition of the same layout (`java/jasper/resources/ledger.jrxml`, `java/birt/resources/ledger.rptdesign`,
+`dotnet/fastreport/ledger.frx`, `dotnet/ssrs/ledger.rdlc`), and none of them in the million tier (none streams).
+
+- **FastReport Open Source** has no text PDF export: its PDF plugin, `PDFSimpleExport`, draws every page as one image
+  (the full PDF export is in the commercial FastReport .NET). Its report is timed and shown, but fails the text checks
+  ("Page N of M", grand total), so it is marked ✗ and never ranked. Not a harness choice: there is no other open PDF path.
+- **SSRS** runs only through the ReportViewer `LocalReport`, which needs .NET Framework (Windows). It runs on its own
+  `windows-latest` job (`windows` in `bench-deep-run.yml`, same-machine layout with the report engines, not the million
+  tier) together with ours (npm and, when built, the branch build), the same validity and text checks (qpdf, Poppler and
+  MuPDF from MSYS2, pdf.js), Inter installed as a system font (SSRS resolves fonts by name through GDI). Its results
+  merge in as a separate source, labelled Windows, and are never compared with the Linux tables. On Windows peak RSS is
+  the process's peak working set and CPU comes from `GetProcessTimes` (no `wait4`).
+- Setup outside the clock, as for JasperReports' jrxml compile: BIRT starts its engine and opens the design; FastReport
+  loads the `.frx`, registers the rows and compiles the report's expressions (Roslyn, cached in-process); SSRS loads the
+  `.rdlc` and compiles it (`GetParameters`). BIRT gets its rows from a scripted data set with a Java event handler (no
+  JavaScript per row), FastReport from a business-object data source, SSRS from an object list.
 
 ## Jobs
 

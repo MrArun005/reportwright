@@ -7,9 +7,10 @@ Every run is a fresh process started here: wall time, CPU (user+sys) and peak RS
 numbers /usr/bin/time -v prints), and the process group's summed RSS is also sampled every 100 ms (for browsers and
 other multi-process contestants) and used to enforce the memory cap. The first run of a cell is a warm-up and is
 dropped. The last run's output is then validated (qpdf, MuPDF, pdf.js, and the job's own correctness check).
+On Windows (the SSRS job) the same numbers come from the process handle: GetProcessTimes and the peak working set.
 Standard library only.
 """
-import argparse, json, os, platform, re, signal, statistics, subprocess, sys, time, unicodedata
+import argparse, json, os, platform, re, shutil, signal, statistics, subprocess, sys, threading, time, unicodedata
 from collections import Counter
 from pathlib import Path
 
@@ -28,12 +29,13 @@ DEFAULT_SIZES = {'invoice': [1], 'invoice-warm': [50], 'unicode': [1], 'images':
                  'sign': [1], 'hostile': [6]}
 CELL_TIMEOUT = {'quick': 300, 'full': 900, 'million': 1800}
 HANG_S = 30  # robustness: a file that takes longer is a hang
-PAGE_SIZE = os.sysconf('SC_PAGE_SIZE')
+PAGE_SIZE = os.sysconf('SC_PAGE_SIZE') if hasattr(os, 'sysconf') else 4096
+WIN = os.name == 'nt'
 
 
 def sh(*cmd, timeout=600, **kw):
     try:
-        return subprocess.run([str(c) for c in cmd], capture_output=True, text=True, timeout=timeout, errors='replace', **kw)
+        return subprocess.run([str(c) for c in cmd], capture_output=True, text=True, timeout=timeout, encoding='utf-8', errors='replace', **kw)
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         return subprocess.CompletedProcess(cmd, 99, '', str(e))
 
@@ -58,6 +60,8 @@ SCOPE = None  # set in main: a systemd-run prefix that puts a run in its own cgr
 
 
 def find_scope(cap_mb):
+    if WIN:
+        return None
     for pre in (['systemd-run', '--user', '--scope', '-q'], ['sudo', '-n', 'systemd-run', '--scope', '-q', f'--uid={os.getuid()}', f'--gid={os.getgid()}', '-E', 'HOME', '-E', 'PATH']):
         args = pre + ['-p', f'MemoryMax={cap_mb}M', '-p', 'MemorySwapMax=0']
         if sh(*args, 'true', timeout=30).returncode == 0:
@@ -110,6 +114,12 @@ def run_once(cmd, env, timeout, cap_mb, watch=None):
     p.returncode = status  # reaped above by wait4
     wall = (time.perf_counter() - t0) * 1000
     r = {'wall_ms': wall, 'cpu_ms': (ru.ru_utime + ru.ru_stime) * 1000, 'rss_mb': max(ru.ru_maxrss / 1024, peak / 2**20), 'ttfb_ms': ttfb}
+    signaled = os.WIFSIGNALED(status)
+    return finish(r, out, env, killed, signaled and os.WTERMSIG(status) == signal.SIGKILL, signaled, 0 if signaled else os.WEXITSTATUS(status))
+
+
+def finish(r, out, env, killed, sigkill, signaled, code):
+    """The run's status from what run_once / run_once_win saw."""
     line = next((l for l in reversed(out.decode('utf-8', 'replace').splitlines()) if l.startswith('{')), None)
     try:
         r['h'] = json.loads(line) if line else {}
@@ -118,9 +128,9 @@ def run_once(cmd, env, timeout, cap_mb, watch=None):
     tail = Path(env['BENCH_LOG']).read_text(errors='replace')[-4000:]
     if killed:
         r['status'] = killed
-    elif os.WIFSIGNALED(status):
-        r['status'] = 'oom' if os.WTERMSIG(status) == signal.SIGKILL else 'crash'  # SIGKILL from outside: the kernel's OOM killer
-    elif os.WEXITSTATUS(status) == 0 and r['h'].get('ok'):
+    elif signaled:
+        r['status'] = 'oom' if sigkill else 'crash'  # SIGKILL from outside: the kernel's OOM killer
+    elif code == 0 and r['h'].get('ok'):
         r['status'] = 'ok'
     elif re.search(r'OutOfMemory|out of memory|MemoryError|heap limit|std::bad_alloc|memory allocation of', tail, re.I):
         r['status'] = 'oom'
@@ -131,6 +141,56 @@ def run_once(cmd, env, timeout, cap_mb, watch=None):
     if r['status'] != 'ok':
         r['error'] = (r['h'].get('error') or tail[-600:]).strip()[:600]
     return r
+
+
+if WIN:
+    import ctypes
+    from ctypes import wintypes
+
+    class _PMC(ctypes.Structure):
+        _fields_ = [('cb', wintypes.DWORD), ('PageFaultCount', wintypes.DWORD)] + [(n, ctypes.c_size_t) for n in (
+            'PeakWorkingSetSize', 'WorkingSetSize', 'QuotaPeakPagedPoolUsage', 'QuotaPagedPoolUsage', 'QuotaPeakNonPagedPoolUsage',
+            'QuotaNonPagedPoolUsage', 'PagefileUsage', 'PeakPagefileUsage')]
+
+    _k32 = ctypes.WinDLL('kernel32')
+    _k32.K32GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(_PMC), wintypes.DWORD]
+    _k32.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+
+    def _mem(h):
+        m = _PMC()
+        m.cb = ctypes.sizeof(m)
+        _k32.K32GetProcessMemoryInfo(h, ctypes.byref(m), m.cb)
+        return m
+
+    def _cpu_ms(h):
+        ft = [wintypes.FILETIME() for _ in range(4)]  # creation, exit, kernel, user (100 ns units)
+        _k32.GetProcessTimes(h, *[ctypes.byref(f) for f in ft])
+        return sum((f.dwHighDateTime << 32 | f.dwLowDateTime) / 1e4 for f in ft[2:])
+
+
+def run_once_win(cmd, env, timeout, cap_mb, watch=None):
+    """run_once on Windows: one process (no process groups or rusage), measured through its handle, which stays open
+    after it exits: CPU from GetProcessTimes, peak RSS = its peak working set; the cap is enforced on the working set."""
+    t0 = time.perf_counter()
+    with open(env['BENCH_LOG'], 'w') as log:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=log, env=env)
+    chunks = []
+    reader = threading.Thread(target=lambda: chunks.append(p.stdout.read()), daemon=True)
+    reader.start()
+    h = wintypes.HANDLE(int(p._handle))
+    ttfb, killed = None, None
+    while p.poll() is None:
+        el = time.perf_counter() - t0
+        if watch and ttfb is None and os.path.exists(watch) and os.path.getsize(watch) > 0:
+            ttfb = el * 1000
+        if killed is None and (el > timeout or _mem(h).WorkingSetSize > cap_mb * 2**20):
+            killed = 'timeout' if el > timeout else 'oom'
+            p.kill()
+        time.sleep(0.1 if el > 1 else 0.02)
+    wall = (time.perf_counter() - t0) * 1000
+    reader.join(10)
+    r = {'wall_ms': wall, 'cpu_ms': _cpu_ms(h), 'rss_mb': _mem(h).PeakWorkingSetSize / 2**20, 'ttfb_ms': ttfb}
+    return finish(r, b''.join(c for c in chunks if c), env, killed, False, False, p.returncode)
 
 
 def stats(xs):
@@ -161,7 +221,7 @@ def validate(pdf):
     q = sh('qpdf', '--check', pdf, timeout=900)
     v['qpdf'] = q.returncode in (0, 3)
     n = npages(pdf) or 1
-    m = sh('mutool', 'draw', '-q', '-F', 'txt', '-o', '/dev/null', pdf, f'1,{n}', timeout=900)
+    m = sh('mutool', 'draw', '-q', '-F', 'txt', '-o', os.devnull, pdf, f'1,{n}', timeout=900)
     v['mupdf'] = m.returncode == 0 and 'error' not in m.stderr.lower()
     j = sh('node', HERE / 'tools' / 'pdfjs-check.mjs', pdf, timeout=900)
     try:
@@ -273,8 +333,7 @@ def env_for(fx, out, extra=None):
 
 
 def clean(d):
-    if d.exists():
-        subprocess.run(['rm', '-rf', str(d)])
+    shutil.rmtree(d, ignore_errors=True)
     d.mkdir(parents=True)
 
 
@@ -318,7 +377,7 @@ def cells(parts, job, size, a, fx, spec, work):
                          watch=out[L] / 'out.pdf' if job in CREATE else None)
             if r['status'] != 'ok':
                 failed[L] = {**base[L], 'status': r['status'], 'error': r.get('error'), 'wall_ms': round(r['wall_ms']), 'rss_mb': round(r['rss_mb'], 1)}
-                subprocess.run(['rm', '-rf', str(out[L])])
+                shutil.rmtree(out[L], ignore_errors=True)
             elif i >= warmup:
                 res[L].append(r)
     recs = []
@@ -342,7 +401,7 @@ def cells(parts, job, size, a, fx, spec, work):
                 rec['status'] = 'invalid'
         except Exception as e:  # a checker bug must not lose the measurement
             rec.update(status='harness-error', error=repr(e)[:600])
-        subprocess.run(['rm', '-rf', str(out[L])])
+        shutil.rmtree(out[L], ignore_errors=True)
         recs.append(rec)
     return recs
 
@@ -356,8 +415,9 @@ GROUPS = {  # same-machine layout: one job a group runs every contestant of its 
 
 
 def meta(a, langs):
-    cpu = re.search(r'model name\s*:\s*(.*)', Path('/proc/cpuinfo').read_text())
-    mem = re.search(r'MemTotal:\s*(\d+)', Path('/proc/meminfo').read_text())
+    proc = lambda f: Path(f).read_text() if Path(f).exists() else ''  # Linux; Windows: platform's CPU name, RAM in the runner file
+    cpu = re.search(r'model name\s*:\s*(.*)', proc('/proc/cpuinfo'))
+    mem = re.search(r'MemTotal:\s*(\d+)', proc('/proc/meminfo'))
     first = lambda r: (r.stdout + r.stderr).strip().splitlines()[0:1]
     tools = {t: first(sh(*cmd)) for t, cmd in {
         'qpdf': ['qpdf', '--version'], 'mutool': ['mutool', '-v'], 'pdftotext': ['pdftotext', '-v'],
@@ -468,8 +528,10 @@ def main():
     p.add_argument('--only', default='', help='comma list of jobs, for a partial rerun or to split a group')
     a = p.parse_args()
     assert bool(a.lang) != bool(a.group), 'give --lang or --group'
-    global SCOPE
+    global SCOPE, run_once
     SCOPE = find_scope(a.cap_mb)
+    if WIN:
+        run_once = run_once_win
     a.langs = [a.lang] if a.lang else [l.strip() for l in a.langs.split(',') if l.strip()]
     fx, work = Path(a.fixtures).resolve(), Path(a.work)
     spec = json.loads((fx / 'spec.json').read_text())
