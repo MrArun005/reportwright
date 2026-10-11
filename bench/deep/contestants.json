@@ -1,0 +1,875 @@
+{
+ "_doc": "Who runs in which job. cmd + [job, size, outdir] is the harness contract (README.md). jobs: what the contestant does; every other job is n/a, with the reason from na (keys: a job, or read/edit/create for a family). million: also runs the 1,000,000-row report in the million tier. league: engine (lays out pages itself from a table/report definition), writer (executes pre-laid-out draw ops) or read-edit (no create job); merge.py splits the create tables by it. os: windows marks a contestant that runs only on the windows-latest job (with ours, on the same machine; its tables are a separate source, never ranked against the Linux runs).",
+ "langs": {
+  "ours": {
+   "runtime": [
+    "node",
+    "--version"
+   ],
+   "libs": {
+    "@reportwright/engine": {
+     "league": "engine",
+     "cmd": [
+      "node",
+      "bench/deep/ours/harness.mjs",
+      "@reportwright/engine"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "pdfa"
+     ],
+     "million": true,
+     "na": {
+      "read": "a report engine: reading is @reportwright/pdf's job",
+      "edit": "a report engine: editing is @reportwright/pdf's job",
+      "images": "a fixture image is over the engine's 10 MB per-image cap, so the engine leaves it out"
+     }
+    },
+    "@reportwright/pdf": {
+     "league": "writer",
+     "cmd": [
+      "node",
+      "bench/deep/ours/harness.mjs",
+      "@reportwright/pdf"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images",
+      "pdfa",
+      "read-big",
+      "read-mixed",
+      "merge",
+      "split",
+      "encrypt",
+      "metadata",
+      "form",
+      "sign",
+      "parse"
+     ],
+     "million": true
+    }
+   }
+  },
+  "js": {
+   "runtime": [
+    "node",
+    "--version"
+   ],
+   "libs": {
+    "pdf-lib": {
+     "league": "writer",
+     "cmd": [
+      "node",
+      "bench/deep/js/harness.mjs",
+      "pdf-lib"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images",
+      "merge",
+      "split",
+      "form",
+      "parse"
+     ],
+     "na": {
+      "read": "no text extraction",
+      "encrypt": "cannot encrypt",
+      "metadata": "no incremental save",
+      "sign": "no signing",
+      "pdfa": "no PDF/A option"
+     }
+    },
+    "pdfkit": {
+     "league": "writer",
+     "cmd": [
+      "node",
+      "bench/deep/js/harness.mjs",
+      "pdfkit"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images",
+      "pdfa"
+     ],
+     "million": true,
+     "na": {
+      "read": "a writer: it does not read PDFs",
+      "edit": "a writer: it does not open existing PDFs"
+     }
+    },
+    "jspdf": {
+     "league": "writer",
+     "cmd": [
+      "node",
+      "bench/deep/js/harness.mjs",
+      "jspdf"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images"
+     ],
+     "na": {
+      "read": "a writer: it does not read PDFs",
+      "edit": "a writer: it does not open existing PDFs",
+      "pdfa": "no PDF/A option"
+     }
+    },
+    "pdfmake": {
+     "league": "engine",
+     "cmd": [
+      "node",
+      "bench/deep/js/harness.mjs",
+      "pdfmake"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images",
+      "pdfa"
+     ],
+     "na": {
+      "read": "a writer: it does not read PDFs",
+      "edit": "a writer: it does not open existing PDFs"
+     }
+    },
+    "@react-pdf/renderer": {
+     "league": "engine",
+     "cmd": [
+      "node",
+      "bench/deep/js/harness.mjs",
+      "@react-pdf/renderer"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images"
+     ],
+     "na": {
+      "read": "a writer: it does not read PDFs",
+      "edit": "a writer: it does not open existing PDFs",
+      "pdfa": "no PDF/A option"
+     }
+    },
+    "pdfjs-dist": {
+     "league": "read-edit",
+     "cmd": [
+      "node",
+      "bench/deep/js/harness.mjs",
+      "pdfjs-dist"
+     ],
+     "jobs": [
+      "read-big",
+      "read-mixed",
+      "parse"
+     ],
+     "na": {
+      "create": "a reader and renderer",
+      "edit": "a reader and renderer"
+     }
+    },
+    "puppeteer": {
+     "league": "engine",
+     "cmd": [
+      "node",
+      "bench/deep/js/harness.mjs",
+      "puppeteer"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images"
+     ],
+     "na": {
+      "read": "a writer: it does not read PDFs",
+      "edit": "a writer: it does not open existing PDFs",
+      "pdfa": "Chrome prints no PDF/A"
+     }
+    },
+    "mupdf.js (WASM)": {
+     "league": "writer",
+     "cmd": [
+      "node",
+      "bench/deep/js/harness.mjs",
+      "mupdf.js (WASM)"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images",
+      "read-big",
+      "read-mixed",
+      "merge",
+      "split",
+      "parse"
+     ],
+     "na": {
+      "pdfa": "no PDF/A output",
+      "encrypt": "not wired in this harness yet (saveToBuffer has encrypt options)",
+      "metadata": "not wired in this harness yet",
+      "form": "not wired in this harness yet",
+      "sign": "not wired in this harness yet"
+     }
+    }
+   }
+  },
+  "python": {
+   "runtime": [
+    "python3",
+    "--version"
+   ],
+   "libs": {
+    "reportlab": {
+     "league": "writer",
+     "cmd": [
+      "python3",
+      "bench/deep/python/harness.py",
+      "reportlab"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images"
+     ],
+     "million": true,
+     "na": {
+      "read": "a writer: it does not read PDFs",
+      "edit": "a writer: it does not open existing PDFs",
+      "pdfa": "PDF/A is in the commercial ReportLab PLUS"
+     }
+    },
+    "PyMuPDF": {
+     "league": "writer",
+     "cmd": [
+      "python3",
+      "bench/deep/python/harness.py",
+      "PyMuPDF"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images",
+      "read-big",
+      "read-mixed",
+      "merge",
+      "split",
+      "encrypt",
+      "metadata",
+      "form",
+      "parse"
+     ],
+     "million": true,
+     "na": {
+      "pdfa": "no PDF/A writer",
+      "sign": "no signing (needs pyHanko)"
+     }
+    },
+    "pikepdf": {
+     "league": "read-edit",
+     "cmd": [
+      "python3",
+      "bench/deep/python/harness.py",
+      "pikepdf"
+     ],
+     "jobs": [
+      "merge",
+      "split",
+      "encrypt",
+      "parse"
+     ],
+     "na": {
+      "create": "structure editing only",
+      "read": "no text extraction",
+      "metadata": "qpdf rewrites; no incremental save",
+      "form": "not attempted",
+      "sign": "no signing"
+     }
+    },
+    "pypdf": {
+     "league": "read-edit",
+     "cmd": [
+      "python3",
+      "bench/deep/python/harness.py",
+      "pypdf"
+     ],
+     "jobs": [
+      "read-big",
+      "read-mixed",
+      "merge",
+      "split",
+      "encrypt",
+      "metadata",
+      "form",
+      "parse"
+     ],
+     "na": {
+      "create": "no text drawing API",
+      "sign": "no signing (needs pyHanko)"
+     }
+    },
+    "pdfminer.six": {
+     "league": "read-edit",
+     "cmd": [
+      "python3",
+      "bench/deep/python/harness.py",
+      "pdfminer.six"
+     ],
+     "jobs": [
+      "read-big",
+      "read-mixed",
+      "parse"
+     ],
+     "na": {
+      "create": "a text extractor",
+      "edit": "a text extractor"
+     }
+    },
+    "pdfplumber": {
+     "league": "read-edit",
+     "cmd": [
+      "python3",
+      "bench/deep/python/harness.py",
+      "pdfplumber"
+     ],
+     "jobs": [
+      "read-big",
+      "read-mixed",
+      "parse"
+     ],
+     "na": {
+      "create": "a text extractor",
+      "edit": "a text extractor"
+     }
+    },
+    "weasyprint": {
+     "league": "engine",
+     "cmd": [
+      "python3",
+      "bench/deep/python/harness.py",
+      "weasyprint"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images",
+      "pdfa"
+     ],
+     "na": {
+      "read": "a writer: it does not read PDFs",
+      "edit": "a writer: it does not open existing PDFs"
+     }
+    }
+   }
+  },
+  "java": {
+   "runtime": [
+    "java",
+    "-version"
+   ],
+   "libs": {
+    "pdfbox": {
+     "league": "writer",
+     "cmd": [
+      "java",
+      "-Djava.awt.headless=true",
+      "-Duser.language=en",
+      "-Duser.country=US",
+      "-cp",
+      "bench/deep/java/target/classes:bench/deep/java/target/lib/*",
+      "bench.Libs",
+      "pdfbox"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images",
+      "read-big",
+      "read-mixed",
+      "merge",
+      "split",
+      "encrypt",
+      "metadata",
+      "form",
+      "sign",
+      "parse"
+     ],
+     "million": true,
+     "na": {
+      "pdfa": "PDF/A by hand only (XMP + output intent), not attempted"
+     }
+    },
+    "openpdf": {
+     "league": "writer",
+     "cmd": [
+      "java",
+      "-Djava.awt.headless=true",
+      "-Duser.language=en",
+      "-Duser.country=US",
+      "-cp",
+      "bench/deep/java/target/classes:bench/deep/java/target/lib/*",
+      "bench.Libs",
+      "openpdf"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images",
+      "read-big",
+      "read-mixed",
+      "merge",
+      "split",
+      "metadata",
+      "form",
+      "sign",
+      "parse"
+     ],
+     "million": true,
+     "na": {
+      "pdfa": "not attempted",
+      "encrypt": "no AES-256 in OpenPDF 2.2"
+     }
+    },
+    "itext": {
+     "league": "writer",
+     "cmd": [
+      "java",
+      "-Djava.awt.headless=true",
+      "-Duser.language=en",
+      "-Duser.country=US",
+      "-cp",
+      "bench/deep/java/target/classes:bench/deep/java/target/lib/*",
+      "bench.Libs",
+      "itext"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "images",
+      "read-big",
+      "read-mixed",
+      "merge",
+      "split",
+      "encrypt",
+      "metadata",
+      "form",
+      "sign",
+      "parse"
+     ],
+     "million": true,
+     "na": {
+      "pdfa": "not attempted (needs an ICC profile file)",
+      "unicode": "iText 9.8 throws reading a fixture font's GPOS table (IndexOutOfBoundsException in GposLookupType1)"
+     }
+    },
+    "jasperreports": {
+     "league": "engine",
+     "cmd": [
+      "java",
+      "-Djava.awt.headless=true",
+      "-Duser.language=en",
+      "-Duser.country=US",
+      "-cp",
+      "bench/deep/java/jasper/target/classes:bench/deep/java/jasper/target/lib/*",
+      "bench.Jasper",
+      "jasperreports"
+     ],
+     "jobs": [
+      "report"
+     ],
+     "na": {
+      "create": "a report generator: only the report job",
+      "read": "a report generator",
+      "edit": "a report generator"
+     }
+    },
+    "birt": {
+     "league": "engine",
+     "cmd": [
+      "java",
+      "-Djava.awt.headless=true",
+      "-Duser.language=en",
+      "-Duser.country=US",
+      "-cp",
+      "bench/deep/java/birt/target/classes:bench/deep/java/birt/runtime/lib/*",
+      "bench.Birt",
+      "birt"
+     ],
+     "jobs": [
+      "report"
+     ],
+     "na": {
+      "create": "a report generator: only the report job",
+      "read": "a report generator",
+      "edit": "a report generator"
+     }
+    }
+   }
+  },
+  "dotnet": {
+   "runtime": [
+    "dotnet",
+    "--version"
+   ],
+   "libs": {
+    "QuestPDF": {
+     "league": "engine",
+     "cmd": [
+      "dotnet",
+      "bench/deep/dotnet/out/Bench.dll",
+      "QuestPDF"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images"
+     ],
+     "na": {
+      "read": "a writer: it does not read PDFs",
+      "edit": "a writer: it does not open existing PDFs",
+      "pdfa": "not attempted"
+     }
+    },
+    "PDFsharp": {
+     "league": "writer",
+     "cmd": [
+      "dotnet",
+      "bench/deep/dotnet/out/Bench.dll",
+      "PDFsharp"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images",
+      "merge",
+      "split",
+      "encrypt",
+      "parse"
+     ],
+     "na": {
+      "read": "no text extraction",
+      "metadata": "no incremental save",
+      "form": "no flattening",
+      "sign": "not attempted",
+      "pdfa": "not attempted"
+     }
+    },
+    "PdfPig": {
+     "league": "read-edit",
+     "cmd": [
+      "dotnet",
+      "bench/deep/dotnet/out/Bench.dll",
+      "PdfPig"
+     ],
+     "jobs": [
+      "read-big",
+      "read-mixed",
+      "merge",
+      "parse"
+     ],
+     "na": {
+      "create": "its writer has no table or layout; not attempted",
+      "split": "not attempted",
+      "encrypt": "cannot encrypt"
+     }
+    },
+    "FastReport": {
+     "league": "engine",
+     "cmd": [
+      "dotnet",
+      "bench/deep/dotnet/fastreport/out/FastReportBench.dll",
+      "FastReport"
+     ],
+     "jobs": [
+      "report"
+     ],
+     "na": {
+      "create": "a report generator: only the report job",
+      "read": "a report generator",
+      "edit": "a report generator"
+     }
+    }
+   }
+  },
+  "go": {
+   "runtime": [
+    "go",
+    "version"
+   ],
+   "libs": {
+    "fpdf": {
+     "league": "writer",
+     "cmd": [
+      "bench/deep/go/bench",
+      "fpdf"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images"
+     ],
+     "na": {
+      "read": "a writer: it does not read PDFs",
+      "edit": "a writer: it does not open existing PDFs",
+      "pdfa": "no PDF/A option"
+     }
+    },
+    "pdfcpu": {
+     "league": "read-edit",
+     "cmd": [
+      "bench/deep/go/bench",
+      "pdfcpu"
+     ],
+     "jobs": [
+      "merge",
+      "split",
+      "encrypt",
+      "parse"
+     ],
+     "na": {
+      "create": "no text layout API",
+      "read": "no text extraction",
+      "metadata": "no incremental save",
+      "form": "not attempted",
+      "sign": "no signing"
+     }
+    }
+   }
+  },
+  "rust": {
+   "runtime": [
+    "rustc",
+    "--version"
+   ],
+   "libs": {
+    "printpdf": {
+     "league": "writer",
+     "cmd": [
+      "bench/deep/rust/target/release/bench",
+      "printpdf"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images"
+     ],
+     "na": {
+      "read": "a writer: it does not read PDFs",
+      "edit": "a writer: it does not open existing PDFs",
+      "pdfa": "no PDF/A option"
+     }
+    },
+    "lopdf": {
+     "league": "read-edit",
+     "cmd": [
+      "bench/deep/rust/target/release/bench",
+      "lopdf"
+     ],
+     "jobs": [
+      "split",
+      "parse"
+     ],
+     "na": {
+      "create": "object-level only",
+      "read": "pdf-extract is the reader",
+      "merge": "needs ~80 lines of object renumbering; not attempted",
+      "encrypt": "not attempted",
+      "metadata": "not attempted",
+      "form": "not attempted",
+      "sign": "no signing"
+     }
+    },
+    "pdf-extract": {
+     "league": "read-edit",
+     "cmd": [
+      "bench/deep/rust/target/release/bench",
+      "pdf-extract"
+     ],
+     "jobs": [
+      "read-big",
+      "read-mixed",
+      "parse"
+     ],
+     "na": {
+      "create": "a text extractor",
+      "edit": "a text extractor"
+     }
+    }
+   }
+  },
+  "cli": {
+   "runtime": [
+    "bash",
+    "--version"
+   ],
+   "libs": {
+    "mutool": {
+     "league": "read-edit",
+     "cmd": [
+      "bash",
+      "bench/deep/cli/harness.sh",
+      "mutool"
+     ],
+     "jobs": [
+      "read-big",
+      "read-mixed",
+      "merge",
+      "split",
+      "encrypt",
+      "parse"
+     ],
+     "na": {
+      "create": "not a writer",
+      "metadata": "not attempted",
+      "form": "not attempted",
+      "sign": "no signing"
+     }
+    },
+    "qpdf": {
+     "league": "read-edit",
+     "cmd": [
+      "bash",
+      "bench/deep/cli/harness.sh",
+      "qpdf"
+     ],
+     "jobs": [
+      "merge",
+      "split",
+      "encrypt",
+      "parse"
+     ],
+     "na": {
+      "create": "not a writer",
+      "read": "no text extraction",
+      "metadata": "rewrites only",
+      "form": "cannot fill",
+      "sign": "no signing"
+     }
+    },
+    "pdftotext": {
+     "league": "read-edit",
+     "cmd": [
+      "bash",
+      "bench/deep/cli/harness.sh",
+      "pdftotext"
+     ],
+     "jobs": [
+      "read-big",
+      "read-mixed",
+      "parse"
+     ],
+     "na": {
+      "create": "a text extractor",
+      "edit": "a text extractor"
+     }
+    },
+    "pdfium": {
+     "league": "read-edit",
+     "cmd": [
+      "bash",
+      "bench/deep/cli/harness.sh",
+      "pdfium"
+     ],
+     "jobs": [
+      "read-big",
+      "read-mixed",
+      "merge",
+      "split",
+      "parse"
+     ],
+     "na": {
+      "create": "not attempted",
+      "encrypt": "cannot encrypt",
+      "metadata": "not attempted",
+      "form": "not attempted",
+      "sign": "no signing"
+     }
+    }
+   }
+  },
+  "ssrs": {
+   "runtime": [
+    "cmd",
+    "/c",
+    "ver"
+   ],
+   "os": "windows",
+   "libs": {
+    "SSRS (ReportViewer LocalReport)": {
+     "league": "engine",
+     "cmd": [
+      "bench/deep/dotnet/ssrs/out/Ssrs.exe",
+      "ssrs"
+     ],
+     "jobs": [
+      "report"
+     ],
+     "na": {
+      "create": "a report generator: only the report job",
+      "read": "a report generator",
+      "edit": "a report generator"
+     }
+    }
+   }
+  }
+ }
+}

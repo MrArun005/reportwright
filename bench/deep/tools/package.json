@@ -1,0 +1,7 @@
+{
+  "name": "deep-bench-tools",
+  "private": true,
+  "type": "module",
+  "description": "The pdf.js validity check every language job runs on its outputs.",
+  "dependencies": { "pdfjs-dist": "6.4.299" }
+}

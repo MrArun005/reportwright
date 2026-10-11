@@ -1,0 +1,5 @@
+{"rival": "PyMuPDF", "case": "text extraction of a 500-page PDF",
+ "build": "pip install -q pymupdf==1.26.4",
+ "prep": "python3 prep.py",
+ "kind": "text",
+ "theirs": "python3 theirs.py", "ours": "node ours.mjs"}

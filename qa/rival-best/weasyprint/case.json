@@ -1,0 +1,4 @@
+{"rival": "WeasyPrint", "case": "CSS paged-media brochure (@page margin boxes, page X of Y, two-column justified flow)",
+ "build": "pip install -q weasyprint==66.0",
+ "theirs": "python3 theirs.py", "ours": "node ours.mjs",
+ "partial": "no CSS multi-column flow or @page margin boxes: ours is single-column rich text with page header/footer bands"}

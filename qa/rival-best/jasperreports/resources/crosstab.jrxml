@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd"
+  name="crosstab" pageWidth="595" pageHeight="842" columnWidth="515" leftMargin="40" rightMargin="40" topMargin="40" bottomMargin="40">
+  <field name="region" class="java.lang.String"/>
+  <field name="quarter" class="java.lang.String"/>
+  <field name="amount" class="java.lang.Double"/>
+  <title><band height="30"><staticText><reportElement x="0" y="0" width="515" height="24"/><textElement><font size="16" isBold="true"/></textElement><text><![CDATA[Sales by region and quarter]]></text></staticText></band></title>
+  <summary><band height="400">
+    <crosstab><reportElement x="0" y="0" width="515" height="400"/>
+      <crosstabDataset/>
+      <rowGroup name="region" width="100" totalPosition="End">
+        <bucket class="java.lang.String"><bucketExpression><![CDATA[$F{region}]]></bucketExpression></bucket>
+        <crosstabRowHeader><cellContents><textField><reportElement x="0" y="0" width="100" height="18"/><textFieldExpression><![CDATA[$V{region}]]></textFieldExpression></textField></cellContents></crosstabRowHeader>
+        <crosstabTotalRowHeader><cellContents><staticText><reportElement x="0" y="0" width="100" height="18"/><textElement><font isBold="true"/></textElement><text><![CDATA[Total]]></text></staticText></cellContents></crosstabTotalRowHeader>
+      </rowGroup>
+      <columnGroup name="quarter" height="18" totalPosition="End">
+        <bucket class="java.lang.String"><bucketExpression><![CDATA[$F{quarter}]]></bucketExpression></bucket>
+        <crosstabColumnHeader><cellContents><textField><reportElement x="0" y="0" width="80" height="18"/><textElement textAlignment="Right"><font isBold="true"/></textElement><textFieldExpression><![CDATA[$V{quarter}]]></textFieldExpression></textField></cellContents></crosstabColumnHeader>
+        <crosstabTotalColumnHeader><cellContents><staticText><reportElement x="0" y="0" width="80" height="18"/><textElement textAlignment="Right"><font isBold="true"/></textElement><text><![CDATA[Total]]></text></staticText></cellContents></crosstabTotalColumnHeader>
+      </columnGroup>
+      <measure name="amt" class="java.lang.Double" calculation="Sum"><measureExpression><![CDATA[$F{amount}]]></measureExpression></measure>
+      <crosstabCell width="80" height="18"><cellContents><textField pattern="#,##0.00"><reportElement x="0" y="0" width="80" height="18"/><textElement textAlignment="Right"/><textFieldExpression><![CDATA[$V{amt}]]></textFieldExpression></textField></cellContents></crosstabCell>
+      <crosstabCell width="80" height="18" columnTotalGroup="quarter"><cellContents><textField pattern="#,##0.00"><reportElement x="0" y="0" width="80" height="18"/><textElement textAlignment="Right"><font isBold="true"/></textElement><textFieldExpression><![CDATA[$V{amt}]]></textFieldExpression></textField></cellContents></crosstabCell>
+      <crosstabCell width="80" height="18" rowTotalGroup="region"><cellContents><textField pattern="#,##0.00"><reportElement x="0" y="0" width="80" height="18"/><textElement textAlignment="Right"><font isBold="true"/></textElement><textFieldExpression><![CDATA[$V{amt}]]></textFieldExpression></textField></cellContents></crosstabCell>
+      <crosstabCell width="80" height="18" rowTotalGroup="region" columnTotalGroup="quarter"><cellContents><textField pattern="#,##0.00"><reportElement x="0" y="0" width="80" height="18"/><textElement textAlignment="Right"><font isBold="true"/></textElement><textFieldExpression><![CDATA[$V{amt}]]></textFieldExpression></textField></cellContents></crosstabCell>
+    </crosstab>
+  </band></summary>
+</jasperReport>
