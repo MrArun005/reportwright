@@ -187,6 +187,8 @@ Reports are JSON files in `reports/*.pw.json`. Commit them with your code. Each 
 
 ## Docker
 
+**Self-host for free:** one-command install on a $5–10 VPS with HTTPS, backups and upgrades: [deploy/compose/README.md](deploy/compose/README.md).
+
 ```bash
 docker build -t reportwright .                     # add --build-arg PW_EMBED_ORIGINS=https://your.site for embeds
 docker run -p 3000:3000 -e PW_BASIC_AUTH=admin:change-me \
