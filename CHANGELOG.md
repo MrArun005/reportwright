@@ -2,6 +2,13 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## 0.14.0-rc.5 — 2026-10-11 (release candidate)
+
+### Summary
+- **`@reportwright/pdf` 0.1.0-beta.12.** Its build no longer keeps function names (esbuild `keepNames` wrapped every closure in an `Object.defineProperty` call): writing is ~35% faster. Deep benchmark (GitHub, 4 cores): a 100,000-row report through the engine 6.6 s (0.13.1: 8.9 s); a 1,000,000-row report 53 s (0.13.1: 79 s); the library writes the 100,000-row report within 1.82× of Go's fpdf (beta.11: 2.79×). Otherwise the same as rc.4.
+- **Known, for 0.14.1:** a warm re-export of the same invoice is ~16 ms (0.13.1: ~12 ms, pdf-lib's cached image path); 1,000 plain pages ~6% slower than 0.13.1; `parallel: 'auto'` on 4 cores was not faster for 1M rows and used twice the memory.
+- The `stress-test` tier-1 parity baseline is corrected (owner-accepted): its Zalgo line now extracts as its real combining marks.
+
 ## 0.14.0-rc.4 — 2026-10-11 (release candidate)
 
 ### Summary

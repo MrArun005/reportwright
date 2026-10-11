@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": { "predev": "rm -rf public/pw && mkdir -p public && cp -r node_modules/@reportwright/fonts/public public/pw", "dev": "vite", "build": "npm run predev && vite build" },
-  "dependencies": { "@angular/common": "^20.0.0", "@angular/compiler": "^20.0.0", "@angular/core": "^20.0.0", "@angular/platform-browser": "^20.0.0", "@reportwright/angular": "0.14.0-rc.4", "@reportwright/fonts": "0.14.0-rc.4", "@reportwright/viewer": "0.14.0-rc.4", "rxjs": "^7.8.0", "zone.js": "^0.15.0" },
+  "dependencies": { "@angular/common": "^20.0.0", "@angular/compiler": "^20.0.0", "@angular/core": "^20.0.0", "@angular/platform-browser": "^20.0.0", "@reportwright/angular": "0.14.0-rc.5", "@reportwright/fonts": "0.14.0-rc.5", "@reportwright/viewer": "0.14.0-rc.5", "rxjs": "^7.8.0", "zone.js": "^0.15.0" },
   "devDependencies": { "vite": "^7.0.0" }
 }
