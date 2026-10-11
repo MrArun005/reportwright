@@ -16,6 +16,8 @@ on:
       workflow: {type: string, required: true, description: "the caller's file, for prune mode's previous runs"}
       title: {type: string, default: Deep PDF benchmark}
       results_md: {type: string, default: RESULTS.md}
+      prefix: {type: string, default: "", description: "artifact-name prefix, so two callers in one run do not collide"}
+      pdf_repo: {type: string, default: "", description: "owner/name to build pdf_ref from; empty = this repo"}
 permissions:
   contents: read
   actions: read # prune mode downloads the previous run's merged results
@@ -112,7 +114,7 @@ jobs:
           du -sh "$FX"
       - uses: actions/upload-artifact@v4
         with:
-          name: fixtures
+          name: ${{ inputs.prefix }}fixtures
           path: /tmp/fx
           retention-days: 3
 
@@ -134,7 +136,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: fixtures
+          name: ${{ inputs.prefix }}fixtures
           path: /tmp/fx
       - name: Validators (qpdf, MuPDF, Poppler) and GNU time
         run: |
@@ -172,8 +174,13 @@ jobs:
           SIDE=/tmp/side; mkdir -p "$SIDE/tgz"; SRC=()
           get() { git clone -q --no-checkout "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "$SIDE/$1" && git -C "$SIDE/$1" checkout -q "$2"; }
           if [ -n "$PDF_REF" ]; then
+            if [ -n "${{ inputs.pdf_repo }}" ]; then  # standalone library repo: package at the root
+              git clone -q --no-checkout "https://github.com/${{ inputs.pdf_repo }}" "$SIDE/pdf" && git -C "$SIDE/pdf" checkout -q "$PDF_REF"
+              (cd "$SIDE/pdf" && npm ci --no-audit --no-fund --ignore-scripts && node build.mjs && npm pack . --pack-destination "$SIDE/tgz")
+            else
             get pdf "$PDF_REF"
             (cd "$SIDE/pdf" && (npm ci --no-audit --no-fund --ignore-scripts || npm install --no-audit --no-fund --ignore-scripts) && node packages/pdf/build.mjs && npm pack ./packages/pdf --pack-destination "$SIDE/tgz")
+            fi
             SRC+=("pdf $PDF_REF@$(git -C "$SIDE/pdf" rev-parse --short=9 HEAD)")
           fi
           if [ -n "$ENGINE_REF" ]; then
@@ -286,7 +293,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: results-${{ matrix.lang }}
+          name: ${{ inputs.prefix }}results-${{ matrix.lang }}
           path: results/
           retention-days: 30
 
@@ -359,8 +366,13 @@ jobs:
           SIDE=/tmp/side; mkdir -p "$SIDE/tgz"
           get() { git clone -q --no-checkout "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "$SIDE/$1" && git -C "$SIDE/$1" checkout -q "$2"; }
           if [ -n "$PDF_REF" ]; then
+            if [ -n "${{ inputs.pdf_repo }}" ]; then  # standalone library repo: package at the root
+              git clone -q --no-checkout "https://github.com/${{ inputs.pdf_repo }}" "$SIDE/pdf" && git -C "$SIDE/pdf" checkout -q "$PDF_REF"
+              (cd "$SIDE/pdf" && npm ci --no-audit --no-fund --ignore-scripts && node build.mjs && npm pack . --pack-destination "$SIDE/tgz")
+            else
             get pdf "$PDF_REF"
             (cd "$SIDE/pdf" && (npm ci --no-audit --no-fund --ignore-scripts || npm install --no-audit --no-fund --ignore-scripts) && node packages/pdf/build.mjs && npm pack ./packages/pdf --pack-destination "$SIDE/tgz")
+            fi
             echo "pdf_src=$PDF_REF@$(git -C "$SIDE/pdf" rev-parse --short=9 HEAD)" >> "$GITHUB_OUTPUT"
           fi
           if [ -n "$ENGINE_REF" ]; then
@@ -413,7 +425,7 @@ jobs:
           retention-days: 3
       - uses: actions/upload-artifact@v4
         with:
-          name: build
+          name: ${{ inputs.prefix }}build
           path: /tmp/build.tar.zst
           compression-level: 0
           retention-days: 3
@@ -438,11 +450,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: fixtures
+          name: ${{ inputs.prefix }}fixtures
           path: /tmp/fx
       - uses: actions/download-artifact@v4
         with:
-          name: build
+          name: ${{ inputs.prefix }}build
           path: /tmp/build
       - name: Unpack the builds
         run: |
@@ -486,7 +498,7 @@ jobs:
           for want in same any; do
             for id in $(for w in ${{ inputs.workflow }} bench-deep.yml; do gh run list -R "${{ github.repository }}" -w $w -s completed -L 30 --json databaseId -q '.[].databaseId'; done | awk '!s[$0]++'); do
               [ "$id" = "$GITHUB_RUN_ID" ] && continue
-              d=/tmp/prev/$want-$id; gh run download "$id" -R "${{ github.repository }}" -n bench-deep-results -D "$d" 2>/dev/null || continue
+              d=/tmp/prev/$want-$id; gh run download "$id" -R "${{ github.repository }}" -n ${{ inputs.prefix }}bench-deep-results -D "$d" 2>/dev/null || continue
               python3 -c "import json,sys; j=json.load(open('$d/results.json')); sys.exit('$want'=='same' and j['sources'][0]['meta'][0]['tier'] != '$TIER')" || continue
               P="$P,$d/results.json"; i=$((i+1)); [ $i -ge 4 ] && break
             done
@@ -507,7 +519,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: results-${{ env.SLUG }}
+          name: ${{ inputs.prefix }}results-${{ env.SLUG }}
           path: results/
           retention-days: 30
 
@@ -531,7 +543,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: fixtures
+          name: ${{ inputs.prefix }}fixtures
           path: ${{ runner.temp }}/fx
       - uses: actions/download-artifact@v4
         if: needs.build.outputs.engine_src != '' || needs.build.outputs.pdf_src != ''
@@ -592,7 +604,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: windows-results
+          name: ${{ inputs.prefix }}windows-results
           path: results-win/
           retention-days: 30
 
@@ -605,13 +617,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          pattern: results-*
+          pattern: ${{ inputs.prefix }}results-*
           path: results
           merge-multiple: true
       - uses: actions/download-artifact@v4
         continue-on-error: true # only same-machine runs with the report engines have it
         with:
-          name: windows-results
+          name: ${{ inputs.prefix }}windows-results
           path: winres
       - name: Merge
         run: |
@@ -623,6 +635,6 @@ jobs:
           cat out/results.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
-          name: bench-deep-results
+          name: ${{ inputs.prefix }}bench-deep-results
           path: out/
           retention-days: 90
