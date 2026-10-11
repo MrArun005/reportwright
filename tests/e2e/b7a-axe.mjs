@@ -54,7 +54,8 @@ await p.waitForTimeout(600); // the menu's fade-in
 const viewer = await axe();
 // the badge and a name the hint repeats are aria-hidden: each format's name is said once
 assert.equal(await p.getByRole('menuitem', { name: 'PDF document', exact: true }).count(), 1);
-assert.equal(await p.getByRole('menuitem', { name: 'HTML Web page', exact: true }).count(), 1);
+assert.equal(await p.getByRole('menuitem', { name: /^HTML \(interactive\)/ }).count(), 1); // the default kind is marked
+assert.equal(await p.getByRole('menuitem', { name: /^HTML \(print\)/ }).count(), 1);
 
 await p.goto(`${ORIGIN}/designer`);
 await p.waitForFunction(() => document.querySelector('#r')?.shadowRoot?.querySelector('[data-testid], button'), null, { timeout: 60000 });
