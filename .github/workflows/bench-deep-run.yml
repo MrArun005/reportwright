@@ -1,0 +1,520 @@
+# The deep PDF benchmark, shared by bench-deep.yml (every group), bench-engines.yml (report engines) and
+# bench-pdf.yml (the PDF library). Called only (workflow_call); see bench/deep/README.md.
+# fixtures (once) -> one job a language or a job group -> report (merge, summary, artifacts).
+name: bench-deep-run
+on:
+  workflow_call:
+    inputs:
+      tier: {type: string, default: quick}
+      langs: {type: string, default: all}
+      runs: {type: string, default: "5"}
+      engine_ref: {type: string, default: ""}
+      pdf_ref: {type: string, default: ""}
+      layout: {type: string, default: auto}
+      groups: {type: string, default: "", description: "space-separated group names (or name:jobs) this caller runs; empty = all"}
+      control: {type: string, required: true, description: "push control file: tier[,layout] line, then key=value refs"}
+      workflow: {type: string, required: true, description: "the caller's file, for prune mode's previous runs"}
+      title: {type: string, default: Deep PDF benchmark}
+      results_md: {type: string, default: RESULTS.md}
+permissions:
+  contents: read
+  actions: read # prune mode downloads the previous run's merged results
+env:
+  FX: /tmp/fx # fixed: the Jasper fonts and the veraPDF container both expect the fixtures under /tmp
+  TIER: ${{ inputs.tier || 'quick' }} # a push reads the caller's control file instead (the plan step's tier output)
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      langs: ${{ steps.plan.outputs.langs }}
+      all_langs: ${{ steps.plan.outputs.all_langs }}
+      engine_ref: ${{ steps.plan.outputs.engine_ref }}
+      pdf_ref: ${{ steps.plan.outputs.pdf_ref }}
+      tier: ${{ steps.plan.outputs.tier }}
+      layout: ${{ steps.plan.outputs.layout }}
+      groups: ${{ steps.plan.outputs.groups }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Plan the language jobs
+        id: plan
+        env:
+          CONTROL: ${{ inputs.control }}
+          GROUPS_ALLOWED: ${{ inputs.groups }}
+          LANGS: ${{ inputs.langs || 'all' }}
+          ENGINE_REF: ${{ inputs.engine_ref }}
+          PDF_REF: ${{ inputs.pdf_ref }}
+          LAYOUT: ${{ inputs.layout || 'auto' }}
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, os
+          push = os.environ['GITHUB_EVENT_NAME'] == 'push'
+          ctl = os.environ['CONTROL']
+          ctl_lines = open(ctl).read().strip().splitlines() if push and os.path.exists(ctl) else []
+          if ctl_lines:  # first line tier[,layout[,group...]] for push runs; .push-tier has only that, the per-workflow files add key=value refs
+              t, l, *g = [x.strip() for x in ctl_lines[0].split(',')] + ['']
+              os.environ['TIER'], os.environ['LAYOUT'], os.environ['ONLY_GROUPS'] = t, (l or 'auto'), ' '.join(x for x in g if x)
+          tier = os.environ['TIER']
+          layout = os.environ['LAYOUT'] if os.environ['LAYOUT'] != 'auto' else ('per-lang' if tier == 'quick' and not os.environ['GROUPS_ALLOWED'] else 'same-machine')  # per-lang cannot split by group
+          print(f'tier={tier}\nlayout={layout}')
+          with open(os.environ['GITHUB_ENV'], 'a') as e:
+              e.write(f'TIER={tier}\n')
+          # name:jobs; create-engines splits its report table from the rest so one runner death loses less (a table never spans jobs)
+          groups = ['create-writers', 'create-engines:report', 'create-engines:plain,invoice,invoice-warm,unicode,images,pdfa'] + ([] if tier == 'million' else ['read-edit', 'robustness'])
+          if tier == 'million':
+              groups[1:3] = ['create-engines']
+          allowed = os.environ['GROUPS_ALLOWED'].split()  # this workflow's fixed groups (name or name:jobs); empty = all
+          if allowed:
+              groups = [g for g in groups if g in allowed or g.split(':')[0] in allowed]
+          if os.environ.get('ONLY_GROUPS'):
+              groups = [g for g in groups if g.split(':')[0] in os.environ['ONLY_GROUPS'].split()]
+          print('groups=' + json.dumps(groups if layout == 'same-machine' else []))
+          known = ['ours', 'js', 'python', 'java', 'dotnet', 'go', 'rust', 'cli']
+          if os.environ['GITHUB_EVENT_NAME'] == 'push' and os.path.exists('bench/deep/.push-langs'):  # narrows a push run while fixing
+              os.environ['LANGS'] = open('bench/deep/.push-langs').read()
+          want = known if os.environ['LANGS'].strip() in ('', 'all') else [l.strip() for l in os.environ['LANGS'].split(',')]
+          bad = [l for l in want if l not in known]
+          assert not bad, f'unknown langs: {bad}'
+          if os.environ['TIER'] == 'million':  # only these have contestants flagged "million" in contestants.json
+              c = json.load(open('bench/deep/contestants.json'))['langs']
+              want = [l for l in want if any(v.get('million') for v in c[l]['libs'].values())]
+          print('langs=' + json.dumps(want if layout == 'per-lang' else []))
+          print('all_langs=' + ','.join(want))
+          refs = {'engine_ref': os.environ.get('ENGINE_REF', ''), 'pdf_ref': os.environ.get('PDF_REF', '')}
+          ref_lines = ctl_lines[1:] if ctl_lines and ctl != 'bench/deep/.push-tier' else (open('bench/deep/.push-refs').read().splitlines() if push and os.path.exists('bench/deep/.push-refs') else [])
+          if ref_lines:  # branch code on a push (dispatch only works on main)
+              for line in ref_lines:
+                  k, _, v = line.strip().partition('=')
+                  if k in refs:
+                      refs[k] = v.strip()
+          for k, v in refs.items():
+              print(f'{k}={v}')
+          EOF
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bench/deep/fixtures/make.py
+      - name: Tools for the fixtures (Pillow, qpdf, openssl)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq qpdf >/dev/null
+          pip install -q pillow==12.3.0
+      - name: Make the fixtures (seeded, fixed dates)
+        run: |
+          case "$TIER" in
+            quick) ROWS=100,1000,10000 PLAIN=10,100 FUZZ=25 ;;
+            full) ROWS=100,1000,10000,100000 PLAIN=10,100,1000 FUZZ=200 ;;
+            million) ROWS=1000000 PLAIN=10 FUZZ=10 ;;
+          esac
+          python3 bench/deep/fixtures/make.py "$FX" --rows "$ROWS" --plain "$PLAIN" --fuzz "$FUZZ"
+          du -sh "$FX"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fixtures
+          path: /tmp/fx
+          retention-days: 3
+
+  bench:
+    needs: fixtures
+    if: needs.fixtures.outputs.layout == 'per-lang'
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ needs.fixtures.outputs.tier == 'million' && 330 || needs.fixtures.outputs.tier == 'full' && 150 || 40 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: ${{ fromJSON(needs.fixtures.outputs.langs) }}
+    env:
+      LANG_: ${{ matrix.lang }}
+      TIER: ${{ needs.fixtures.outputs.tier }}
+      RUNS: ${{ inputs.runs || '5' }}
+      PUPPETEER_CACHE_DIR: /home/runner/.cache/puppeteer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: fixtures
+          path: /tmp/fx
+      - name: Validators (qpdf, MuPDF, Poppler) and GNU time
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qpdf mupdf-tools poppler-utils time >/dev/null
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            bench/deep/tools/package-lock.json
+            bench/deep/js/package-lock.json
+            bench/deep/ours/package-lock.json
+      - name: pdf.js for the validity check
+        run: npm ci --prefix bench/deep/tools --no-audit --no-fund
+      - name: veraPDF (the CLI image) as a command
+        if: contains(fromJSON('["ours","js","python"]'), matrix.lang)
+        run: |
+          docker pull -q verapdf/cli:latest
+          printf '#!/bin/sh\nexec docker run --rm -v /tmp:/tmp verapdf/cli:latest "$@"\n' | sudo tee /usr/local/bin/verapdf >/dev/null && sudo chmod +x /usr/local/bin/verapdf
+          verapdf --version | head -1
+
+      # ---- one setup per language, all cached
+      - name: ours
+        if: matrix.lang == 'ours'
+        continue-on-error: true # a broken build still reaches the driver, which records the contestant as not started
+        run: npm ci --prefix bench/deep/ours --no-audit --no-fund
+      - name: ours from branch code (engine_ref / pdf_ref)
+        if: matrix.lang == 'ours' && (needs.fixtures.outputs.engine_ref != '' || needs.fixtures.outputs.pdf_ref != '')
+        env:
+          ENGINE_REF: ${{ needs.fixtures.outputs.engine_ref }}
+          PDF_REF: ${{ needs.fixtures.outputs.pdf_ref }}
+        run: |
+          set -euo pipefail
+          SIDE=/tmp/side; mkdir -p "$SIDE/tgz"; SRC=()
+          get() { git clone -q --no-checkout "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "$SIDE/$1" && git -C "$SIDE/$1" checkout -q "$2"; }
+          if [ -n "$PDF_REF" ]; then
+            get pdf "$PDF_REF"
+            (cd "$SIDE/pdf" && (npm ci --no-audit --no-fund --ignore-scripts || npm install --no-audit --no-fund --ignore-scripts) && node packages/pdf/build.mjs && npm pack ./packages/pdf --pack-destination "$SIDE/tgz")
+            SRC+=("pdf $PDF_REF@$(git -C "$SIDE/pdf" rev-parse --short=9 HEAD)")
+          fi
+          if [ -n "$ENGINE_REF" ]; then
+            get engine "$ENGINE_REF"
+            cd "$SIDE/engine"
+            PDF_TGZ=$(ls "$SIDE"/tgz/reportwright-pdf-*.tgz 2>/dev/null || true)
+            if [ -n "$PDF_TGZ" ]; then  # the engine builds and runs against the pdf_ref library, not npm
+              npm pkg set "dependencies.@reportwright/pdf=file:$PDF_TGZ"
+              npm install --no-audit --no-fund
+            else
+              npm ci --no-audit --no-fund
+            fi
+            npm run build:packages
+            npm pack ./packages/engine ./packages/fonts --pack-destination "$SIDE/tgz"
+            SRC+=("engine $ENGINE_REF@$(git -C "$SIDE/engine" rev-parse --short=9 HEAD)")
+            cd "$GITHUB_WORKSPACE"
+          fi
+          ls -la "$SIDE/tgz"
+          npm install --prefix bench/deep/ours --no-audit --no-fund "$SIDE"/tgz/*.tgz
+          npm ls --prefix bench/deep/ours @reportwright/engine @reportwright/pdf || true
+          (IFS=,; echo "BENCH_SOURCE=${SRC[*]}") >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        if: matrix.lang == 'js'
+        with:
+          path: /home/runner/.cache/puppeteer
+          key: puppeteer-${{ hashFiles('bench/deep/js/package-lock.json') }}
+      - name: js
+        if: matrix.lang == 'js'
+        continue-on-error: true
+        run: npm ci --prefix bench/deep/js --no-audit --no-fund
+      - uses: actions/setup-python@v5
+        if: matrix.lang == 'python' || matrix.lang == 'cli'
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bench/deep/${{ matrix.lang }}/requirements.txt
+      - name: python
+        if: matrix.lang == 'python'
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y -qq libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 >/dev/null
+          pip install -q -r bench/deep/python/requirements.txt
+      - name: cli
+        if: matrix.lang == 'cli'
+        continue-on-error: true
+        run: pip install -q -r bench/deep/cli/requirements.txt
+      - uses: actions/setup-java@v4
+        if: matrix.lang == 'java'
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: |
+            bench/deep/java/pom.xml
+            bench/deep/java/jasper/pom.xml
+      - name: java
+        if: matrix.lang == 'java'
+        continue-on-error: true
+        run: |
+          mvn -q -B -f bench/deep/java/pom.xml package
+          mvn -q -B -f bench/deep/java/jasper/pom.xml package
+      - uses: actions/setup-dotnet@v4
+        if: matrix.lang == 'dotnet'
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/cache@v4
+        if: matrix.lang == 'dotnet'
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('bench/deep/dotnet/Bench.csproj') }}
+      - name: dotnet
+        if: matrix.lang == 'dotnet'
+        continue-on-error: true
+        run: dotnet publish bench/deep/dotnet/Bench.csproj -c Release -o bench/deep/dotnet/out --nologo -v q
+      - uses: actions/setup-go@v5
+        if: matrix.lang == 'go'
+        with:
+          go-version: "1.24"
+          cache-dependency-path: bench/deep/go/go.mod
+      - name: go
+        if: matrix.lang == 'go'
+        continue-on-error: true
+        working-directory: bench/deep/go
+        run: go mod tidy && go build -o bench .
+      - uses: actions/cache@v4
+        if: matrix.lang == 'rust'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            bench/deep/rust/target
+          key: cargo-${{ hashFiles('bench/deep/rust/Cargo.toml', 'bench/deep/rust/src/**') }}
+          restore-keys: cargo-
+      - name: rust
+        if: matrix.lang == 'rust'
+        continue-on-error: true
+        working-directory: bench/deep/rust
+        run: cargo build --release --quiet
+
+      - name: Runner
+        run: |
+          mkdir -p results
+          { echo "lang $LANG_ tier $TIER runs $RUNS"; date -u; lscpu | head -20; free -m; df -h /tmp; } | tee "results/$LANG_-runner.txt"
+      - name: Benchmark
+        run: python3 bench/deep/drive.py --lang "$LANG_" --tier "$TIER" --runs "$RUNS" --fixtures "$FX" --out "results/$LANG_.jsonl"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results-${{ matrix.lang }}
+          path: results/
+          retention-days: 30
+
+  # ---- same-machine layout: build everything once, then one job a group runs all its contestants on one runner
+  build:
+    needs: fixtures
+    if: needs.fixtures.outputs.layout == 'same-machine'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PUPPETEER_CACHE_DIR: /home/runner/.cache/puppeteer
+    outputs:
+      engine_src: ${{ steps.side.outputs.engine_src }}
+      pdf_src: ${{ steps.side.outputs.pdf_src }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            bench/deep/tools/package-lock.json
+            bench/deep/js/package-lock.json
+            bench/deep/ours/package-lock.json
+            package-lock.json
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/puppeteer
+          key: puppeteer-${{ hashFiles('bench/deep/js/package-lock.json') }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: |
+            bench/deep/java/pom.xml
+            bench/deep/java/jasper/pom.xml
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('bench/deep/dotnet/Bench.csproj') }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: bench/deep/go/go.mod
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            bench/deep/rust/target
+          key: cargo-${{ hashFiles('bench/deep/rust/Cargo.toml', 'bench/deep/rust/src/**') }}
+          restore-keys: cargo-
+      - name: node contestants (npm)
+        run: |
+          npm ci --prefix bench/deep/tools --no-audit --no-fund
+          npm ci --prefix bench/deep/ours --no-audit --no-fund
+          npm ci --prefix bench/deep/js --no-audit --no-fund
+      - name: ours from branch code (engine_ref / pdf_ref) into bench/deep/ours-branch
+        id: side
+        if: needs.fixtures.outputs.engine_ref != '' || needs.fixtures.outputs.pdf_ref != ''
+        env:
+          ENGINE_REF: ${{ needs.fixtures.outputs.engine_ref }}
+          PDF_REF: ${{ needs.fixtures.outputs.pdf_ref }}
+        run: |
+          set -euo pipefail
+          SIDE=/tmp/side; mkdir -p "$SIDE/tgz"
+          get() { git clone -q --no-checkout "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "$SIDE/$1" && git -C "$SIDE/$1" checkout -q "$2"; }
+          if [ -n "$PDF_REF" ]; then
+            get pdf "$PDF_REF"
+            (cd "$SIDE/pdf" && (npm ci --no-audit --no-fund --ignore-scripts || npm install --no-audit --no-fund --ignore-scripts) && node packages/pdf/build.mjs && npm pack ./packages/pdf --pack-destination "$SIDE/tgz")
+            echo "pdf_src=$PDF_REF@$(git -C "$SIDE/pdf" rev-parse --short=9 HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "$ENGINE_REF" ]; then
+            get engine "$ENGINE_REF"
+            cd "$SIDE/engine"
+            PDF_TGZ=$(ls "$SIDE"/tgz/reportwright-pdf-*.tgz 2>/dev/null || true)
+            if [ -n "$PDF_TGZ" ]; then
+              npm pkg set "dependencies.@reportwright/pdf=file:$PDF_TGZ"
+              npm install --no-audit --no-fund
+            else
+              npm ci --no-audit --no-fund
+            fi
+            npm run build:packages
+            npm pack ./packages/engine ./packages/fonts --pack-destination "$SIDE/tgz"
+            echo "engine_src=$ENGINE_REF@$(git -C "$SIDE/engine" rev-parse --short=9 HEAD)" >> "$GITHUB_OUTPUT"
+            cd "$GITHUB_WORKSPACE"
+          fi
+          cp -r bench/deep/ours bench/deep/ours-branch
+          npm install --prefix bench/deep/ours-branch --no-audit --no-fund "$SIDE"/tgz/*.tgz
+          npm ls --prefix bench/deep/ours-branch @reportwright/engine @reportwright/pdf || true
+      - name: java
+        run: |
+          mvn -q -B -f bench/deep/java/pom.xml package
+          mvn -q -B -f bench/deep/java/jasper/pom.xml package
+      - name: dotnet
+        run: dotnet publish bench/deep/dotnet/Bench.csproj -c Release -o bench/deep/dotnet/out --nologo -v q
+      - name: go
+        working-directory: bench/deep/go
+        run: go mod tidy && go build -o bench .
+      - name: rust
+        working-directory: bench/deep/rust
+        run: cargo build --release --quiet
+      - name: Pack the builds
+        run: |
+          tar -I 'zstd -T0 -3' -cf /tmp/build.tar.zst -C / home/runner/.cache/puppeteer \
+            -C "$GITHUB_WORKSPACE" bench/deep/tools/node_modules bench/deep/ours/node_modules bench/deep/js/node_modules \
+            $(ls -d bench/deep/ours-branch 2>/dev/null) bench/deep/java/target bench/deep/java/jasper/target \
+            bench/deep/dotnet/out bench/deep/go/bench bench/deep/rust/target/release/bench
+          ls -la /tmp/build.tar.zst
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: /tmp/build.tar.zst
+          compression-level: 0
+          retention-days: 3
+
+  group:
+    needs: [fixtures, build]
+    if: needs.fixtures.outputs.layout == 'same-machine'
+    runs-on: ubuntu-latest
+    timeout-minutes: 355 # GitHub's 6 h job cap; a group that outgrows it is split with drive.py --only, one table never spans two jobs
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(needs.fixtures.outputs.groups) }}
+    env:
+      TIER: ${{ needs.fixtures.outputs.tier }}
+      RUNS: ${{ inputs.runs || '5' }}
+      PUPPETEER_CACHE_DIR: /home/runner/.cache/puppeteer
+      BENCH_SRC_ENGINE: ${{ needs.build.outputs.engine_src }}
+      BENCH_SRC_PDF: ${{ needs.build.outputs.pdf_src }}
+      MEM_CAP_MB: "4000" # hard (cgroup MemoryMax when systemd-run allows it), well under the runner's 7.8 GB
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: fixtures
+          path: /tmp/fx
+      - uses: actions/download-artifact@v4
+        with:
+          name: build
+          path: /tmp/build
+      - name: Unpack the builds
+        run: |
+          tar -I zstd -xf /tmp/build/build.tar.zst -C "$GITHUB_WORKSPACE" --exclude='home/*'
+          mkdir -p /home/runner/.cache && tar -I zstd -xf /tmp/build/build.tar.zst -C / home/runner/.cache/puppeteer
+          ls bench/deep
+      - name: Validators (qpdf, MuPDF, Poppler), GNU time, WeasyPrint's libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qpdf mupdf-tools poppler-utils time libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 >/dev/null
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            bench/deep/python/requirements.txt
+            bench/deep/cli/requirements.txt
+      - run: pip install -q -r bench/deep/python/requirements.txt -r bench/deep/cli/requirements.txt
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: veraPDF (the CLI image) as a command
+        if: startsWith(matrix.group, 'create')
+        run: |
+          docker pull -q verapdf/cli:latest
+          printf '#!/bin/sh\nexec docker run --rm -v /tmp:/tmp verapdf/cli:latest "$@"\n' | sudo tee /usr/local/bin/verapdf >/dev/null && sudo chmod +x /usr/local/bin/verapdf
+      - name: Previous results for prune mode (the latest successful run of this tier)
+        if: env.TIER != 'quick'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # newest first; each (job, league) is judged by the newest run that has ours valid there (same tier first, then any)
+          P=""; i=0
+          for want in same any; do
+            for id in $(for w in ${{ inputs.workflow }} bench-deep.yml; do gh run list -R "${{ github.repository }}" -w $w -s completed -L 30 --json databaseId -q '.[].databaseId'; done | awk '!s[$0]++'); do
+              [ "$id" = "$GITHUB_RUN_ID" ] && continue
+              d=/tmp/prev/$want-$id; gh run download "$id" -R "${{ github.repository }}" -n bench-deep-results -D "$d" 2>/dev/null || continue
+              python3 -c "import json,sys; j=json.load(open('$d/results.json')); sys.exit('$want'=='same' and j['sources'][0]['meta'][0]['tier'] != '$TIER')" || continue
+              P="$P,$d/results.json"; i=$((i+1)); [ $i -ge 4 ] && break
+            done
+          done
+          echo "PRUNE=${P#,}" >> "$GITHUB_ENV"; echo "prune sources: $P"
+      - name: Group name
+        run: |
+          g='${{ matrix.group }}'; echo "G=${g%%:*}" >> "$GITHUB_ENV"; echo "ONLY=$([ "$g" != "${g#*:}" ] && echo "${g#*:}")" >> "$GITHUB_ENV"
+          echo "SLUG=$(echo "$g" | tr ':,' '__')" >> "$GITHUB_ENV"
+      - name: Runner
+        run: |
+          mkdir -p results
+          { echo "group ${{ matrix.group }} tier $TIER runs $RUNS"; date -u; lscpu | head -20; free -m; df -h /tmp; } | tee "results/$SLUG-runner.txt"
+      - name: Benchmark
+        env:
+          BENCH_SOURCE: ${{ needs.build.outputs.engine_src && format('engine {0}', needs.build.outputs.engine_src) }}${{ needs.build.outputs.pdf_src && format(',pdf {0}', needs.build.outputs.pdf_src) }}
+        run: python3 bench/deep/drive.py --group "$G" ${ONLY:+--only "$ONLY"} --langs "${{ needs.fixtures.outputs.all_langs }}" --tier "$TIER" --runs "$RUNS" --fixtures "$FX" --out "results/$SLUG.jsonl" ${PRUNE:+--prune "$PRUNE"}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results-${{ env.SLUG }}
+          path: results/
+          retention-days: 30
+
+  report:
+    needs: [fixtures, bench, group]
+    if: always() && needs.fixtures.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: results-*
+          path: results
+          merge-multiple: true
+      - name: Merge
+        run: |
+          python3 bench/deep/merge.py results out --title "${{ inputs.title }}"
+          cp out/results.md "out/${{ inputs.results_md }}"
+          cp results/*.jsonl results/*-runner.txt out/ 2>/dev/null || true
+          cat out/results.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-deep-results
+          path: out/
+          retention-days: 90
