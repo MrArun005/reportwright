@@ -247,6 +247,7 @@ async function pdfOf(model, fontStore, opt) {
     p.node.set(PDFName.of('Resources'), resRef);
     const c = new Content(shared);
     if (tags) c.tagged = true;
+    c.noNotdef = !!(tags || opt.pdfa);
     // pdf-lib draws the rare shapes (SVG paths, rounded boxes, SVG images): its operators join this page's stream
     /** @type {any} */ (p).maybeEmbedGraphicsState = (/** @type {any} */ o) => c.gsFor(o.opacity ?? 1, o.borderOpacity ?? 1);
     const viaPdfLib = (draw) => {
@@ -313,8 +314,8 @@ async function pdfOf(model, fontStore, opt) {
           if (clipped) { c.q(); c.s += `${n2(it.clip.x)} ${n2(H - it.clip.y - it.clip.h)} ${n2(it.clip.w)} ${n2(it.clip.h)} re W n\n`; }
           for (const l of it.lines) {
             if (!l.runs) {
-              // tagged: a character the font lacks is left out (PDF/UA forbids drawing .notdef), its space kept
-              const tj = tags && /** @type {any} */ (f).embedder.tjOf(cleanText(l.text));
+              // PDF/A or tagged: a character the font lacks is left out (PDF/A and PDF/UA forbid drawing .notdef), its space kept
+              const tj = (tags || opt.pdfa) && /** @type {any} */ (f).embedder.tjOf(cleanText(l.text));
               if (tj) c.text(f, it.size, color, l.x, H - l.y, tj, true);
               else c.text(f, it.size, color, l.x, H - l.y, /** @type {any} */ (f).embedder.literalOf(cleanText(l.text)));
               continue;

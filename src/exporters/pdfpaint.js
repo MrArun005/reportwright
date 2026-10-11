@@ -82,8 +82,8 @@ export function drawRun(c, run, x, y, size, pf, color, spans, texts) {
     }
     if (gy !== rise) { flush(); c.s += `${n4(gy)} Ts\n`; rise = gy; }
     const adj = Math.round((pen - gx) * per * 1000) / 1000;
-    // a tagged PDF draws no .notdef (PDF/UA 7.21.8): the glyph is left out, its place kept; so is a format character's (no glyph, no box)
-    if (id === 0 && (c.tagged || formatAt(run, cl))) pen = gx;
+    // a tagged PDF or a PDF/A file draws no .notdef (PDF/UA 7.21.8, PDF/A 6.2.11.8): the glyph is left out, its place kept; so is a format character's (no glyph, no box)
+    if (id === 0 && (c.noNotdef || formatAt(run, cl))) pen = gx;
     else {
       arr += (adj ? `${adj}` : '') + `<${f.standard ? id.toString(16).padStart(2, '0') : hex4(id)}>`; // a standard font: one byte
       pen = gx + (adv(id) * size) / f.unitsPerEm;
@@ -159,6 +159,8 @@ export class Content {
     /** straight lines waiting to be drawn after the text around them: { key, stroke, w, dash, segs: [x1, y1, x2, y2][] } */
     this.lines = null;
     this.tagged = false;
+    /** PDF/A or tagged: a glyph the font lacks (.notdef, id 0) is never drawn; the text is left out and its place kept */
+    this.noNotdef = false;
     /** tagged, lines wait all the same and are drawn as one artifact (the streamed PDF's painter sets it) */
     this.artLines = false;
   }
