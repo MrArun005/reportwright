@@ -545,10 +545,14 @@ jobs:
         with:
           msystem: UCRT64
           update: false
-          install: mingw-w64-ucrt-x86_64-qpdf mingw-w64-ucrt-x86_64-poppler mingw-w64-ucrt-x86_64-mupdf
+          install: mingw-w64-ucrt-x86_64-qpdf mingw-w64-ucrt-x86_64-poppler
       - name: Validators (qpdf, Poppler, MuPDF from MSYS2) first on PATH in the steps that use them (the image has Xpdf's pdftotext earlier)
         run: |
-          echo "MSYS_BIN=$(cygpath -u '${{ steps.msys2.outputs.msys2-location }}')/ucrt64/bin" >> "$GITHUB_ENV"
+          # MSYS2 has no mutool: Artifex's Windows build, pinned by checksum
+          curl -fsSL --retry 3 -o mu.zip https://github.com/ArtifexSoftware/mupdf-downloads/releases/download/1.28.5/mupdf-1.28.5-windows.zip
+          echo "13476a53e84f5527983158acb6442c7853b3cdc022f3b24880780dcfba1fcc99  mu.zip" | sha256sum -c -
+          unzip -q mu.zip -d "$RUNNER_TEMP" && rm mu.zip
+          echo "MSYS_BIN=$(cygpath -u '${{ steps.msys2.outputs.msys2-location }}')/ucrt64/bin:$(cygpath -u "$RUNNER_TEMP")/mupdf-1.28.5-windows" >> "$GITHUB_ENV"
       - run: |
           export PATH="$MSYS_BIN:$PATH"
           for t in qpdf pdftotext mutool; do command -v $t; done
