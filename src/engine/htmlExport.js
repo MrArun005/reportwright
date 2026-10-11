@@ -20,7 +20,8 @@ export function resolveHtmlExport(...layers) {
 }
 
 /** The env layer. @param {Record<string, string | undefined>} [env] */
-export const envHtmlExport = (env = typeof process !== 'undefined' ? process.env : {}) => ({ html: env.PW_HTML_EXPORT, drillLinks: env.PW_HTML_DRILL_LINKS });
+export const envHtmlExport = (env) => (env ? { html: env.PW_HTML_EXPORT, drillLinks: env.PW_HTML_DRILL_LINKS }
+  : typeof process === 'undefined' ? {} : { html: process.env.PW_HTML_EXPORT, drillLinks: process.env.PW_HTML_DRILL_LINKS });
 
 /**
  * Whether a drill base is a URL a client who receives the file can open: http(s), not localhost, 127.x, ::1 or 0.0.0.0.

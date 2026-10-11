@@ -13,7 +13,7 @@ const LOADERS = {
   hi: () => import('./hi.js'), es: () => import('./es.js'), fr: () => import('./fr.js'), de: () => import('./de.js'),
   ja: () => import('./ja.js'), zh: () => import('./zh.js'), 'pt-BR': () => import('./pt-BR.js'), ar: () => import('./ar.js'),
 };
-const merge = (k, v) => ({ ...v, ...gov[k], ...ux[k], ...home[k], ...r4[k], ...b2[k], ...hx[k] });
+const merge = (k, v, hxk = hx[k]) => ({ ...v, ...gov[k], ...ux[k], ...home[k], ...r4[k], ...b2[k], ...hxk });
 /** @type {Record<string, Record<string, string>>} */
 export const STRINGS = { en: merge('en', en) };
 export const LANGUAGES = ['en', ...Object.keys(LOADERS)];
@@ -21,6 +21,6 @@ export const { pickLang, dirOf, tParts, t } = lookups(STRINGS, LANGUAGES);
 /** Load a language's strings (English until then). Resolves to the language picked. @param {string} [lang] */
 export async function loadLanguage(lang) {
   const l = pickLang(lang);
-  if (!STRINGS[l] && LOADERS[l]) STRINGS[l] = merge(l, (await LOADERS[l]()).default);
+  if (!STRINGS[l] && LOADERS[l]) STRINGS[l] = merge(l, (await LOADERS[l]()).default, (await import('./hx-l10n.js')).default[l]);
   return l;
 }
