@@ -124,8 +124,8 @@ function decrypt(alg, data, password) {
     const hash = prf ? HMAC[/** @type {keyof typeof HMAC} */ (oid(kids(prf)[0]))] : 'sha1';
     const [encId, iv] = kids(enc), c = CBC[/** @type {keyof typeof CBC} */ (oid(encId))];
     if (!c || !hash) throw new Error('unsupported cipher');
-    const key = crypto.pbkdf2Sync(Buffer.from(password, 'utf8'), salt, iter, c[1], hash);
-    const d = crypto.createDecipheriv(c[0], key, octets(iv));
+    const key = crypto.pbkdf2Sync(Buffer.from(password, 'utf8'), salt, iter, Number(c[1]), hash);
+    const d = crypto.createDecipheriv(String(c[0]), key, octets(iv));
     return Buffer.concat([d.update(data), d.final()]);
   }
   const p = P12PBE[/** @type {keyof typeof P12PBE} */ (o)];
