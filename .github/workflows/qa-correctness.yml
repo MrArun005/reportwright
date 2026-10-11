@@ -122,21 +122,21 @@ jobs:
         run: echo "v=$(node -p "require('./scripts/parity-tolerance.json').rendererVersion")" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@v4
         id: poppler
-        with: { path: ~/poppler, key: 'poppler-${{ steps.pin.outputs.v }}-${{ runner.os }}-v1' }
-      - run: sudo apt-get update && sudo apt-get install -y qpdf cmake ninja-build libfreetype-dev libfontconfig-dev libjpeg-dev libopenjp2-7-dev libpng-dev liblcms2-dev zlib1g-dev
+        with: { path: ~/poppler, key: 'poppler-${{ steps.pin.outputs.v }}-${{ runner.os }}-v2' }
+      - run: sudo apt-get update && sudo apt-get install -y qpdf cmake ninja-build libfreetype-dev libfontconfig-dev libjpeg-dev libopenjp2-7-dev libpng-dev liblcms2-dev zlib1g-dev libnss3-dev
       - if: steps.poppler.outputs.cache-hit != 'true'
         name: build poppler ${{ steps.pin.outputs.v }}
         env: { V: '${{ steps.pin.outputs.v }}' }
         run: |
           curl -sSfL "https://poppler.freedesktop.org/poppler-$V.tar.xz" | tar xJ -C "$RUNNER_TEMP"
           cmake -S "$RUNNER_TEMP/poppler-$V" -B "$RUNNER_TEMP/pb" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/poppler" \
-            -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_GLIB=OFF -DENABLE_CPP=OFF -DENABLE_BOOST=OFF -DENABLE_NSS3=OFF -DENABLE_GPGME=OFF \
+            -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_GLIB=OFF -DENABLE_CPP=OFF -DENABLE_BOOST=OFF -DENABLE_NSS3=ON -DENABLE_GPGME=OFF \
             -DENABLE_LIBCURL=OFF -DENABLE_LIBTIFF=OFF -DENABLE_GOBJECT_INTROSPECTION=OFF -DBUILD_GTK_TESTS=OFF -DBUILD_QT5_TESTS=OFF -DBUILD_QT6_TESTS=OFF \
             -DBUILD_CPP_TESTS=OFF -DBUILD_MANUAL_TESTS=OFF -DENABLE_UTILS=ON
           cmake --build "$RUNNER_TEMP/pb" && cmake --install "$RUNNER_TEMP/pb"
       - if: steps.poppler.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
-        with: { path: ~/poppler, key: 'poppler-${{ steps.pin.outputs.v }}-${{ runner.os }}-v1' }
+        with: { path: ~/poppler, key: 'poppler-${{ steps.pin.outputs.v }}-${{ runner.os }}-v2' }
       - run: |
           echo "$HOME/poppler/bin" >> "$GITHUB_PATH"
           echo "LD_LIBRARY_PATH=$HOME/poppler/lib:$HOME/poppler/lib64" >> "$GITHUB_ENV"
