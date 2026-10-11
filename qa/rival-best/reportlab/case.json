@@ -1,0 +1,4 @@
+{"rival": "ReportLab", "case": "platypus long document (30 sections x 10 justified paragraphs, page numbers)",
+ "build": "pip install -q reportlab==4.4.4",
+ "theirs": "python3 theirs.py", "ours": "node ours.mjs",
+ "partial": "ours runs gen.py inside its timed run (+1 python start)"}

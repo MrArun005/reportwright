@@ -1,0 +1,91 @@
+# QA suite rival-best: each rival's strongest showcase, done by the rival and reproduced by ReportWright as close as our
+# features allow (qa/rival-best/<rival>/, driver qa/rival-best/run.py). A feature gap is a SKIP that names the gap.
+name: qa-rival-best
+on:
+  workflow_call:
+    inputs:
+      ref: {type: string, default: ""}
+      tier: {type: string, default: quick}
+  workflow_dispatch:
+    inputs:
+      ref: {type: string, default: "", description: "unused for now: ours comes from npm (qa/rival-best/package.json)"}
+      tier: {type: choice, options: [quick, full], default: quick}
+  push:
+    branches: [qa/bench]
+permissions:
+  contents: read
+jobs:
+  case:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {rival: questpdf, lang: dotnet}
+          - {rival: jasperreports, lang: java}
+          - {rival: weasyprint, lang: python}
+          - {rival: pdfmake, lang: js}
+          - {rival: puppeteer, lang: js}
+          - {rival: reportlab, lang: python}
+          - {rival: fpdf, lang: go}
+          - {rival: pdfcpu, lang: go}
+          - {rival: pymupdf, lang: python}
+    env:
+      PUPPETEER_CACHE_DIR: /home/runner/.cache/puppeteer
+      RUNS: ${{ inputs.tier == 'full' && '5' || '3' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validators and GNU time
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq qpdf poppler-utils time libpango-1.0-0 libpangoft2-1.0-0 >/dev/null
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            /home/runner/.cache/puppeteer
+          key: rb-npm-${{ hashFiles('qa/rival-best/package.json') }}
+      - name: ours (+ pdfmake, puppeteer)
+        run: npm install --prefix qa/rival-best --no-audit --no-fund
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: qa/rival-best/*/case.json}
+      - run: pip install -q pillow==12.3.0
+      - uses: actions/setup-java@v4
+        if: matrix.lang == 'java'
+        with: {distribution: temurin, java-version: "21", cache: maven, cache-dependency-path: qa/rival-best/jasperreports/pom.xml}
+      - uses: actions/setup-dotnet@v4
+        if: matrix.lang == 'dotnet'
+        with: {dotnet-version: 8.0.x}
+      - uses: actions/cache@v4
+        if: matrix.lang == 'dotnet'
+        with: {path: ~/.nuget/packages, key: "rb-nuget-${{ hashFiles('qa/rival-best/questpdf/*.csproj') }}"}
+      - uses: actions/setup-go@v5
+        if: matrix.lang == 'go'
+        with: {go-version: "1.24", cache-dependency-path: qa/rival-best/fpdf/go.mod}
+      - name: Run the case
+        run: python3 qa/rival-best/run.py ${{ matrix.rival }} out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: "rb-${{ matrix.rival }}", path: out/}
+  report:
+    needs: case
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {pattern: rb-*, path: parts}
+      - name: Merge
+        run: |
+          python3 - <<'PY'
+          import json, glob, sys
+          sys.path.insert(0, 'qa/rival-best/lib')
+          from qa import emit
+          rows = [r for f in sorted(glob.glob('parts/*/results.json')) for r in json.load(open(f))]
+          if len(glob.glob('parts/*/results.json')) < 9:
+              rows.append({'check': 'every rival case reported', 'command': 'qa/rival-best/run.py', 'expected': '9 cases', 'actual': f"{len(glob.glob('parts/*/results.json'))} reported (a case job crashed)", 'result': 'FAIL'})
+          emit(rows, 'rival-best', 'out')
+          PY
+      - uses: actions/upload-artifact@v4
+        with: {name: qa-rival-best-results, path: out/}

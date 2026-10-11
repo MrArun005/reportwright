@@ -1,0 +1,13 @@
+{
+  "name": "qa-rival-best",
+  "private": true,
+  "type": "module",
+  "description": "Each rival's own showcase case, done by the rival and reproduced by ReportWright (qa/rival-best/README in run.py).",
+  "dependencies": {
+    "@reportwright/engine": "0.13.1",
+    "@reportwright/fonts": "0.13.1",
+    "@reportwright/pdf": "0.1.0-beta.12",
+    "pdfmake": "0.2.20",
+    "puppeteer": "24.22.0"
+  }
+}
