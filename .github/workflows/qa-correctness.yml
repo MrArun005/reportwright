@@ -143,7 +143,7 @@ jobs:
       - run: |
           V=$(node -p "require('./scripts/parity-tolerance.json').rendererVersion")
           node scripts/qa.mjs check correctness "pdftoppm pinned version" "pdftoppm $V" "pdftoppm -v 2>&1 | head -1 | grep -F 'version $V'"
-      - run: node scripts/qa.mjs check correctness "writer parity gate (full corpus)" "every case PASS on tiers 1-5" "node scripts/writer-parity.mjs --baseline pdflib --corpus scripts/parity-corpus.mjs 2>&1 | tail -60"
+      - run: node scripts/qa.mjs check correctness "writer parity gate (full corpus)" "every case PASS on tiers 1-5" "node scripts/writer-parity.mjs --baseline pdflib --corpus scripts/parity-corpus.mjs"
       - if: failure()
         run: node scripts/qa.mjs fail correctness "job ${{ github.job }} $QA_SHARD set-up" "a step outside the checks failed (see the job log)"
       - if: always()
