@@ -148,14 +148,14 @@ export function readPkcs12(p12, password) {
   const [ct, body] = kids(pfx[1]);
   if (oid(ct) !== '1.2.840.113549.1.7.1') throw new Error('not a password-protected PKCS#12');
   const safe = octets(kids(body)[0]);
-  if (pfx[2]) { // the MAC: proves the password before anything is decrypted
+  if (pfx[2]) { // the MAC: proves the password before anything is decrypted (the server's own file and password: no presented secret, a plain compare)
     const [di, saltN, iterN] = kids(pfx[2]);
     const [algN, digN] = kids(di), hash = HASH[/** @type {keyof typeof HASH} */ (oid(kids(algN)[0]))];
     if (!hash) throw new Error('unsupported MAC');
     const n = crypto.createHash(hash).digest().length;
     const key = p12kdf(hash, bmp(password), octets(saltN), iterN ? int(iterN) : 1, 3, n);
     const mac = crypto.createHmac(hash, key).update(safe).digest(), want = octets(digN);
-    if (mac.length !== want.length || !crypto.timingSafeEqual(mac, want)) throw new Error('wrong password');
+    if (!mac.equals(want)) throw new Error('wrong password');
   }
   /** @type {crypto.KeyObject[]} */ const keys = []; /** @type {Buffer[]} */ const certs = [];
   for (const ci of kids(root(safe))) {
