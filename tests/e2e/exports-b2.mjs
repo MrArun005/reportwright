@@ -134,17 +134,16 @@ const ipErrs = [];
 ip.on('pageerror', e => ipErrs.push(e.message));
 const before = opened.length;
 await ip.goto(`file://${ifile}`);
-await ip.waitForSelector('.vpage svg', { timeout: 60000 });
-await ip.waitForFunction(() => !document.querySelector('.stat[title*="still rendering"]') && document.querySelectorAll('.vlink.hit').length > 0, null, { timeout: 60000 });
-const itexts = () => ip.evaluate(() => [...document.querySelectorAll('.vpage text')].map(n => n.textContent));
+// the file mounts the viewer in a shadow root: locators (which pierce it), not document.querySelectorAll
 const ilink = (title) => ip.locator(`.vlink.hit[title*=${JSON.stringify(title)}]`);
 const shot = (n) => ip.screenshot({ path: `/tmp/shots/exports-b2-interactive-${n}.png` }).catch(() => {});
-const n0 = (await itexts()).length;
+const until = async (fn, n) => { for (let i = 0; i < 150; i++) { if (await fn()) return; await ip.waitForTimeout(200); } await shot(n); throw new Error(`interactive HTML: ${n}`); };
+await until(async () => (await ilink('Show or hide details').count()) > 1, 'first-render');
+const n0 = await ip.locator('.vpage text').count();
 await ilink('Show or hide details').nth(1).click();
-// the group opens in place: the page gains rows (its products)
-await ip.waitForFunction((n) => document.querySelectorAll('.vpage text').length > n, n0, { timeout: 30000 }).catch(async (e) => { await shot('expand-fail'); throw e; });
+await until(async () => (await ip.locator('.vpage text').count()) > n0, 'expand'); // the group opens in place
 await ilink('Open Jaipur month by month').first().click({ modifiers: ['ControlOrMeta'] }); // even with a modifier: in place
-await ip.locator('nav.vcrumbs li', { hasText: 'Jaipur' }).waitFor({ timeout: 30000 }).catch(async (e) => { await shot('drill-fail'); throw e; });
+await until(async () => (await ip.locator('nav.vcrumbs li', { hasText: 'Jaipur' }).count()) > 0, 'drill');
 await ip.screenshot({ path: '/tmp/shots/exports-b2-interactive.png' });
 assert.equal(opened.length, before + 1, `no new page or tab opened (only the file itself): ${opened.join(', ')}`);
 assert.deepEqual(ipErrs, [], 'no errors in the interactive file');
