@@ -11,7 +11,7 @@ const v = (m, k = 'count') => s[m]?.[k] ?? s[m]?.values?.[k] ?? 0;
 const ok = v('ok_duration', 'count'), rej = v('rejected'), unexp = v('unexpected'), noret = v('noretry'), x5 = v('status_5xx');
 const reqs = v('http_reqs'), rate = v('http_reqs', 'rate');
 const p = (k) => Math.round(v('ok_duration', k));
-const line = `${reqs} req (${rate.toFixed(1)}/s), ${ok} ok, ${rej} 429/503, ${unexp} unexpected (${x5} other 5xx), ${noret} without Retry-After; ok p50/p95/p99 ${p('med')}/${p('p(95)')}/${p('p(99)')} ms`;
+const line = `${reqs} req (${rate.toFixed(1)}/s), ${ok} ok, ${rej} 429/503, ${unexp} unexpected (${x5} 5xx, ${v('status_4xx')} other 4xx, ${v('neterr')} no answer), ${noret} without Retry-After; ok p50/p95/p99 ${p('med')}/${p('p(95)')}/${p('p(99)')} ms`;
 const fails = [];
 if (rules.unexpected != null && unexp > rules.unexpected) fails.push(`unexpected ${unexp} > ${rules.unexpected}`);
 if (rules.noretry != null && noret > rules.noretry) fails.push(`no Retry-After ${noret}`);

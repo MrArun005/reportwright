@@ -11,13 +11,17 @@
 #  - soak (quick 3 min, full 20 min) at 10 VUs mixed: RSS last third ≤ 1.25 × first third (SERVER-LOAD.md soak held RSS
 #    within ±5%), ok p95 last third ≤ 1.5 × first third, 0 unexpected.
 set -u
-NAME=$1; PORT=${2:-3700}; B=http://localhost:$PORT; OUT=${QA_DIR:-qa-out}; mkdir -p "$OUT"
+NAME=$1; PORT=${2:-3700}; B=http://127.0.0.1:$PORT; # not localhost: k6 tries ::1 first and next start listens on IPv4
+ OUT=${QA_DIR:-qa-out}; mkdir -p "$OUT"
 k6r() { # label, rules, env…
   local label=$1 rules=$2; shift 2
   env BASE=$B "$@" k6 run --quiet --summary-export "$OUT/$label.json" qa/load/render.js > "$OUT/$label.log" 2>&1
   node qa/load/judge.mjs "$label" "$OUT/$label.json" "$rules" "k6 run render.js $(echo "$@" | sed 's/KEY=[^ ]*//')"
 }
 alive() { local c; c=$(curl -s -o /dev/null -w '%{http_code}' "$B/api/v1/livez"); node qa/stress/rec.mjs "server alive after $1" "GET /api/v1/livez" 200 "$c" "$([ "$c" = 200 ] && echo PASS || echo FAIL)"; }
+# one render by curl first: its status and body explain a k6 run that gets no 200s
+c=$(curl -s -o /tmp/one -w '%{http_code}' -H 'authorization: Bearer svc-a' -H 'content-type: application/json' -d '{"template":"invoice-gallery","format":"pdf"}' "$B/api/v1/render")
+node qa/stress/rec.mjs 'one render by curl' 'POST /api/v1/render invoice-gallery (svc-a)' '200 PDF' "$c $(head -c 120 /tmp/one | tr -dc '[:print:]')" "$([ "$c" = 200 ] && echo PASS || echo FAIL)"
 case "$NAME" in
   ramp)
     k6r 'warm-up 2 VUs' '{"unexpected":0}' KEY=svc-a MIX=mixed VUS=2 DURATION=20s
@@ -57,3 +61,4 @@ case "$NAME" in
     ' "$OUT" "$third"
     alive soak ;;
 esac
+exit 0 # the verdicts are the result rows (the report job fails on a FAIL)

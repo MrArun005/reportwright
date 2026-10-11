@@ -31,8 +31,8 @@ code=$(printf '{"template":"invoice-gallery","format":"pdf","parameters":{"x":"=
 alive=$(curl -s -o /dev/null -w '%{http_code}' "$B/api/v1/livez")
 rec 'expression in a parameter value' 'parameters.x = "=constructor…process.exit(1)"' 'server alive (livez 200)' "render $code, livez $alive" "$([ "$alive" = 200 ] && echo PASS || echo FAIL)"
 code=$(printf '{"format":"html","template":{"$schema":"reportwright/report@1","name":"Q","page":{"size":"A4"},"dataSources":[{"name":"s","type":"json","data":{"rows":[{"x":"<script>alert(1)</script><img src=x onerror=alert(2)>"}]}}],"dataSets":[{"name":"D","source":"s","path":"$.rows"}],"sections":{"body":{"items":[{"type":"textbox","name":"T","x":0,"y":0,"w":400,"h":40,"value":"=First(Fields.x, \\"D\\")"},{"type":"richtext","name":"R","x":0,"y":50,"w":400,"h":40,"value":"<b>{Fields.x}</b><script>alert(3)</script>"}]}}}}' | render)
-raw=$(grep -c -E '<script>alert|onerror=alert' /tmp/out); ctx=$(grep -o -E '.{0,80}(<script>alert|onerror=alert).{0,40}' /tmp/out | head -3 | tr '\n' ' ')
-rec 'HTML export escapes data' 'format html, field "<script>…", richtext with <script>' 'no raw <script>alert / onerror in the HTML' "status $code; raw matches $raw; context: $ctx" "$([ "$code" = 200 ] && [ "$raw" = 0 ] && echo PASS || echo FAIL)"
+raw=$(grep -c -E '<script>alert|<img src=x onerror' /tmp/out); ctx=$(grep -o -E '.{0,80}(<script>alert|<img src=x onerror).{0,40}' /tmp/out | head -3 | tr '\n' ' ')
+rec 'HTML export escapes data' 'format html, field "<script>…", richtext with <script>' 'no unescaped <script>alert / <img onerror> in the HTML' "status $code; raw matches $raw; context: $ctx" "$([ "$code" = 200 ] && [ "$raw" = 0 ] && echo PASS || echo FAIL)"
 # --- oversized inputs ---
 rss() { ps -eo rss=,args= | grep -E 'next-server|next start' | grep -v grep | awk '{s+=$1} END {print int(s/1024)}'; }
 for mb in 1 10 50 200; do

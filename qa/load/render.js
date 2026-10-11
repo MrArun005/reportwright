@@ -9,6 +9,8 @@ const noretry = new Counter('noretry');
 const rejected = new Counter('rejected');
 const okDur = new Trend('ok_duration', true);
 const statuses = new Counter('status_5xx');
+const neterr = new Counter('neterr');
+const s4xx = new Counter('status_4xx');
 
 const MIXES = {
   small: [{ template: 'invoice-gallery', format: 'pdf' }],
@@ -32,5 +34,5 @@ export default function () {
   const r = http.post(`${__ENV.BASE}/api/v1/render`, JSON.stringify(body), { headers: { authorization: `Bearer ${__ENV.KEY}`, 'content-type': 'application/json' }, timeout: '120s' });
   if (r.status === 200) okDur.add(r.timings.duration);
   else if (r.status === 429 || r.status === 503) { rejected.add(1); if (!r.headers['Retry-After']) noretry.add(1); }
-  else { unexpected.add(1); if (r.status >= 500) statuses.add(1); }
+  else { unexpected.add(1); if (r.status >= 500) statuses.add(1); else if (r.status >= 400) s4xx.add(1); else if (r.status === 0) neterr.add(1); }
 }
