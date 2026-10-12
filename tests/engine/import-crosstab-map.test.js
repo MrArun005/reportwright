@@ -150,6 +150,15 @@ describe('hostile files finish fast and say what they left out', () => {
     expect(Date.now() - t0).toBeLessThan(5_000);
     expect(r.error).toBeUndefined();
   });
+  it('measures × groups are not expanded past the caps (quadratic totals)', () => {
+    const src = read('jrxml/crosstab-sales.jrxml');
+    const g = Array.from({ length: 3000 }, (_, i) => `<rowGroup name="G${i}"><bucket><bucketExpression>$F{region}</bucketExpression></bucket></rowGroup>`).join('');
+    const m = Array.from({ length: 3000 }, (_, i) => `<measure name="M${i}" calculation="Sum"><measureExpression>$F{amount}</measureExpression></measure>`).join('');
+    const t0 = Date.now();
+    const r = importJrxml(src.replace('<columnGroup', g + '<columnGroup').replace('<measure ', m + '<measure '));
+    expect(Date.now() - t0).toBeLessThan(5_000);
+    expect(r.warnings.join('\n')).toMatch(/3001 measures; the first 16 are kept/);
+  });
   it('a crosstab with many groups and measures is capped with a note', () => {
     const src = read('jrxml/crosstab-sales.jrxml');
     const groups = Array.from({ length: 40 }, (_, i) => `<rowGroup name="G${i}" width="10" totalPosition="End"><bucket class="java.lang.String"><bucketExpression><![CDATA[$F{region}]]></bucketExpression></bucket></rowGroup>`).join('');

@@ -607,7 +607,12 @@ function toRdlx(root, notes, charts, reportName, resolve) {
     const ds = run?.attrs.subDataset || MAIN;
     if (run && kids(run, 'datasetParameter').length) notes.push('the crosstab passes parameters to its data set; ReportWright reads that data set as it is.');
     if (kids(e, 'crosstabParameter').length || kids(e, 'parameter').length) notes.push('its crosstab parameters are read as report parameters.');
-    const rowGs = kids(e, 'rowGroup'), colGs = kids(e, 'columnGroup'), measures = kids(e, 'measure');
+    // an untrusted file: only what the matrix can show is expanded (8 group levels a side, 16 measures): the measure × group
+    // totals below stay small whatever the file holds
+    const allRows = kids(e, 'rowGroup'), allCols = kids(e, 'columnGroup'), allMs = kids(e, 'measure');
+    const rowGs = allRows.slice(0, 8), colGs = allCols.slice(0, 8), measures = allMs.slice(0, 16);
+    if (allRows.length > 8 || allCols.length > 8) notes.push('it has more than 8 levels of groups on a side; the deeper levels are left out.');
+    if (allMs.length > 16) notes.push(`it has ${allMs.length} measures; the first 16 are kept.`);
     const contentsOf = (x) => kid(x, 'cellContents') || kid(x, 'contents') || x;
     const cells = kids(e, 'crosstabCell').concat(kids(e, 'cell'));
     const saved = xtab;

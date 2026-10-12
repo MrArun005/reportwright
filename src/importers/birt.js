@@ -625,7 +625,7 @@ function toRdlx(root, notes, reportName) {
     };
     const axis = (which) => {
       const view = ext(e, which, 'CrosstabView')[0];
-      const lvs = ext(view, 'views', 'DimensionView').flatMap(d => ext(d, 'levels', 'LevelView'));
+      const lvs = ext(view, 'views', 'DimensionView').flatMap(d => ext(d, 'levels', 'LevelView')).slice(0, 9); // the helper keeps 8 and notes the rest
       const grand = ext(view, 'grandTotal')[0];
       return lvs.map((lv, i) => {
         const key = prop(lv, 'level') || '';
@@ -640,7 +640,7 @@ function toRdlx(root, notes, reportName) {
       });
     };
     const rows = axis('rows'), columns = axis('columns');
-    const mviews = ext(e, 'measures', 'MeasureView');
+    const mviews = ext(e, 'measures', 'MeasureView').slice(0, 17); // the helper keeps 16 and notes the rest
     const values = mviews.map(mv => ({ label: prop(mv, 'measure') || 'Value', cell: text(ext(mv, 'detail')[0]), total: text(ext(mv, 'aggregations')[0]) }));
     if (!values.length || !values.some(v => v.cell)) { it.Type = 'crosstab'; it.Height = pt(len(prop(e, 'height'), 0, 0)); it.__drop = 'the crosstab has no measure, so it was left out.'; return { it, h: 0 }; }
     for (const v of values) if (!v.cell) v.cell = { Type: 'textbox', Value: '' };
