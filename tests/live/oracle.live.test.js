@@ -44,6 +44,19 @@ describe.skipIf(!process.env.PW_LIVE_ORACLE)('Oracle (live, gvenzl/oracle-free)'
     expect(n).toEqual({ ID: 2, AMOUNT: null, RATIO: null, LABEL: null, BORN: null, SEEN: null, NOTES: null });
   });
 
+  it('DIAG raw driver count after types', async () => {
+    const { default: od } = await import('oracledb');
+    const { oracleConfig } = await import('../../src/server/sql/oracle.js');
+    const c = await od.getConnection(oracleConfig(process.env.PW_LIVE_ORACLE));
+    const t = Date.now();
+    const r = await c.execute('select count(*) as n from pwowner.types_t');
+    console.log('DIAG raw count', Date.now() - t, 'ms', JSON.stringify(r.rows));
+    const t2 = Date.now();
+    const w = await c.execute("select sid, blocking_session, event, wait_class from v$session where username='PWOWNER' or blocking_session is not null");
+    console.log('DIAG sessions', Date.now() - t2, 'ms', JSON.stringify(w.rows));
+    await c.close();
+  }, 60000);
+
   it('only one read: a write, a lock, or a second statement is refused before the database runs it', async () => {
     await expect(runSql(src('delete from pwowner.types_t'))).rejects.toThrow(/SELECT/);
     await expect(runSql(src('select id from pwowner.types_t for update'))).rejects.toThrow(/one SELECT|FOR UPDATE/);
