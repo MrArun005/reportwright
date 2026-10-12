@@ -14,14 +14,16 @@ on:
   push:
     branches: [qa/core]
 
+permissions:
+  contents: read
 jobs:
   pack:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ inputs.ref }}' }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund
       - run: npm run build:packages
@@ -31,7 +33,7 @@ jobs:
           npm pack ./packages/engine ./packages/fonts ./packages/cli --pack-destination compat/pkgs --silent
           node packages/create-reportwright/src/bin.mjs compat/app --template node --yes
           cp examples/report.pw.json compat/app/qa.pw.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with: { name: qa-compat-packages, path: compat, retention-days: 3 }
 
   install:
@@ -50,11 +52,11 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ inputs.ref }}', sparse-checkout: scripts }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with: { name: qa-compat-packages, path: '${{ runner.temp }}/compat' }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: '${{ matrix.node }}' }
       - name: install into a fresh app, render PDF + xlsx
         env: { OSN: '${{ matrix.os }} node ${{ matrix.node }}' }
@@ -69,7 +71,7 @@ jobs:
       - if: always()
         run: node scripts/qa.mjs summarize compat
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with: { name: 'qa-compat-part-install-${{ matrix.os }}-${{ matrix.node }}', path: qa-out/*.jsonl, if-no-files-found: ignore }
 
   build-windows:
@@ -82,9 +84,9 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ inputs.ref }}' }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund
       # WARN, not FAIL: a contributor's build on Windows, not what npm users install
@@ -94,7 +96,7 @@ jobs:
       - if: always()
         run: node scripts/qa.mjs summarize compat
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with: { name: qa-compat-part-build-windows, path: qa-out/*.jsonl, if-no-files-found: ignore }
 
   bundlers:
@@ -103,9 +105,9 @@ jobs:
     env:
       QA_SHARD: bundlers
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ inputs.ref }}' }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund
       - run: npm run build:packages && npx playwright install --with-deps chromium
@@ -135,7 +137,7 @@ jobs:
       - if: always()
         run: node scripts/qa.mjs summarize compat
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with: { name: qa-compat-part-bundlers, path: qa-out/*.jsonl, if-no-files-found: ignore }
 
   browsers:
@@ -149,9 +151,9 @@ jobs:
       TZ: Asia/Kolkata
       QA_SHARD: browser-${{ matrix.browser }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ inputs.ref }}' }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps ${{ matrix.browser }}
@@ -170,7 +172,7 @@ jobs:
       - if: always()
         run: node scripts/qa.mjs summarize compat
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with: { name: 'qa-compat-part-browser-${{ matrix.browser }}', path: qa-out/*.jsonl, if-no-files-found: ignore }
 
   results:
@@ -178,11 +180,11 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ inputs.ref }}', sparse-checkout: scripts }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with: { pattern: qa-compat-part-*, path: parts, merge-multiple: true }
       - run: node scripts/qa.mjs summarize compat parts
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with: { name: qa-compat-results, path: "qa-out/results.json\nqa-out/summary.md" }

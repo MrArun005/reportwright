@@ -42,8 +42,8 @@ export function codeOnly(q, dialect) {
       const e = q.slice(i).search(/[\r\n]/); i = e < 0 ? q.length : i + e; out += ' '; continue;
     }
     if (q.startsWith('/*', i)) {
-      // MySQL runs /*! … */ as code and reads /*+ … */ as optimizer hints (MAX_EXECUTION_TIME): both refused
-      if (dialect === 'mysql' && /^\/\*[!+]/.test(q.slice(i, i + 3))) throw err('A SQL source cannot use /*! or /*+ comments.');
+      // MySQL runs /*! … */ (MariaDB also /*M! … */) as code and reads /*+ … */ as optimizer hints: all refused
+      if (dialect === 'mysql' && /^\/\*([!+]|M!)/i.test(q.slice(i, i + 4))) throw err('A SQL source cannot use /*!, /*M! or /*+ comments.');
       if (dialect === 'oracle' && q.startsWith('/*+', i)) throw err('A SQL source cannot use optimizer hints.');
       // SQL Server and PostgreSQL nest /* */; a nested comment is refused rather than modelled
       const e = q.indexOf('*/', i + 2);

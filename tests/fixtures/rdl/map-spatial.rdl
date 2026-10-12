@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Written for ReportWright's SSRS importer tests: a map whose polygon layer reads SQL Server spatial data (the
+     StateShapes query's Geo column), coloured by sales. -->
+<Report xmlns="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition" xmlns:rd="http://schemas.microsoft.com/SQLServer/reporting/reportdesigner">
+  <DataSources>
+    <DataSource Name="Sales"><ConnectionProperties><DataProvider>SQL</DataProvider><ConnectString>Data Source=db;Initial Catalog=Sales</ConnectString></ConnectionProperties></DataSource>
+  </DataSources>
+  <DataSets>
+    <DataSet Name="StateSales">
+      <Query><DataSourceName>Sales</DataSourceName><CommandText>SELECT State, Amount FROM Sales</CommandText></Query>
+      <Fields>
+        <Field Name="State"><DataField>State</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Amount"><DataField>Amount</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field>
+      </Fields>
+    </DataSet>
+    <DataSet Name="StateShapes">
+      <Query><DataSourceName>Sales</DataSourceName><CommandText>SELECT STATENAME, Geo.STAsText() AS Geo FROM States</CommandText></Query>
+      <Fields>
+        <Field Name="STATENAME"><DataField>STATENAME</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Geo"><DataField>Geo</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+      </Fields>
+    </DataSet>
+  </DataSets>
+  <ReportSections>
+    <ReportSection>
+      <Body>
+        <ReportItems>
+          <Textbox Name="Title">
+            <CanGrow>true</CanGrow>
+            <Paragraphs><Paragraph><TextRuns><TextRun><Value>Sales by state</Value></TextRun></TextRuns></Paragraph></Paragraphs>
+            <Top>0in</Top><Left>0in</Left><Height>0.3in</Height><Width>4in</Width>
+          </Textbox>
+          <Map Name="SalesMap">
+            <MapViewport><MapCoordinateSystem>Geographic</MapCoordinateSystem><MapProjection>Mercator</MapProjection></MapViewport>
+            <MapLayers>
+              <MapPolygonLayer Name="States">
+                <MapPolygonTemplate>
+                  <ActionInfo><Actions><Action><Drillthrough><ReportName>state-detail</ReportName><Parameters><Parameter Name="State"><Value>=Fields!State.Value</Value></Parameter></Parameters></Drillthrough></Action></Actions></ActionInfo>
+                </MapPolygonTemplate>
+                <MapPolygonRules>
+                  <MapColorRangeRule>
+                    <DataValue>=Sum(Fields!Amount.Value)</DataValue>
+                    <DistributionType>Optimal</DistributionType>
+                    <BucketCount>5</BucketCount>
+                    <LegendName>Legend1</LegendName>
+                    <LegendText>#FROMVALUE{N0} - #TOVALUE{N0}</LegendText>
+                    <StartColor>#E0F0E0</StartColor>
+                    <EndColor>DarkGreen</EndColor>
+                  </MapColorRangeRule>
+                </MapPolygonRules>
+                <MapBindingFieldPairs>
+                  <MapBindingFieldPair><FieldName>STATENAME</FieldName><BindingExpression>=Fields!State.Value</BindingExpression></MapBindingFieldPair>
+                </MapBindingFieldPairs>
+                <MapSpatialDataSet><DataSetName>StateShapes</DataSetName><SpatialField>Geo</SpatialField></MapSpatialDataSet>
+                <DataSetName>StateSales</DataSetName>
+              </MapPolygonLayer>
+              
+            </MapLayers>
+            <MapLegends><MapLegend Name="Legend1"><Position>BottomCenter</Position></MapLegend></MapLegends>
+            <Top>0.4in</Top><Left>0in</Left><Height>3in</Height><Width>5in</Width>
+          </Map>
+        </ReportItems>
+        <Height>3.5in</Height>
+      </Body>
+      <Width>6.5in</Width>
+      <Page><PageHeight>11in</PageHeight><PageWidth>8.5in</PageWidth></Page>
+    </ReportSection>
+  </ReportSections>
+</Report>

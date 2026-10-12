@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written for ReportWright's BIRT importer tests: a crosstab over a cube (a string level on rows, a date level on
+     columns, one SUM measure) with grand totals, header and cell styles and a number format. -->
+<report xmlns="http://www.eclipse.org/birt/2005/design" version="3.2.23" id="1">
+  <data-sources>
+    <oda-data-source extensionID="org.eclipse.birt.report.data.oda.jdbc" name="Sales DB" id="2">
+      <property name="odaURL">jdbc:x</property>
+    </oda-data-source>
+  </data-sources>
+  <data-sets>
+    <oda-data-set extensionID="org.eclipse.birt.report.data.oda.jdbc.JdbcSelectDataSet" name="Sales" id="3">
+      <property name="dataSource">Sales DB</property>
+      <list-property name="resultSet">
+        <structure><property name="position">1</property><property name="name">region</property><property name="dataType">string</property></structure>
+        <structure><property name="position">2</property><property name="name">sold</property><property name="dataType">date</property></structure>
+        <structure><property name="position">3</property><property name="name">amount</property><property name="dataType">float</property></structure>
+      </list-property>
+      <xml-property name="queryText">select region, sold, amount from SALES</xml-property>
+    </oda-data-set>
+  </data-sets>
+  <cubes>
+    <tabular-cube name="SalesCube" id="10">
+      <property name="dimensions">
+        <tabular-dimension name="Region" id="11">
+          <property name="defaultHierarchy">RegionH</property>
+          <property name="hierarchies">
+            <tabular-hierarchy name="RegionH" id="12">
+              <property name="levels">
+                <tabular-level name="region" id="13"><property name="dataType">string</property><property name="columnName">region</property></tabular-level>
+              </property>
+            </tabular-hierarchy>
+          </property>
+        </tabular-dimension>
+        <tabular-dimension name="Sold" id="14">
+          <property name="isTimeType">true</property>
+          <property name="defaultHierarchy">SoldH</property>
+          <property name="hierarchies">
+            <tabular-hierarchy name="SoldH" id="15">
+              <property name="levels">
+                <tabular-level name="year" id="16"><property name="dataType">integer</property><property name="dateTimeLevelType">year</property><property name="columnName">sold</property></tabular-level>
+              </property>
+            </tabular-hierarchy>
+          </property>
+        </tabular-dimension>
+      </property>
+      <property name="measureGroups">
+        <tabular-measure-group name="Summary" id="17">
+          <property name="measures">
+            <tabular-measure name="amountSum" id="18">
+              <property name="function">sum</property>
+              <expression name="measureExpression">dataSetRow["amount"]</expression>
+              <property name="dataType">float</property>
+            </tabular-measure>
+          </property>
+        </tabular-measure-group>
+      </property>
+      <property name="dataSet">Sales</property>
+    </tabular-cube>
+  </cubes>
+  <page-setup>
+    <simple-master-page name="Simple MasterPage" id="4"><property name="type">a4</property></simple-master-page>
+  </page-setup>
+  <body>
+    <extended-item extensionName="Crosstab" extensionVersion="2.5.0" id="20">
+      <property name="cube">SalesCube</property>
+      <property name="measures">
+        <extended-item extensionName="MeasureView" id="21">
+          <property name="measure">amountSum</property>
+          <property name="detail">
+            <extended-item extensionName="AggregationCell" id="22">
+              <property name="aggregationOnRow">Region/region</property>
+              <property name="aggregationOnColumn">Sold/year</property>
+              <property name="content">
+                <data id="23">
+                  <structure name="numberFormat"><property name="category">Custom</property><property name="pattern">#,##0.00</property></structure>
+                  <property name="textAlign">right</property>
+                  <property name="resultSetColumn">amountSum</property>
+                </data>
+              </property>
+            </extended-item>
+          </property>
+          <property name="aggregations">
+            <extended-item extensionName="AggregationCell" id="24">
+              <property name="aggregationOnColumn">Sold/year</property>
+              <property name="content">
+                <data id="25">
+                  <structure name="numberFormat"><property name="category">Custom</property><property name="pattern">#,##0.00</property></structure>
+                  <property name="fontWeight">bold</property>
+                  <property name="resultSetColumn">amountSum_total</property>
+                </data>
+              </property>
+            </extended-item>
+          </property>
+        </extended-item>
+      </property>
+      <property name="rows">
+        <extended-item extensionName="CrosstabView" id="30">
+          <property name="grandTotal">
+            <extended-item extensionName="CrosstabCell" id="31">
+              <property name="content"><label id="32"><text-property name="text">Grand Total</text-property></label></property>
+            </extended-item>
+          </property>
+          <property name="views">
+            <extended-item extensionName="DimensionView" id="33">
+              <property name="dimension">Region</property>
+              <property name="levels">
+                <extended-item extensionName="LevelView" id="34">
+                  <property name="level">Region/region</property>
+                  <property name="member">
+                    <extended-item extensionName="CrosstabCell" id="35">
+                      <property name="content"><data id="36"><property name="fontWeight">bold</property><property name="resultSetColumn">region</property></data></property>
+                    </extended-item>
+                  </property>
+                </extended-item>
+              </property>
+            </extended-item>
+          </property>
+        </extended-item>
+      </property>
+      <property name="columns">
+        <extended-item extensionName="CrosstabView" id="40">
+          <property name="grandTotal">
+            <extended-item extensionName="CrosstabCell" id="41">
+              <property name="content"><label id="42"><text-property name="text">All years</text-property></label></property>
+            </extended-item>
+          </property>
+          <property name="views">
+            <extended-item extensionName="DimensionView" id="43">
+              <property name="dimension">Sold</property>
+              <property name="levels">
+                <extended-item extensionName="LevelView" id="44">
+                  <property name="level">Sold/year</property>
+                  <property name="member">
+                    <extended-item extensionName="CrosstabCell" id="45">
+                      <property name="backgroundColor">#336699</property>
+                      <property name="content"><data id="46"><property name="fontWeight">bold</property><property name="color">#FFFFFF</property><property name="resultSetColumn">year</property></data></property>
+                    </extended-item>
+                  </property>
+                </extended-item>
+              </property>
+            </extended-item>
+          </property>
+        </extended-item>
+      </property>
+      <property name="header">
+        <extended-item extensionName="CrosstabCell" id="50">
+          <property name="content"><label id="51"><text-property name="text">Region / year</text-property></label></property>
+        </extended-item>
+      </property>
+      <list-property name="boundDataColumns">
+        <structure><property name="name">region</property><expression name="expression" type="javascript">dimension["Region"]["region"]</expression><property name="dataType">string</property></structure>
+        <structure><property name="name">year</property><expression name="expression" type="javascript">dimension["Sold"]["year"]</expression><property name="dataType">integer</property></structure>
+        <structure><property name="name">amountSum</property><expression name="expression" type="javascript">measure["amountSum"]</expression><property name="dataType">float</property></structure>
+        <structure>
+          <property name="name">amountSum_total</property><property name="dataType">float</property>
+          <simple-property-list name="aggregateOn"><value>Region/region</value></simple-property-list>
+          <property name="aggregateFunction">SUM</property>
+          <list-property name="arguments"><structure><property name="name">Expression</property><expression name="value" type="javascript">measure["amountSum"]</expression></structure></list-property>
+        </structure>
+      </list-property>
+    </extended-item>
+  </body>
+</report>

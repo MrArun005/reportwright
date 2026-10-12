@@ -1,6 +1,7 @@
 // @ts-check
 import { evalValue, toText } from '../expr/evaluate.js';
 import { resolveFontKey } from '../text/fonts.js';
+import { spatialValue, OVER } from '../geo.js';
 
 /**
  * Map item: shapes from GeoJSON (inline text, or a data set of features), filled by a value
@@ -68,7 +69,12 @@ export function paintMap(item, ctx, lc, base) {
   if (item.dataSet) {
     for (const r of rowsOf(item.dataSet)) {
       const c = { ...ctx, fields: r };
-      addShape(ev(item.shapeKey, c), ev(item.geometry || '=Fields.geometry', c), r);
+      const key = ev(item.shapeKey, c);
+      if (capped) break;
+      // a spatial field: GeoJSON, WKT (STAsText()) or SQL Server's geography binary, decoded within the coordinate cap
+      const g = spatialValue(ev(item.geometry || '=Fields.geometry', c), MAP_CAPS.coords - coords);
+      if (g === OVER) { warn(`more than ${MAP_CAPS.coords.toLocaleString('en-US')} coordinates; the shape "${key ?? '?'}" and those after it are not drawn`); capped = 'coords'; break; }
+      addShape(key, g, r);
     }
   } else if (item.geojson) {
     let gj = null;
