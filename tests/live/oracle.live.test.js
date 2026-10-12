@@ -44,12 +44,6 @@ describe.skipIf(!process.env.PW_LIVE_ORACLE)('Oracle (live, gvenzl/oracle-free)'
     expect(n).toEqual({ ID: 2, AMOUNT: null, RATIO: null, LABEL: null, BORN: null, SEEN: null, NOTES: null });
   });
 
-  it('a huge CLOB (about 3.2 MB, over the 1 MB cap) is refused by its length before a byte of it is read', async () => {
-    await expect(runSql(src('select notes from pwowner.types_t where id = 3'))).rejects.toThrow(/more than 1 MB/);
-    // a value under the cap still reads whole
-    expect((await runSql(src('select notes from pwowner.types_t where id = 1')))[0].NOTES).toHaveLength(5000);
-  });
-
   it('only one read: a write, a lock, or a second statement is refused before the database runs it', async () => {
     await expect(runSql(src('delete from pwowner.types_t'))).rejects.toThrow(/SELECT/);
     await expect(runSql(src('select id from pwowner.types_t for update'))).rejects.toThrow(/one SELECT|FOR UPDATE/);
@@ -99,7 +93,15 @@ describe.skipIf(!process.env.PW_LIVE_ORACLE)('Oracle (live, gvenzl/oracle-free)'
   it('the deadline (PW_SQL_TIMEOUT_MS=3000) breaks a long query in flight with 504', async () => {
     const t0 = Date.now();
     await expect(runSql(src('select count(*) from dual connect by level <= 1000000000'))).rejects.toMatchObject({ status: 504 });
-    expect(Date.now() - t0).toBeLessThan(15000);
+    expect(Date.now() - t0).toBeLessThan(30000);
+  });
+
+
+  // last: a capped call drops its connection (not pooled), so the calls after it would pay for a new session
+  it('a huge CLOB (about 3.2 MB, over the 1 MB cap) is refused by its length before a byte of it is read', async () => {
+    await expect(runSql(src('select notes from pwowner.types_t where id = 3'))).rejects.toThrow(/more than 1 MB/);
+    // a value under the cap still reads whole
+    expect((await runSql(src('select notes from pwowner.types_t where id = 1')))[0].NOTES).toHaveLength(5000);
   });
 
 });

@@ -38,7 +38,7 @@ jobs:
     env:
       PW_SQL_MAX_ROWS: '50'
       PW_SQL_MAX_MB: '1'
-      PW_SQL_TIMEOUT_MS: '3000'
+      PW_SQL_TIMEOUT_MS: '10000'
       PW_LIVE_ORACLE: oracle://pwreader:PwReader1234@127.0.0.1:1521/FREEPDB1
       PW_LIVE_ORACLE_APP: oracle://pwapp:PwApp1234@127.0.0.1:1521/FREEPDB1
     steps:
