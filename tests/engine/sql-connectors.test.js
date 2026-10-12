@@ -117,13 +117,13 @@ function oracleMock({ type = 1, rows = [], meta = [{ name: 'A', dbType: { name: 
   const answers = { session_privs: [{ P: 'CREATE SESSION' }], ...probe };
   const conn = {
     callTimeout: 0,
-    async getStatementInfo(t) { log.push(['info', t]); return { statementType: type }; },
+    async getStatementInfo(t) { log.push(['info', t]); return { statementType: type, metaData: meta }; },
     async execute(t, v, o) {
       if (o?.maxRows) log.push(['probe', t]);
       const asked = Object.keys(answers).find(k => new RegExp(k === 'PUBLIC' ? "grantee = 'PUBLIC' AND privilege = 'EXECUTE'" : `from ${k}\\b`, 'i').test(t));
       if (o?.maxRows) return { rows: asked ? answers[asked] : [] }; // the login probe
       log.push(['execute', t, v]);
-      if (!o?.resultSet) return { metaData: meta }; // the zero-row probe of the column types
+      if (!o?.resultSet) return {};
       log.push(['options', o]);
       if (hang) await new Promise((_, rej) => { conn.break = async () => { log.push(['break']); rej(Object.assign(new Error('cancelled'), { code: 'NJS-123' })); }; });
       let i = 0;
@@ -139,7 +139,7 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
   it('the server parse must say SELECT; it runs READ ONLY and is rolled back', async () => {
     let log = oracleMock({ rows: [{ A: 1 }, { A: 2 }] });
     expect(await runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t where b = @b' }, { b: 3 })).toEqual([{ A: 1 }, { A: 2 }]);
-    expect(log.filter(x => x[0] !== 'probe' && x[0] !== 'options').map(x => x[0])).toEqual(['info', 'execute', 'execute', 'execute', 'close', 'rollback', 'release']);
+    expect(log.filter(x => x[0] !== 'probe' && x[0] !== 'options').map(x => x[0])).toEqual(['info', 'execute', 'execute', 'close', 'rollback', 'release']);
     // the batch read is one round trip per batch: fetchArraySize is a batch, not one row (one row a trip was seconds for 50 rows)
     expect(log.find(x => x[0] === 'options')[1].fetchArraySize).toBeGreaterThan(1);
     // bypass 3 (closed): a prefetch would fetch rows before the metadata and width checks run
@@ -152,8 +152,9 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
     expect(log.find(x => x[0] === 'probe' && /all_tab_privs/.test(x[1]))?.[1]).toMatch(/grantee = 'PUBLIC' AND NVL\(type, 'PACKAGE'\) <> 'DIRECTORY'\s+AND table_schema IN \(SELECT username FROM all_users WHERE oracle_maintained = 'Y'\)/);
     const main = log.filter(x => x[0] !== 'probe');
     expect(main[1][1]).toBe('SET TRANSACTION READ ONLY');
-    expect(main[2][1]).toMatch(/WHERE ROWNUM < 1/); // the zero-row metadata probe
-    expect(main[3].slice(1)).toEqual(['select a from t where b = :1', [3]]);
+    expect(main[2].slice(1)).toEqual(['select a from t where b = :1', [3]]);
+    // the text that was validated is the text that runs: no rewrite, no wrapper between the parse and the execute
+    expect(log.find(x => x[0] === 'info')[1]).toBe(main[2][1]);
     log = oracleMock({ type: 3 }); // not a SELECT (the server says so, whatever the text looks like)
     await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t' }, {})).rejects.toThrow(/one SELECT/);
     expect(log.some(x => x[0] === 'execute')).toBe(false);
@@ -199,6 +200,21 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
     }
   });
   // bypass 2 (closed): a batch of 10 rows was fetched whatever the width; a row too wide for 10 in the cap is refused before a fetch
+  // validation differential (closed): the column types come from the parse of the exact text; a LOB column is refused
+  // before the statement runs (no resultSet is opened, so no row or byte of the value is ever read)
+  it('refuses a LOB column from the parse of the exact text, before the statement runs', async () => {
+    const lob = { getData: async () => { throw new Error('read'); } };
+    const log = oracleMock({ rows: [{ C: lob }], meta: [{ name: 'C', dbType: { name: 'DB_TYPE_NCLOB' }, dbTypeName: 'NCLOB' }] });
+    await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select c from t' }, {})).rejects.toThrow(/cannot read/);
+    expect(log.filter(x => x[0] === 'execute').map(x => x[1])).toEqual(['SET TRANSACTION READ ONLY']); // the query never ran
+  });
+  // read-time cap (closed): a value that grew after any length was learned is counted on the bytes that arrive
+  it('counts the bytes actually received: a value that grew past the cap is refused when read', async () => {
+    oracleMock({ rows: [{ W: 'x'.repeat(2 * 1048576) }], meta: [{ name: 'W', dbType: { name: 'DB_TYPE_VARCHAR' }, byteSize: 10 }] });
+    limits.bytes = 1048576;
+    await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select w from t' }, {})).rejects.toThrow(/more than 1 MB/);
+    Object.assign(limits, keep);
+  });
   it('refuses rows too wide for a batch under the cap, before any row is fetched', async () => {
     const log = oracleMock({ rows: [{ W: 'w' }], meta: [{ name: 'W', dbType: { name: 'DB_TYPE_VARCHAR' }, byteSize: 32767 }] });
     limits.bytes = 100000; // 2 x 32767 + 64 per cell x 10 rows is more than this
