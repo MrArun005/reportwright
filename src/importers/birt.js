@@ -111,7 +111,7 @@ function toRdlx(root, notes, reportName, charts) {
   let scripts = 0;
   const walkAll = (e, fn, depth = 0) => { if (depth > 200) return; fn(e); for (const c of e.children) walkAll(c, fn, depth + 1); };
   walkAll(root, (e) => { if (e.name === 'method' && e.text.trim()) scripts++; });
-  if (scripts) note(`The report has ${scripts} event script${scripts > 1 ? 's' : ''} (JavaScript run while it renders); ReportWright does not run them, so what they change is missing.`);
+  let scriptsDone = 0; // event scripts translated to style expressions (scriptStyle); the rest are noted at the end
   if (kids(root, 'list-property').some(l => l.attrs.name === 'libraries') || kid(root, 'list-property')?.attrs.name === 'libraries') note('The report uses BIRT libraries; their items are not in this file, so items from them are missing.');
 
   /* ---------------------------------------------------------------- parameters */
@@ -384,7 +384,92 @@ function toRdlx(root, notes, reportName, charts) {
       if (hb) iif('BackgroundColor', hb, o.BackgroundColor ?? 'Transparent');
       if (hw) iif('FontWeight', /bold|[6-9]00/.test(hw) ? 'Bold' : 'Normal', o.FontWeight ?? 'Normal');
     }
+    // event scripts that only set a style (scriptStyle): a literal, or IIF(condition, value, else / the style's own)
+    for (const s of st.__script || []) {
+      const base = s.alt ?? o[s.k] ?? SCRIPT_DEFAULT[s.k];
+      const q = (v) => (String(v).startsWith('=') ? String(v).slice(1) : `"${String(v).replace(/"/g, '""')}"`);
+      o[s.k] = s.cond ? `=IIF(${s.cond}, ${q(s.v)}, ${q(base)})` : s.v;
+    }
     return o;
+  }
+
+  /* ---------------------------------------------------------------- event scripts */
+
+  const SCRIPT_PROPS = { color: 'Color', backgroundColor: 'BackgroundColor', fontWeight: 'FontWeight', fontStyle: 'FontStyle', fontSize: 'FontSize', textAlign: 'TextAlign' };
+  const SCRIPT_DEFAULT = { Color: '#000000', BackgroundColor: 'Transparent', FontWeight: 'Normal', FontStyle: 'Normal', FontSize: '10pt', TextAlign: 'General' };
+  const MAX_SCRIPT = 2000;
+  /** A style value a script sets → the RDLX value; null when it is not a plain one. */
+  const scriptValue = (k, lit) => {
+    const v = lit.slice(1, -1).trim();
+    if (!v || v.length > 60 || /["\\{}]/.test(v)) return null;
+    if (k === 'FontWeight') return /bold|[6-9]00/i.test(v) ? 'Bold' : 'Normal';
+    if (k === 'FontStyle') return /italic|oblique/i.test(v) ? 'Italic' : 'Normal';
+    if (k === 'FontSize') { const n = len(v, 0, 0); return n ? pt(n) : null; }
+    if (k === 'TextAlign') return { left: 'Left', right: 'Right', center: 'Center', justify: 'Justify' }[v.toLowerCase()] ?? null;
+    return /^(#[0-9a-f]{3,8}|[a-z]{3,20}|rgb\([\d\s,%.]+\))$/i.test(v) ? v : null;
+  };
+  /**
+   * An item's onCreate / onRender scripts → style settings, when every statement is one of:
+   *   this.getStyle().p = "v";   if (cond) this.getStyle().p = "v"; [else this.getStyle().p = "w";]   (braces allowed)
+   * with p a colour, background, font weight, style, size or alignment and cond a BIRT expression the translator
+   * handles. Anything else leaves the script to the report's note. Bounded: 2,000 characters per script.
+   * @returns {{ k: string, v: string, cond?: string, alt?: string }[] | null}
+   */
+  /**
+   * JavaScript statements at the top level: one ends at ";" or at the "}" that closes its block, unless "else" follows.
+   * One pass, tracking strings and nesting (at most 16 deep); null when unbalanced or too deep.
+   * @param {string} s @returns {string[] | null}
+   */
+  function statements(s) {
+    const out = [];
+    let depth = 0, start = 0, q = '';
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (q) { if (ch === '\\') i++; else if (ch === q) q = ''; continue; }
+      if (ch === '"' || ch === "'") { q = ch; continue; }
+      if (ch === '(' || ch === '{') { if (++depth > 16) return null; continue; }
+      if (ch === ')' || ch === '}') {
+        if (--depth < 0) return null;
+        if (ch === '}' && depth === 0 && !/^ ?else\b/.test(s.slice(i + 1, i + 7))) { out.push(s.slice(start, i + 1).trim()); start = i + 1; }
+        continue;
+      }
+      if (ch === ';' && depth === 0) { out.push(s.slice(start, i + 1).trim()); start = i + 1; }
+    }
+    if (depth || q) return null;
+    if (s.slice(start).trim()) out.push(s.slice(start).trim());
+    return out.filter(Boolean);
+  }
+  function scriptStyle(e, c, it) {
+    const methods = kids(e, 'method').filter(m => m.text.trim());
+    if (!methods.length || methods.some(m => !/^on(Create|Render)$/.test(m.attrs.name || ''))) return null;
+    const out = [];
+    // white space is collapsed to single spaces first, so no two space quantifiers meet (no polynomial backtracking)
+    const SET = ' ?this\\.getStyle\\(\\)\\.(\\w+) ?= ?("[^"]*"|\'[^\']*\') ?;? ?';
+    const one = new RegExp(`^${SET}$`), cond = new RegExp(`^if ?\\(([^]+)\\) ?\\{?${SET}\\}? ?(?:else ?\\{?${SET}\\}?)?$`);
+    for (const m of methods) {
+      if (m.text.length > MAX_SCRIPT) return null;
+      const src = m.text.replace(/\/\*[^]*?\*\/|\/\/[^\n]*/g, '').trim();
+      // statements: a top-level if (with its else) or one assignment per line
+      const stmts = statements(src.replace(/\s+/g, ' '));
+      if (!stmts) return null;
+      for (const s of stmts) {
+        let mm = one.exec(s);
+        if (mm) { const k = SCRIPT_PROPS[mm[1]], v = k && scriptValue(k, mm[2]); if (!v) return null; out.push({ k, v }); continue; }
+        mm = cond.exec(s);
+        if (!mm) return null;
+        const k = SCRIPT_PROPS[mm[2]], v = k && scriptValue(k, mm[3]);
+        if (!v || (mm[4] && SCRIPT_PROPS[mm[4]] !== k)) return null;
+        const alt = mm[4] ? scriptValue(k, mm[5]) : undefined;
+        if (alt === null) return null;
+        let vc;
+        try { vc = vb(mm[1], c); } catch (er) { if (!(er instanceof Untranslatable)) throw er; return null; }
+        out.push({ k, v, cond: vc, ...(alt ? { alt } : {}) });
+      }
+    }
+    if (!out.length) return null;
+    scriptsDone += methods.length;
+    (it.__info ||= []).push(`its ${methods.map(m => m.attrs.name).join(' and ')} script sets its style; that is kept as style expressions.`);
+    return out;
   }
   /** a BIRT filter/highlight operator as a VB condition */
   function condition(op, x, a, b) {
@@ -457,6 +542,8 @@ function toRdlx(root, notes, reportName, charts) {
     const x = len(prop(e, 'x'), W, 0);
     /** @type {Record<string, any>} */
     const it = { __pos: e.pos, Name: nameFor(e, e.name.replace(/(^|-)(\w)/g, (_, __, ch) => ch.toUpperCase())), Left: pt(x), Width: pt(w) };
+    const sc = scriptStyle(e, c, it);
+    if (sc) st.__script = sc;
     const vis = listProp(e, 'visibility')[0];
     if (vis) { const ve = prop(vis, 'valueExpr'); if (ve && ve.trim() === 'true') it.Visibility = { Hidden: true }; else if (ve) { const v = setting(ve, it, 'the condition that hides it', c); if (v) it.Visibility = { Hidden: v }; } }
     const bm = prop(e, 'bookmark') ?? prop(struct(e, 'toc'), 'expressionValue');
@@ -1052,6 +1139,8 @@ function toRdlx(root, notes, reportName, charts) {
     return { Name: n, MIMEType: type, ImageData: data.replace(/\s+/g, '') };
   }).filter(Boolean);
 
+  scripts -= scriptsDone;
+  if (scripts) note(`The report has ${scripts} event script${scripts > 1 ? 's' : ''} (JavaScript run while it renders); ReportWright does not run them, so what they change is missing.`);
   return {
     Name: prop(root, 'title') || reportName, Page: { PageWidth: pt(pw), PageHeight: pt(ph), LeftMargin: pt(lm), RightMargin: pt(rm), TopMargin: pt(tm), BottomMargin: pt(bm) },
     DataSources, DataSets, ReportParameters, EmbeddedImages,

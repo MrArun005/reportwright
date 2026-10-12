@@ -182,7 +182,7 @@ const GAPS = [
     'Background, no-data and last-page-footer bands are noted, not kept. Relative image paths need a full URL or data URI.',
   ]],
   ['BIRT', 'API.md "BIRT import"; 29 samples, 99.5% of 649 items kept', [
-    'Charts become ReportWright charts (bar, line, area, pie, scatter, bubble, stock, radar, meter); Gantt and difference charts are noted. Items from libraries and event scripts are not converted (noted).',
+    'Charts become ReportWright charts (bar, line, area, pie, scatter, bubble, stock, radar, meter); Gantt and difference charts are noted. Event scripts that only set a style (<code>this.getStyle().color = …</code>, also under an <code>if</code>) become style expressions; other scripts and items from libraries are not converted (noted).',
     'HTML values show as text.',
     'Several master pages: only the first is used.',
     'Joint and scripted data sets get a note; flat-file, XML and scripted sources need a JSON source pointed at the data.',

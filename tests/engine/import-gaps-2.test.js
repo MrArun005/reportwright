@@ -261,3 +261,31 @@ describe('SSRS custom code → report functions', () => {
     expect(performance.now() - t0).toBeLessThan(3000);
   });
 });
+
+describe('BIRT event scripts that only set a style → style expressions', () => {
+  const r = importBirt(read('birt/scripts.rptdesign'), { name: 'Scripts' });
+  const json = JSON.stringify(r.definition.sections);
+  it('maps if/else colour and a literal weight; other scripts keep the note', () => {
+    expect(r.error).toBeUndefined();
+    expect(validate(r.definition).errors).toEqual([]);
+    expect(json).toContain('IIF(Fields.AMOUNT > 100, \\"#ff0000\\", \\"#333333\\")');
+    expect(json).toMatch(/"fontWeight":"bold"/);
+    expect(r.warnings.join('\n')).toMatch(/The report has 1 event script /);
+  });
+  it('renders', async () => {
+    const out = await render(r.definition, { fontStore, sources: sourcesFor(r.definition, [{ REGION: 'North', AMOUNT: 150 }, { REGION: 'South', AMOUNT: 5 }]) });
+    const t = out.pages.flatMap(p => p.items).filter(i => i.t === 'text');
+    const color = (s) => t.find(i => i.lines?.some(l => l.text.includes(s)))?.color;
+    expect(color('150.00')).toMatch(/^#?(ff0000|red)$/i);
+    expect(color('5.00')).toMatch(/333333/);
+  });
+  it('hostile scripts: long, many statements, backtracking bait — refused fast, noted', () => {
+    const src = read('birt/scripts.rptdesign');
+    const t0 = performance.now();
+    for (const bad of ['if (a) this.getStyle().color = "r"' + ' '.repeat(1950) + 'x', 'this.getStyle().color = "red";\n'.repeat(200), 'if (' + ') this.getStyle().color = "red"'.repeat(60), 'this.getStyle().color = "re{d}";']) {
+      const r2 = importBirt(src.replace(/<method name="onCreate">[\s\S]*?<\/method>/, `<method name="onCreate"><![CDATA[${bad}]]></method>`), { name: 'X' });
+      expect(r2.warnings.join('\n')).toMatch(/The report has 2 event scripts/);
+    }
+    expect(performance.now() - t0).toBeLessThan(2000);
+  });
+});
