@@ -12,7 +12,9 @@
  * Pure JavaScript, no Node APIs and no DOM. It never throws: whatever it cannot map becomes a warning.
  */
 import { parseXml, XmlError } from './xml.js';
-import { importRdlx, toPt, ImportBudgetError, OUTPUT_LIMITS, rewordItems } from './rdlx.js';
+import { sqlGeography, readShapefile, OVER } from '../engine/geo.js';
+import { importRdlx, toPt, ImportBudgetError, OUTPUT_LIMITS, rewordItems, translateExpression } from './rdlx.js';
+import { checkFunctions } from '../engine/expr/evaluate.js';
 
 const RDL_NS = /^http:\/\/schemas\.microsoft\.com\/sqlserver\/reporting\/(\d{4})\/\d{2}\/reportdefinition$/i;
 const MAX_EXPR = 20_000; // longer expressions are left out (the translation is linear, but its output feeds the engine)
@@ -28,8 +30,9 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 /**
  * Convert an SSRS report.
  * @param {string} input the .rdl / .rdlc text
- * @param {{ name?: string, resolve?: (kind: 'datasource', ref: string) => string | null | undefined }} [opts] name: the report name (e.g. from the file name);
- *   resolve: the text of the shared data source (.rds) a DataSourceReference names, when the caller has it (pw import <folder>)
+ * @param {{ name?: string, resolve?: (kind: 'datasource' | 'shapefile', ref: string) => any }} [opts] name: the report name (e.g. from the file name);
+ *   resolve: the text of the shared data source (.rds) a DataSourceReference names, or for 'shapefile' { shp, dbf } (bytes) of
+ *   the shapefile a map layer names, when the caller has it (pw import <folder>)
  * @returns {{ definition: any, warnings: string[], stats: { items: number, mapped: number, approximated: number, dropped: number }, items: import('./rdlx.js').ImportedItem[], error?: string }}
  */
 export function importRdl(input, opts = {}) {
@@ -57,9 +60,12 @@ export function importRdl(input, opts = {}) {
     notes.push(`The import stopped early (${e instanceof Error ? e.message : e}), so parts of the report are missing.`);
     ar = {};
   }
-  const r = importRdlx(ar, { name });
+  const code = ar.__code ? customCode(ar.__code) : null;
+  if (code?.note) notes.push(code.note);
+  const r = importRdlx(ar, { name, codeFunctions: code ? new Set(code.functions.map(f => f.name.toLowerCase())) : undefined });
   if (r.error) return r;
   const def = r.definition;
+  if (code?.functions.length) def.functions = code.functions;
   for (const p of def.parameters || []) if (ar.__hidden?.has(p.name)) p.hidden = true;
   if (ar.__code) def.customCode = ar.__code;
   const hiddenNote = /is hidden in ActiveReports; ReportWright shows it/;
@@ -69,10 +75,73 @@ export function importRdl(input, opts = {}) {
   return { definition: def, warnings: [...new Set(warnings)], stats: r.stats, items };
 }
 
+/** Custom code longer than this is not translated (it is kept as text, noted). */
+export const MAX_CODE = 100_000;
+const MAX_CODE_FUNCTIONS = 200; // the engine's cap on report functions
+const MODS = '(?:(?:Public|Private|Friend|Shared|Protected|Overloads|Overrides|Static)\\s+)*';
+/**
+ * SSRS custom code (<Code>, Visual Basic) → report functions, for the simple pattern: a Function whose body is one
+ * Return of an expression (or "Name = expression") the expression translator handles (IIf, Format, FormatNumber,
+ * Left, Mid, CStr, arithmetic, comparisons…), with plain ByVal parameters. Everything else stays in customCode as
+ * text, noted. Bounded: the code's length, the functions converted and each expression's length; one pass per line.
+ * @param {string} code @returns {{ functions: { name: string, params: string[], body: string }[], note: string }}
+ */
+export function customCode(code) {
+  const src = String(code);
+  const lines = src.split(/\r?\n/).length;
+  const keep = 'It is kept in "customCode" as text and not run: expressions that call the rest show as text; rewrite them as report functions.';
+  if (src.length > MAX_CODE) return { functions: [], note: `The report has custom code (Visual Basic, ${lines} lines) longer than ${MAX_CODE.toLocaleString('en-US')} characters, so none of it is converted. ${keep}` };
+  // logical lines: " _" continues a line; comments (') outside strings are dropped
+  const logical = [];
+  let cur = '';
+  for (const raw of src.split(/\r?\n/)) {
+    let l = '', inStr = false;
+    for (let i = 0; i < raw.length; i++) { const ch = raw[i]; if (ch === '"') inStr = !inStr; else if (ch === "'" && !inStr) break; l += ch; }
+    if (/\s_\s*$/.test(l)) { cur += l.replace(/\s_\s*$/, ' '); continue; }
+    logical.push((cur + l).trim()); cur = '';
+  }
+  if (cur) logical.push(cur.trim());
+  const START = new RegExp(`^${MODS}(Function|Sub)\\s+([A-Za-z_]\\w{0,63})`, 'i');
+  const HEAD = new RegExp(`^${MODS}Function\\s+([A-Za-z_]\\w{0,63})\\s*\\(([^()]*)\\)\\s*(?:As\\s+[\\w.]+(?:\\(\\))?)?$`, 'i');
+  const functions = [], left = [];
+  let total = 0;
+  for (let i = 0; i < logical.length; i++) {
+    const h = START.exec(logical[i]);
+    if (!h) continue;
+    total++;
+    const m = HEAD.exec(logical[i]);
+    const body = [];
+    let j = i + 1;
+    for (; j < logical.length && !/^End\s+(Function|Sub)\b/i.test(logical[j]); j++) if (logical[j] && body.length < 2) body.push(logical[j]);
+    i = j;
+    const name = h[2];
+    if (!m || functions.length >= MAX_CODE_FUNCTIONS || body.length !== 1) { left.push(name); continue; }
+    const params = [];
+    let ok = true;
+    for (const p of m[2].split(',').map(s => s.trim()).filter(Boolean)) {
+      const pm = /^(?:ByVal\s+)?([A-Za-z_]\w{0,63})(?:\s+As\s+[\w.]+)?$/i.exec(p);
+      if (!pm) { ok = false; break; }
+      params.push(pm[1]);
+    }
+    const lower = body[0].toLowerCase();
+    const expr = lower.startsWith('return ') ? body[0].slice(7) : lower.startsWith(name.toLowerCase()) && /^\s*=/.test(body[0].slice(name.length)) ? body[0].slice(name.length).replace(/^\s*=/, '') : null;
+    if (!ok || expr == null || expr.length > MAX_EXPR) { left.push(name); continue; }
+    const r = translateExpression(`=${expr}`, { params: new Set(params.map(p => p.toLowerCase())) });
+    const fn = { name, params, body: typeof r.value === 'string' ? r.value : '' };
+    if (!r.ok || !fn.body.startsWith('=') || checkFunctions([fn]).length) { left.push(name); continue; }
+    functions.push(fn);
+  }
+  const conv = functions.length ? `${functions.length} of its ${total} functions became report functions (${functions.slice(0, 10).map(f => f.name).join(', ')}${functions.length > 10 ? ', …' : ''}); ` : '';
+  const note = left.length || !functions.length
+    ? `The report has custom code (Visual Basic, ${lines} lines). ${conv}${left.length ? `${left.length} ${left.length === 1 ? 'is' : 'are'} not converted (${left.slice(0, 10).join(', ')}${left.length > 10 ? ', …' : ''}): only a Function that returns one expression is. ` : ''}${keep}`
+    : '';
+  return { functions, note };
+}
+
 /**
  * The RDL XML tree → an RDLX-JSON object (what rdlx.js reads).
  * @param {import('./xml.js').XmlElement} root @param {string[]} notes @param {number} year the RDL version
- * @param {((kind: 'datasource', ref: string) => string | null | undefined)} [resolve]
+ * @param {((kind: 'datasource' | 'shapefile', ref: string) => any)} [resolve]
  */
 function toRdlx(root, notes, year, resolve) {
   const NS = root.ns;
@@ -239,7 +308,7 @@ function toRdlx(root, notes, year, resolve) {
         case 'Tablix': return tablix(e);
         case 'Chart': return year >= 2008 ? chart(e) : { Type: 'Chart (RDL 2005)', Name: e.attrs.Name };
         case 'GaugePanel': return gauge(e);
-        case 'Map': return { Type: 'Map', Name: e.attrs.Name }; // dropped with a note: SSRS maps (spatial layers) have no equivalent
+        case 'Map': return map(e);
         default: return { Type: e.name, Name: e.attrs.Name }; // the ActiveReports importer drops it with a note
       }
     } finally { itemNotes = saved; itemInfo = savedInfo; if (isRegion) regions--; }
@@ -486,6 +555,117 @@ function toRdlx(root, notes, year, resolve) {
       itemNotes = notesOf;
       return { ...base, Body: { Columns: cols.map(w => ({ Width: w })), Rows }, Corner, RowHierarchy: rowH, ColumnHierarchy: colH };
     } finally { region = saved; }
+  }
+
+  /* ---------------------------------------------------------------- maps */
+
+  // an untrusted file: running totals over every map in the import, checked before each decode / append (a hit is noted)
+  const MAP_MAX_SHAPES = 20_000, MAP_MAX_POINTS = 200_000, MAP_MAX_BYTES = 4e6;
+  let mapShapes = 0, mapPoints = 0, mapBytes = 0;
+
+  /**
+   * An SSRS map → { Type: 'ssrsmap' } for rdlx.js: the first polygon layer colours its shapes by the analytical data (the
+   * colour range rule), embedded shapes (the map gallery's) become GeoJSON, embedded lines are added to it, a point
+   * layer over a data set keeps its data set. A shapefile is read when the caller resolves it (the .shp and .dbf next to the report); SQL spatial data is read at render time (src/engine/geo.js).
+   */
+  function map(e) {
+    const it = { ...common(e, 'ssrsmap') }; // not 'map': ActiveReports' own map type stays unsupported
+    const notes = it.__notes;
+    const layers = kids(kid(e, 'MapLayers'));
+    const features = [];
+    let bad = 0, over = false;
+    const embedded = (layer, geom) => {
+      for (const sh of kids(kid(layer, geom === 'line' ? 'MapLines' : geom === 'point' ? 'MapPoints' : 'MapPolygons'))) {
+        const vd = raw(sh, 'VectorData') || '';
+        const bytes = Math.floor(vd.length * 3 / 4);
+        if (mapShapes >= MAP_MAX_SHAPES || mapPoints >= MAP_MAX_POINTS || mapBytes + bytes > MAP_MAX_BYTES) { over = true; break; }
+        mapBytes += bytes;
+        const g = sqlGeography(vd, MAP_MAX_POINTS - mapPoints);
+        if (g === OVER) { over = true; break; }
+        if (!g) { bad++; continue; }
+        mapShapes++;
+        mapPoints += g.n;
+        delete g.n;
+        features.push({ type: 'Feature', properties: Object.fromEntries(list(sh, 'MapFields', 'MapField').map(f => [raw(f, 'Name'), raw(f, 'Value')])), geometry: g });
+      }
+    };
+    const source = (layer) => {
+      const sd = kids(layer).find(x => /^MapSpatialData|^MapShapefile$/.test(x.name));
+      if (!sd) return;
+      if (sd.name === 'MapShapefile') shapefile(layer, sd);
+      else if (sd.name === 'MapSpatialDataSet') {
+        const ds = raw(sd, 'DataSetName'), f = raw(sd, 'SpatialField');
+        if (!it.ShapeDataSet) { it.ShapeDataSet = ds; it.Geometry = `=Fields!${f}.Value`; }
+        // decoded at render time (src/engine/geo.js spatialValue): WKT from STAsText(), the geography binary, or GeoJSON
+        it.__info.push(`the layer "${layer.attrs.Name}" draws SQL Server spatial data (${ds}.${f}) as the query returns it: the geography binary, WKT (${f}.STAsText()) or GeoJSON.`);
+      } else if (sd.name === 'MapSpatialDataRegion') notes.push(`the layer "${layer.attrs.Name}" reads its shapes from another data region; supply GeoJSON for it.`);
+      return sd;
+    };
+    /** A shapefile layer: the .shp (and .dbf) next to the report, when the caller has them (pw import <folder>). */
+    const shapefile = (layer, sd) => {
+      const src = raw(sd, 'Source') || '';
+      let files = null;
+      if (src && !isExpr(src)) { try { files = resolve?.('shapefile', src) ?? null; } catch { files = null; } }
+      const ask = 'convert it to GeoJSON (e.g. with mapshaper or ogr2ogr) and paste it into the map\'s Shapes, or import the report folder with the .shp and .dbf next to it (pw import <folder>).';
+      if (!files?.shp) { notes.push(`the layer "${layer.attrs.Name}" reads the ESRI shapefile ${src}, which is not in the import: ${ask}`); return; }
+      if (mapShapes >= MAP_MAX_SHAPES || mapPoints >= MAP_MAX_POINTS) { over = true; return; }
+      const r = readShapefile(files.shp, files.dbf, { maxShapes: MAP_MAX_SHAPES - mapShapes, maxPoints: MAP_MAX_POINTS - mapPoints });
+      if (r.error) { notes.push(`the shapefile ${src} of the layer "${layer.attrs.Name}" could not be read (${r.error}): ${ask}`); return; }
+      if (r.notLonLat) { notes.push(`the shapefile ${src} of the layer "${layer.attrs.Name}" is not in longitude and latitude (it is projected): reproject it to WGS 84 (e.g. ogr2ogr -t_srs EPSG:4326) and import it again.`); return; }
+      if (!files.dbf) notes.push(`the shapefile ${src} has no .dbf next to it, so its shapes have no attributes to join the data on.`);
+      if (r.points) notes.push(`${r.points} point records of the shapefile ${src} are left out: ReportWright places points from a data set's latitude and longitude.`);
+      bad += r.bad;
+      if (r.over) over = true;
+      mapShapes += r.features.length; mapPoints += r.n;
+      for (const f of r.features) features.push(f);
+    };
+    let polygons = false;
+    for (const layer of layers) {
+      if (layer.name === 'MapTileLayer') { notes.push(`the Bing Maps tile background (layer "${layer.attrs.Name}") is left out.`); continue; }
+      const sd = source(layer);
+      const geom = layer.name === 'MapPolygonLayer' ? 'polygon' : layer.name === 'MapLineLayer' ? 'line' : layer.name === 'MapPointLayer' ? 'point' : null;
+      if (!geom) continue;
+      if (sd?.name === 'MapSpatialDataEmbedded') embedded(layer, geom);
+      if (geom === 'polygon' && !polygons) {
+        polygons = true;
+        const pair = list(layer, 'MapBindingFieldPairs', 'MapBindingFieldPair')[0];
+        if (pair) { it.ShapeKey = `=Fields!${raw(pair, 'FieldName')}.Value`; it.ValueKey = val(pair, 'BindingExpression'); }
+        it.ValueDataSet = raw(layer, 'DataSetName');
+        const rule = kid(kid(layer, 'MapPolygonRules'), 'MapColorRule') || kids(kid(layer, 'MapPolygonRules'))[0];
+        if (rule) {
+          it.Value = val(rule, 'DataValue');
+          if (rule.name === 'MapColorRangeRule') { it.ColorLow = raw(rule, 'StartColor'); it.ColorHigh = raw(rule, 'EndColor'); if (raw(rule, 'MiddleColor')) notes.push('its middle colour is left out: ReportWright shades from the start colour to the end colour.'); }
+          else if (rule.name === 'MapColorPaletteRule' || rule.name === 'MapCustomColorRule') notes.push('its shapes are coloured from a palette in SSRS; here they shade from light to dark blue by value.');
+          const dist = raw(rule, 'DistributionType'), n = Number(raw(rule, 'BucketCount'));
+          if (dist && dist !== 'Custom' && n >= 2) { it.ColorScale = 'classes'; it.Classes = Math.min(9, n); }
+          if (dist === 'Custom') notes.push('its custom buckets are read as equal classes.');
+          const fm = /\{([^}]+)\}/.exec(raw(rule, 'LegendText') || '');
+          if (fm) it.Format = fm[1];
+          it.Legend = raw(rule, 'LegendName') || kids(kid(e, 'MapLegends')).length ? 'bottom' : 'none';
+        }
+        const tpl = kid(layer, 'MapPolygonTemplate');
+        const act = tpl && action(tpl);
+        if (act) it.RegionAction = act;
+      } else if (geom === 'line') {
+        const tpl = kid(layer, 'MapLineTemplate');
+        const c = raw(tpl, 'BorderColor') || raw(kid(tpl, 'Style'), 'Color');
+        if (c) it.LineColor = c;
+        const w = raw(tpl, 'Width');
+        if (w) it.LineWidth = w;
+      } else if (geom === 'point') {
+        if (sd?.name === 'MapSpatialDataEmbedded') notes.push(`the embedded points of the layer "${layer.attrs.Name}" are left out: ReportWright places points from a data set's latitude and longitude.`);
+        else { it.PointDataSet = raw(layer, 'DataSetName') || it.ShapeDataSet; notes.push(`the point layer "${layer.attrs.Name}" needs latitude and longitude: set the map's Points latitude and longitude to the data set's fields.`); }
+        const c = raw(kid(kid(layer, 'MapPointTemplate'), 'Style'), 'Color') || raw(kid(layer, 'MapPointTemplate'), 'Color');
+        if (c) it.PointColor = c;
+      }
+      if (kid(layer, 'MapPolygonRules')?.children.length > 1 || kid(layer, 'MapCenterPointRules')) notes.push(`some rules of the layer "${layer.attrs.Name}" (sizes, markers, centre points) are left out.`);
+    }
+    if (bad) notes.push(`${bad} embedded shapes could not be read (or are too large), so they are left out.`);
+    if (over) notes.push(`the report's maps hold more than ${MAP_MAX_SHAPES.toLocaleString('en-US')} shapes, ${MAP_MAX_POINTS.toLocaleString('en-US')} points or ${MAP_MAX_BYTES / 1e6} MB of shape data; the rest are left out (simplify the shapes, or supply GeoJSON).`);
+    if (features.length) it.GeoJson = JSON.stringify({ type: 'FeatureCollection', features });
+    else if (!it.ShapeDataSet) notes.push('its shapes could not be read from the file: paste GeoJSON into the map\'s Shapes (Properties → Shapes: GeoJSON text).');
+    if (!layers.length) notes.push('it has no layers.');
+    return it;
   }
 
   /* ---------------------------------------------------------------- charts and gauges */
@@ -820,7 +1000,6 @@ function toRdlx(root, notes, year, resolve) {
   });
   const EmbeddedImages = list(root, 'EmbeddedImages', 'EmbeddedImage').map(i => ({ Name: i.attrs.Name, MIMEType: raw(i, 'MIMEType'), ImageData: raw(i, 'ImageData') }));
   const code = raw(root, 'Code');
-  if (code && code.trim()) notes.push(`The report has custom code (Visual Basic, ${code.trim().split('\n').length} lines). It is not run: expressions that call Code.… are shown as text. The code is kept in "customCode"; rewrite what you need as report functions.`);
   if (year < 2008) notes.push(`This is an RDL ${year} report: its Table, Matrix, List and Chart items use the old layout and are left out. Open and save it in Report Builder or Visual Studio to upgrade it to RDL 2008 or later, then import it again.`);
 
   const band = (b) => b && { Height: raw(b, 'Height'), PrintOnFirstPage: raw(b, 'PrintOnFirstPage'), PrintOnLastPage: raw(b, 'PrintOnLastPage'), Style: styleOf(b), ReportItems: items(kid(b, 'ReportItems')) };
