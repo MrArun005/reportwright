@@ -24,6 +24,8 @@ export default function MoreWays({ name, lang, folder = null }) {
   const [ai, setAi] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [sample, setSample] = useState('');
+  const [assessment, setAssessment] = useState(null);
+  const assessFiles = useRef(null);
   const title = () => name?.trim() || T('untitled');
 
   const run = async (what, fn) => {
@@ -44,6 +46,21 @@ export default function MoreWays({ name, lang, folder = null }) {
       const type = /\.(rdlc?|jrxml|rptdesign)$/i.test(f.name) ? 'application/xml' : 'application/json'; // SSRS, JasperReports and BIRT reports are XML
       const { id, warnings: w } = await call(`/api/reports/import?name=${fileName}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}`, { method: 'POST', headers: { 'content-type': type }, body: await f.text() });
       if (w?.length) { setWarnings({ id, list: w }); setBusy(null); } else router.push(`/designer/${id}${q}`);
+    });
+  };
+  // Assess first: the files are sent to the server, nothing is imported; the summary shows before the user imports
+  const assessPicked = (e) => {
+    const list = [...(e.target.files || [])];
+    e.target.value = '';
+    if (!list.length) return;
+    run('assess', async () => {
+      const fd = new FormData();
+      for (const f of list) fd.append('files', f);
+      const res = await fetch('/api/reports/assess', { method: 'POST', body: fd });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
+      setAssessment(out);
+      setBusy(null);
     });
   };
   const draft = () => {
@@ -73,7 +90,17 @@ export default function MoreWays({ name, lang, folder = null }) {
           <div><button type="button" className="btn primary" onClick={draft} disabled={!!busy || !prompt.trim()}>{busy === 'ai' ? T('drafting') : T('draftReport')}</button></div>
         </div>
       )}
+      <button type="button" className="btn" onClick={() => assessFiles.current?.click()} disabled={!!busy} title="Scan the files first: what converts, what needs work, the effort. Nothing is imported.">{busy === 'assess' ? 'Assessing…' : 'Assess first'}</button>
+      <input ref={assessFiles} type="file" multiple accept=".rdlx-json,.rdl,.rdlc,.jrxml,.rptdesign,.zip" hidden onChange={assessPicked} aria-label="Files to assess" />
       {err && <span className="err" role="alert">{err}</span>}
+      {assessment && (
+        <div role="status" style={{ width: '100%', border: '1px solid var(--line, #dfe2e6)', borderRadius: 6, padding: '8px 12px' }}>
+          <div><b>{assessment.summary.lead}.</b> Readiness {assessment.summary.readiness}%. {assessment.summary.reports} reports: {assessment.summary.full} convert fully, {assessment.summary.small} small fixes, {assessment.summary.manual} manual work, {assessment.summary.failed} failed.</div>
+          <div className="hint">{assessment.summary.verdict} Estimated effort {assessment.summary.hours} hours.</div>
+          {assessment.blockers.length > 0 && <ul className="hint" style={{ margin: '4px 0 0 18px' }}>{assessment.blockers.slice(0, 5).map(b => <li key={b.category}>{b.category}: {b.reports} reports</li>)}</ul>}
+          <button type="button" className="btn" style={{ marginTop: 6 }} onClick={() => setAssessment(null)}>Dismiss</button>
+        </div>
+      )}
       {warnings && (
         <div role="status" style={{ width: '100%' }}>
           <span className="hint">{T('createdWithNotes', { n: warnings.list.length })}</span>
