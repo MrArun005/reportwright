@@ -18,7 +18,7 @@ CREATE TABLE pwowner.types_t (
   notes     CLOB
 );
 INSERT INTO pwowner.types_t (id, amount, ratio, label, born, seen, notes)
-  VALUES (1, 1234.50, 1.5, 'Ünïcødé — ₹ 日本語 🚀', DATE '2024-01-02', TIMESTAMP '2024-01-02 03:04:05.123456', RPAD('n', 5000, 'n'));
+  VALUES (1, 1234.50, 1.5, 'Ünïcødé — ₹ 日本語 🚀', DATE '2024-01-02', TIMESTAMP '2024-01-02 03:04:05.123456', TO_CLOB(RPAD('n', 4000, 'n')) || TO_CLOB(RPAD('n', 1000, 'n')));  -- RPAD is VARCHAR2 (4000 max): a 5000-char CLOB is two pieces
 INSERT INTO pwowner.types_t (id) VALUES (2);
 COMMIT;
 GRANT SELECT ON pwowner.types_t TO pwreader;

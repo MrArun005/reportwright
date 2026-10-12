@@ -124,6 +124,7 @@ function oracleMock({ type = 1, rows = [], meta = [{ name: 'A', dbType: { name: 
       if (o?.maxRows) return { rows: asked ? answers[asked] : [] }; // the login probe
       log.push(['execute', t, v]);
       if (!o?.resultSet) return {};
+      log.push(['options', o]);
       if (hang) await new Promise((_, rej) => { conn.break = async () => { log.push(['break']); rej(Object.assign(new Error('cancelled'), { code: 'NJS-123' })); }; });
       let i = 0;
       return { metaData: meta, resultSet: { async getRows(k) { const b = rows.slice(i, i + k); i += k; return b; }, async close() { log.push(['close']); } } };
@@ -138,7 +139,9 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
   it('the server parse must say SELECT; it runs READ ONLY and is rolled back', async () => {
     let log = oracleMock({ rows: [{ A: 1 }, { A: 2 }] });
     expect(await runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t where b = @b' }, { b: 3 })).toEqual([{ A: 1 }, { A: 2 }]);
-    expect(log.filter(x => x[0] !== 'probe').map(x => x[0])).toEqual(['info', 'execute', 'execute', 'close', 'rollback', 'release']);
+    expect(log.filter(x => x[0] !== 'probe' && x[0] !== 'options').map(x => x[0])).toEqual(['info', 'execute', 'execute', 'close', 'rollback', 'release']);
+    // the batch read is one round trip per batch: fetchArraySize is a batch, not one row (one row a trip was seconds for 50 rows)
+    expect(log.find(x => x[0] === 'options')[1].fetchArraySize).toBeGreaterThan(1);
     // the grant check is a positive list over the user, its roles and PUBLIC; READ on a DIRECTORY counts
     expect(log.find(x => x[0] === 'probe' && /all_tab_privs/.test(x[1]) && /'PUBLIC' FROM dual/.test(x[1]))?.[1]).toMatch(/DIRECTORY/);
     // PUBLIC's grants on Oracle's own objects are the install default, of any privilege (SYS grants PUBLIC DELETE on some

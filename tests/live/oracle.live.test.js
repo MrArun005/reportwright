@@ -56,12 +56,6 @@ describe.skipIf(!process.env.PW_LIVE_ORACLE)('Oracle (live, gvenzl/oracle-free)'
     await expect(runSql(src('select level as n from dual connect by level <= 51'))).rejects.toThrow(/more than 50 rows/);
   });
 
-  it('the deadline (PW_SQL_TIMEOUT_MS=3000) breaks a long query in flight with 504', async () => {
-    const t0 = Date.now();
-    await expect(runSql(src('select count(*) from dual connect by level <= 1000000000'))).rejects.toMatchObject({ status: 504 });
-    expect(Date.now() - t0).toBeLessThan(15000);
-  });
-
   it('a login that can do more than read is refused by the probe', async () => {
     process.env.PW_DB_PWAPP = process.env.PW_LIVE_ORACLE_APP;
     try {
@@ -94,4 +88,12 @@ describe.skipIf(!process.env.PW_LIVE_ORACLE)('Oracle (live, gvenzl/oracle-free)'
     const text = execFileSync('pdftotext', ['-layout', file, '-'], { encoding: 'utf8' });
     expect(text).toContain('Ünïcødé'); // Standard 14 fonts have no CJK or emoji glyphs; Latin-1 is checked
   });
+
+  // last: a 1e9-row query the break() may leave running on the server; nothing after it should wait behind it
+  it('the deadline (PW_SQL_TIMEOUT_MS=3000) breaks a long query in flight with 504', async () => {
+    const t0 = Date.now();
+    await expect(runSql(src('select count(*) from dual connect by level <= 1000000000'))).rejects.toMatchObject({ status: 504 });
+    expect(Date.now() - t0).toBeLessThan(15000);
+  });
+
 });
