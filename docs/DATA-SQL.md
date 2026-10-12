@@ -18,9 +18,9 @@ a host, a user, a password or a file of its own.
 | PostgreSQL | `postgres://user:pass@host:5432/db` | `pg` | live (Docker) |
 | MySQL / MariaDB | `mysql://user:pass@host:3306/db` | `mysql2` | live (Docker, MySQL 8.4) |
 | SQL Server | `mssql://user:pass@host:1433/db?encrypt=false&trustServerCertificate=true&instance=NAME` | `mssql` | live (Azure SQL Edge in Docker) |
-| Oracle | `oracle://user:pass@host:1521/SERVICE` | `oracledb` (thin mode: no Instant Client) | **not live-tested**: mocked driver only |
-| Snowflake | `snowflake://user:pass@ACCOUNT/DATABASE/SCHEMA?warehouse=WH&role=READER` | `snowflake-sdk` | **not live-tested**: mocked driver only |
-| BigQuery | `bigquery://PROJECT?keyFile=/path/key.json&location=US&maxBytes=10000000000` | `@google-cloud/bigquery` | **not live-tested**: mocked driver only |
+| Oracle | `oracle://user:pass@host:1521/SERVICE` | `oracledb` (thin mode: no Instant Client) | **live-tested in CI** (gvenzl/oracle-free 23, `.github/workflows/db-live.yml`) |
+| Snowflake | `snowflake://user:pass@ACCOUNT/DATABASE/SCHEMA?warehouse=WH&role=READER` | `snowflake-sdk` | **not live-tested** unless the CI secret `PW_LIVE_SNOWFLAKE_URL` is set (then a live test runs); otherwise mocked driver only |
+| BigQuery | `bigquery://PROJECT?keyFile=/path/key.json&location=US&maxBytes=10000000000` | `@google-cloud/bigquery` | **tested against the goccy bigquery-emulator** in CI (not Google BigQuery). `?endpoint=http://host:port` points the driver at an emulator; set it only for that |
 
 User names and passwords are percent-decoded. No error a report author sees contains the URL or any part of it.
 
@@ -108,7 +108,7 @@ transactions, the server-side parse checks and BigQuery's dry run.
 - **PostgreSQL, SQL Server: not released yet.** Live-tested (PostgreSQL 16, Azure SQL Edge). The last review round found
   probe gaps (SQL Server: grants on system objects to the login; PostgreSQL: column, sequence, large-object and server
   setting rights). They are fixed and tested live, but a further clean round is the release criterion.
-- **Oracle, Snowflake, BigQuery: not released.** Not live-tested (mocked drivers only); BigQuery's login is not checked.
+- **Oracle, Snowflake, BigQuery: not released.** Oracle is live-tested in CI; BigQuery only against the emulator; Snowflake only when its CI secret is set. BigQuery's login is not checked.
 - **Stored procedures: not released.**
 - **Open by design:** `public`'s default EXECUTE on `xp_dirtree`, `xp_fileexist`, `xp_regread` in SQL Server's `master`
   (reachable only through EXEC, which the keyword scan and the SHOWPLAN check refuse; on Windows, revoke them from

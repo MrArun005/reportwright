@@ -1,12 +1,15 @@
 // @ts-check
 // BigQuery connections: bigquery://PROJECT?keyFile=/path/key.json&location=US&maxBytes=10000000000 — the
-// @google-cloud/bigquery package (no keyFile: Application Default Credentials). Not tested against live BigQuery (no
-// project was available): the safety logic is unit-tested with a mocked driver (tests/engine/sql-connectors.test.js).
+// @google-cloud/bigquery package (no keyFile: Application Default Credentials). The safety logic is unit-tested with a
+// mocked driver (tests/engine/sql-connectors.test.js); tests/live/bigquery.live.test.js runs it against the
+// bigquery-emulator in CI (not Google BigQuery itself: no live project is wired up).
 // Guards: a dry run first (no cost): BigQuery's own parse must say the statement type is SELECT, and the bytes it
 // would scan must be within maxBytes (default 10 GB); the real job then runs with maximumBytesBilled = maxBytes and a
 // job timeout, standard SQL, parameters bound positionally; result pages are read and counted on the client, and the
 // job is cancelled at the row or byte cap or the deadline. Give the service account only BigQuery Data Viewer and
 // Job User: the dry run is a second guard, not the first.
+// endpoint=http://host:port (optional, set by the admin in PW_DB_<NAME>): the same calls go to a BigQuery emulator
+// (ghcr.io/goccy/bigquery-emulator, the CI job in .github/workflows/db-live.yml). Never set it for real BigQuery.
 
 const DEFAULT_MAX_BYTES = 10e9;
 
@@ -17,6 +20,7 @@ export function bigqueryConfig(url) {
   const maxBytes = q.has('maxBytes') ? Number(q.get('maxBytes')) : DEFAULT_MAX_BYTES;
   return {
     projectId: u.hostname, ...(q.get('keyFile') ? { keyFilename: q.get('keyFile') } : {}),
+    ...(q.get('endpoint') ? { apiEndpoint: q.get('endpoint') } : {}),
     location: q.get('location') || undefined, maxBytes: Number.isFinite(maxBytes) && maxBytes > 0 ? maxBytes : DEFAULT_MAX_BYTES,
   };
 }

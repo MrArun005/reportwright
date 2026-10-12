@@ -105,6 +105,9 @@ describe('statement check (Oracle, Snowflake, BigQuery)', () => {
     expect(snowflakeConfig('snowflake://u:p@xy12345.eu-west-1/SALES/PUBLIC?warehouse=WH&role=READER')).toMatchObject({ account: 'xy12345.eu-west-1', username: 'u', password: 'p', database: 'SALES', schema: 'PUBLIC', warehouse: 'WH', role: 'READER' });
     expect(bigqueryConfig('bigquery://my-proj?keyFile=/k.json&location=EU&maxBytes=5000')).toEqual({ projectId: 'my-proj', keyFilename: '/k.json', location: 'EU', maxBytes: 5000 });
     expect(bigqueryConfig('bigquery://p').maxBytes).toBe(10e9);
+    // endpoint: only when set (the emulator in CI); real BigQuery gets no apiEndpoint
+    expect(bigqueryConfig('bigquery://p?endpoint=http://127.0.0.1:9050')).toMatchObject({ projectId: 'p', apiEndpoint: 'http://127.0.0.1:9050' });
+    expect(bigqueryConfig('bigquery://p')).not.toHaveProperty('apiEndpoint');
   });
 });
 
