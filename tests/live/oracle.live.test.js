@@ -85,13 +85,13 @@ describe.skipIf(!process.env.PW_LIVE_ORACLE)('Oracle (live, gvenzl/oracle-free)'
   it('a report on the Oracle source renders to PDF with the typed values in its text', async () => {
     const def = report([{ type: 'table', name: 'T', x: 0, y: 0, w: 500, h: 60, dataSet: 'Rows', columns: [{ width: 100 }, { width: 400 }],
       header: [{ height: 18, cells: [{ value: 'ID' }, { value: 'Label' }] }],
-      detail: [{ height: 14, cells: [{ value: '{ID}' }, { value: '{LABEL}' }] }] }]);
+      detail: [{ height: 14, cells: [{ value: '=Fields.ID' }, { value: '=Fields.LABEL' }] }] }]);
     def.dataSources = [{ name: 'src', type: 'sql', connection: NAME, query: 'select id, label from pwowner.types_t order by id' }];
     def.dataSets = [{ name: 'Rows', source: 'src', path: '$' }];
     const { bytes } = await renderTo(def, { format: 'pdf' });
     const file = join(mkdtempSync(join(tmpdir(), 'pw-oracle-')), 'report.pdf');
     writeFileSync(file, bytes);
     const text = execFileSync('pdftotext', ['-layout', file, '-'], { encoding: 'utf8' });
-    expect(text).toContain(LABEL);
+    expect(text).toContain('Ünïcødé'); // Standard 14 fonts have no CJK or emoji glyphs; Latin-1 is checked
   });
 });

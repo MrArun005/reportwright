@@ -49,8 +49,9 @@ export async function probeOracle(conn, oracledb) {
           AND table_schema IN (SELECT username FROM all_users WHERE oracle_maintained = 'Y'))
         -- a SELECT or READ this login was given, that it cannot pass on (not a directory: READ on one is a file read)
         OR (privilege IN ('SELECT', 'READ') AND grantable <> 'YES' AND NVL(type, 'TABLE') <> 'DIRECTORY')
-        -- 12c+ grants INHERIT PRIVILEGES on each new user to PUBLIC: it lets others' invoker-rights code use this user's rights
-        OR (privilege = 'INHERIT PRIVILEGES' AND table_name = USER AND grantable <> 'YES'))
+        -- 12c+ grants INHERIT PRIVILEGES on every user (this one and each other) to PUBLIC by default: it lets invoker-rights
+        -- code run with that user's rights. This login cannot create code, and any rights of its own are checked above
+        OR (privilege = 'INHERIT PRIVILEGES' AND grantee = 'PUBLIC' AND grantable <> 'YES'))
       AND ROWNUM <= 5`);
   if (grants.length) return `granted ${grants.map(r => r.P).join(', ')}`;
   const risky = await q(`SELECT table_name AS p FROM all_tab_privs WHERE grantee = 'PUBLIC' AND privilege = 'EXECUTE' AND table_name IN (${RISKY.map(x => `'${x}'`).join(', ')})`);
