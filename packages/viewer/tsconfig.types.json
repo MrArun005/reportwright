@@ -1,0 +1,10 @@
+{
+  "//": "the viewer's types (scripts/build-packages.mjs), from the JSDoc of the two entries. noResolve: their signatures use only their own typedefs, except designer onSave's report type, which paths maps to the engine package's report.d.ts (kept as an import of @reportwright/engine/report in the emit)",
+  "files": ["../../src/embed/index.js", "../../src/embed/designer.js", "../engine/report.d.ts"],
+  "compilerOptions": {
+    "allowJs": true, "declaration": true, "emitDeclarationOnly": true, "noCheck": true, "skipLibCheck": true, "noResolve": true,
+    "jsx": "react-jsx", "module": "esnext", "moduleResolution": "bundler", "target": "es2022",
+    "rootDir": "../../src/embed", "outDir": "dist/.types",
+    "paths": { "@reportwright/engine/report": ["../engine/report.d.ts"] }
+  }
+}
