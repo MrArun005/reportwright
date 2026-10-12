@@ -87,7 +87,7 @@ function openPreview(context: vscode.ExtensionContext, uri?: vscode.Uri) {
       fontsUrl: panel.webview.asWebviewUri(vscode.Uri.joinPath(dist, 'fonts')).toString() + '/',
       connectOrigin,
     });
-    const state = { viewerReady: false, errors: [] as string[], cspViolations: [] as string[] };
+    const state = { viewerReady: false, pages: undefined as number | undefined, errors: [] as string[], cspViolations: [] as string[] };
     previewState.set(key, state);
     const send = async () => {
       const { def, error } = readReport(doc.getText());
