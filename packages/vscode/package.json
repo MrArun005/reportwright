@@ -1,0 +1,62 @@
+{
+  "name": "reportwright-vscode",
+  "displayName": "ReportWright",
+  "description": "Edit, validate, preview and render ReportWright reports (*.pw.json) in VS Code; import SSRS, JasperReports and BIRT reports.",
+  "version": "0.1.0",
+  "publisher": "reportwright",
+  "license": "MIT",
+  "private": false,
+  "author": "Arun Mallikarjun",
+  "homepage": "https://github.com/MrArun005/reportwright/tree/main/packages/vscode#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/MrArun005/reportwright.git", "directory": "packages/vscode" },
+  "bugs": { "url": "https://github.com/MrArun005/reportwright/issues" },
+  "keywords": ["reportwright", "report", "reporting", "pdf", "excel", "ssrs", "jasperreports", "birt"],
+  "categories": ["Other", "Snippets"],
+  "engines": { "vscode": "^1.90.0" },
+  "main": "./dist/extension.js",
+  "activationEvents": ["onLanguage:json"],
+  "contributes": {
+    "commands": [
+      { "command": "reportwright.openPreview", "title": "ReportWright: Open Preview", "icon": "$(preview)" },
+      { "command": "reportwright.validate", "title": "ReportWright: Validate Report" },
+      { "command": "reportwright.renderPdf", "title": "ReportWright: Render to PDF" },
+      { "command": "reportwright.renderXlsx", "title": "ReportWright: Render to Excel" },
+      { "command": "reportwright.renderDocx", "title": "ReportWright: Render to Word" },
+      { "command": "reportwright.renderHtml", "title": "ReportWright: Render to HTML" },
+      { "command": "reportwright.importReport", "title": "ReportWright: Import SSRS / JasperReports / BIRT File…" }
+    ],
+    "menus": {
+      "editor/title": [{ "command": "reportwright.openPreview", "when": "resourceFilename =~ /\\.pw\\.json$/", "group": "navigation" }],
+      "commandPalette": [{ "command": "reportwright.openPreview", "when": "editorLangId == json" }]
+    },
+    "jsonValidation": [{ "fileMatch": "*.pw.json", "url": "./dist/schemas/report.schema.json" }],
+    "snippets": [{ "language": "json", "path": "./dist/snippets/report.json" }],
+    "configuration": {
+      "title": "ReportWright",
+      "properties": {
+        "reportwright.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of a ReportWright server for relative data URLs in previews (e.g. http://localhost:3000). Empty: previews run without a server, and data sources that need one show the viewer's message."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "compile": "tsc -p .",
+    "test": "node out/test/runTest.js",
+    "package": "npm run build && vsce package --no-dependencies --out reportwright-vscode.vsix"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.19.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.6.0",
+    "esbuild": "^0.28.2",
+    "jsonc-parser": "^3.3.1",
+    "mocha": "^10.8.2",
+    "typescript": "^5.9.3"
+  }
+}
