@@ -227,7 +227,9 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
     const orig = mocks.oracle.createPool;
     mocks.oracle.createPool = async (...a) => { const p = await orig(...a); const c = await p.getConnection(); const ex = c.execute.bind(c); c.execute = async (...x) => { const r = await ex(...x); if (r.resultSet) { const g = r.resultSet.getRows; r.resultSet.getRows = (k) => { asked.push(k); return g(k); }; } return r; }; return { getConnection: async () => c }; };
     limits.bytes = 1048576;
+    limits.rows = 1000; // CI sets PW_SQL_MAX_ROWS=50; this test reads 300
     expect(await runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select w from t' }, {})).toHaveLength(300);
+    Object.assign(limits, keep);
     expect(Math.max(...asked)).toBeLessThanOrEqual(4); // 1 MB / 4 / ~64 kB a row
     void log;
   });
