@@ -105,9 +105,10 @@ export async function oracle(url, text, values, ctx) {
         clk.overdue();
         await conn.execute('SET TRANSACTION READ ONLY');
         clk.overdue();
-        // fetchArraySize is the round trip: 1 meant one network round trip per row (a 50-row read took seconds); 200 rows at a
-        // time is the most a batch takes (per, below), and a 32 kB row makes that a few MB, inside the byte cap
-        const r = await conn.execute(text, values, { resultSet: true, outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: 200, prefetchRows: 200 });
+        // fetchArraySize is the round trip, and the most rows the driver buffers ahead of the row and byte counters below.
+        // 1 meant one network round trip per row (a 50-row read took seconds); 100 keeps a read of wide rows to a few MB
+        // (a row is at most a few tens of kB), and the counters refuse the batch the moment a cap is crossed
+        const r = await conn.execute(text, values, { resultSet: true, outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: 100, prefetchRows: 100 });
         const rs = r.resultSet;
         try {
           const odd = (r.metaData || []).find(m => !READABLE.has(m.dbType?.name ?? m.dbTypeName));
