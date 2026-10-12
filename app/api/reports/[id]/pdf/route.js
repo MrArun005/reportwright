@@ -2,7 +2,7 @@
 import { safeId } from '@/server/reports.js';
 import { baseUrl, checkTimeZone } from '@/server/renderer.js';
 import { principalOf, readRunnable, checkParameterValues } from '@/server/perms.js';
-import { renderInPool, streamInPool, admit } from '@/server/pool.js';
+import { renderInPool, streamInPool, arrive } from '@/server/pool.js';
 import { busyHeaders } from '@/server/auth.js';
 import { audit } from '@/server/audit.js';
 import { throughSnapshot } from '@/server/snapshots.js';
@@ -18,10 +18,12 @@ const STREAMS = new Set(['csv', 'xlsx', 'pdf']);
 const streams = (o) => { const f = o.format || 'pdf'; return STREAMS.has(f) && !(f === 'pdf' && (o.sign || o.encrypt)); };
 
 export async function GET(req, { params }) {
+  let ticket;
   try {
+    ticket = arrive(req); // counted from arrival: 429/503 before the session or the template is read
     const { id } = await params;
     const principal = await principalOf(req);
-    admit(principal); // 429/503 before anything is read
+    ticket.bind(principal); // 429/503 before anything is read
     const url = new URL(req.url);
     // ?pdfa=1 gives PDF/A-2b, ?ua=1 an accessible PDF (PDF/UA-1; with pdfa, PDF/A-2a). Signing is not offered here: this route has no API key (use /api/v1/render).
     const parameters = Object.fromEntries([...url.searchParams.entries()].filter(([k]) => k !== 'format' && k !== 'formulas' && k !== 'csv' && k !== 'pdfa' && k !== 'ua' && k !== 'timeZone'));
@@ -30,7 +32,7 @@ export async function GET(req, { params }) {
     const def = await readRunnable(principal, safeId(id));
     checkParameterValues(def, parameters, principal); // fixed lists and hidden parameters hold on the server too
     const opt = { parameters, format, baseUrl: baseUrl(req), pdfa: url.searchParams.get('pdfa') === '1', ua: url.searchParams.get('ua') === '1', formulas: url.searchParams.get('formulas') ?? undefined, csv: url.searchParams.get('csv') ?? undefined, timeZone: checkTimeZone(url.searchParams.get('timeZone')), principal }; // ?timeZone=: the viewer's zone
-    const r = await throughSnapshot({ def, opt, principal }, () => (streams(opt) ? streamInPool({ ref: safeId(id), def, opt }, { signal: req.signal }) : renderInPool({ ref: safeId(id), def, opt }, { signal: req.signal })));
+    const r = await throughSnapshot({ def, opt, principal }, () => (streams(opt) ? streamInPool({ ref: safeId(id), def, opt }, { signal: req.signal, ticket }) : renderInPool({ ref: safeId(id), def, opt }, { signal: req.signal, ticket })));
     await audit('report.render', { req, principal, report: id, format, params: parameters, detail: { pages: r.pages, ms: r.ms ?? undefined, via: 'server link', ...(r.snapshot !== 'off' ? { snapshot: r.snapshot } : {}) } });
     // a stream (a data CSV, Excel or plain PDF of a report that can stream): no length, its first rows go out while the rest render
     return new Response(r.stream || r.bytes, {
@@ -44,5 +46,5 @@ export async function GET(req, { params }) {
     });
   } catch (e) {
     return errorResponse(e, { status: e.status || (e.missingParameters ? 400 : 500), headers: busyHeaders(e), extra: { missingParameters: e.missingParameters } });
-  }
+  } finally { ticket?.release(); }
 }

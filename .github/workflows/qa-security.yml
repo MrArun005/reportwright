@@ -1,0 +1,123 @@
+name: QA security
+on:
+  workflow_call:
+    inputs:
+      ref: { type: string, default: '' }
+      tier: { type: string, default: 'quick' }
+  workflow_dispatch:
+    inputs:
+      ref: { type: string, default: '' }
+      tier: { type: choice, options: [quick, full], default: 'quick' }
+  push:
+    branches: [qa/security]
+env:
+  TZ: Asia/Kolkata
+  QA_SUITE: security
+  QA_TIER: ${{ inputs.tier || 'quick' }}
+  QA_DIR: ${{ github.workspace }}/qa-out
+permissions:
+  contents: read
+jobs:
+  pdf-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      - run: node qa/stress/pdf-fuzz.mjs
+      - if: always()
+        run: node qa/stress/summarize.mjs qa-out security-pdf-fuzz
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qa-security-part-pdf-fuzz
+          path: |
+            qa-out/results.jsonl
+            qa-out/fuzz-failures.json
+          if-no-files-found: ignore
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Start the server with no private host allowed (PW_INTERNAL_HOSTS empty)
+        run: QA_INTERNAL_HOSTS= qa/load/server.sh 3700
+      - name: SSRF, expression injection, oversized inputs, anonymous access, forged X-Forwarded-For
+        run: qa/load/security.sh 3700
+      - if: always()
+        run: node qa/stress/summarize.mjs qa-out security-server
+      - if: always()
+        run: tail -60 /tmp/next-qa.log
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with: { name: qa-security-part-server, path: qa-out/results.jsonl, if-no-files-found: ignore }
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22 }
+      - name: npm audit --omit=dev (high/critical FAIL, moderate/low WARN)
+        run: |
+          npm audit --omit=dev --json > audit.json || true
+          node -e '
+            const a=JSON.parse(require("fs").readFileSync("audit.json","utf8")),v=a.metadata?.vulnerabilities||{};
+            const names=Object.entries(a.vulnerabilities||{}).map(([n,x])=>`${n}(${x.severity})`).slice(0,12).join(" ");
+            const hc=(v.high||0)+(v.critical||0),ml=(v.moderate||0)+(v.low||0);
+            require("child_process").execFileSync("node",["qa/stress/rec.mjs","npm audit (prod deps)","npm audit --omit=dev","0 high, 0 critical",
+              `critical ${v.critical||0}, high ${v.high||0}, moderate ${v.moderate||0}, low ${v.low||0}${names?": "+names:""}${a.error?" error: "+a.error.summary:""}`,
+              a.error?"FAIL":hc?"FAIL":ml?"WARN":"PASS"],{stdio:"inherit"});'
+      - name: semgrep (p/javascript + p/nodejsscan + p/secrets; findings are WARN)
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep:1.95.0 semgrep scan --metrics=off --quiet \
+            --config p/javascript --config p/nodejsscan --config p/secrets \
+            --exclude node_modules --exclude 'public/*.js' --exclude '*.min.js' --exclude qa --json -o /src/semgrep.json src app bin proxy.js packages || true
+          node -e '
+            const fs=require("fs");let r;try{r=JSON.parse(fs.readFileSync("semgrep.json","utf8"))}catch(e){r=null}
+            const f=r?.results||[],by={};for(const x of f){const k=x.check_id.split(".").pop();by[k]=(by[k]||0)+1}
+            const top=Object.entries(by).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,n])=>k+"×"+n).join(" ");
+            const first=f.slice(0,5).map(x=>`${x.path}:${x.start.line}`).join(" ");
+            require("child_process").execFileSync("node",["qa/stress/rec.mjs","semgrep quick scan","semgrep p/javascript p/nodejsscan p/secrets","0 findings (findings are WARN for triage)",
+              r?`${f.length} findings, ${r.errors?.length||0} errors; ${top} ${first}`:"semgrep produced no JSON",r?(f.length?"WARN":"PASS"):"FAIL"],{stdio:"inherit"});'
+      - if: always()
+        run: node qa/stress/summarize.mjs qa-out security-audit
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qa-security-part-audit
+          path: |
+            qa-out/results.jsonl
+            semgrep.json
+            audit.json
+          if-no-files-found: ignore
+  report:
+    needs: [pdf-fuzz, server, audit]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { ref: '${{ inputs.ref }}', sparse-checkout: qa }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with: { pattern: 'qa-security-part-*', path: qa-out }
+      - run: node qa/stress/summarize.mjs qa-out security --fail-on-fail
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qa-security-results
+          path: |
+            qa-out/results.json
+            qa-out/summary.md

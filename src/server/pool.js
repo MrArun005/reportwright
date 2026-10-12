@@ -35,6 +35,7 @@
 // per-principal cap stops one user filling the queue. Background work is not capped here: its callers bound it (PW_BATCH_CONCURRENCY,
 // one thumbnail at a time).
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -133,9 +134,10 @@ const memoryFull = () => process.memoryUsage.rss() / 1048576 > memLimitMB() * 0.
 /** @typedef {{ w: Worker, ready: boolean, job: Job|null, renders: number, timer: any, big: boolean, cell: number }} Slot */
 
 const g = /** @type {any} */ (globalThis);
-/** @type {{ startFails: number, dying: Set<Worker>, dyingBig: Set<Worker>, slots: Slot[], queue: Job[], running: Map<string, number>, waiting: Map<string, number>, served: Map<string, number>, est: Map<string, number>, mem: Map<string, number>, seq: number, noWorker: string|null, stats: Record<string, number>, hist?: { counts: number[], sum: number, n: number }, lastFree?: number, grownMB?: number, grownAt?: number }} */
-const P = g.__pwRenderPool ||= { startFails: 0, dying: new Set(), dyingBig: new Set(), slots: [], queue: [], running: new Map(), waiting: new Map(), served: new Map(), est: new Map(), mem: new Map(), seq: 0, noWorker: null,
+/** @type {{ startFails: number, dying: Set<Worker>, dyingBig: Set<Worker>, slots: Slot[], queue: Job[], running: Map<string, number>, waiting: Map<string, number>, served: Map<string, number>, est: Map<string, number>, mem: Map<string, number>, seq: number, noWorker: string|null, stats: Record<string, number>, hist?: { counts: number[], sum: number, n: number }, lastFree?: number, grownMB?: number, grownAt?: number, arriving: Map<string, number>, credWho: Map<string, string>, arrivingTotal: number }} */
+const P = g.__pwRenderPool ||= { startFails: 0, dying: new Set(), dyingBig: new Set(), slots: [], queue: [], running: new Map(), waiting: new Map(), served: new Map(), est: new Map(), mem: new Map(), seq: 0, noWorker: null, arriving: new Map(), credWho: new Map(), arrivingTotal: 0,
   stats: { done: 0, failed: 0, rejected: 0, timedOut: 0, crashed: 0, recycled: 0, dropped: 0, heldForMemory: 0, restarts: 0, retriedBig: 0 } };
+P.arriving ||= new Map(); P.credWho ||= new Map(); P.arrivingTotal ||= 0;
 P.stats.heldForMemory ??= 0; P.stats.restarts ??= 0; P.stats.retriedBig ??= 0; P.mem ||= new Map(); P.dyingBig ||= new Set();
 
 /**
@@ -380,6 +382,7 @@ function waitAhead(cls) {
   let ms = 0;
   for (const j of P.queue) if (j.cls <= cls) ms += j.est;
   for (const s of P.slots) if (s.job) ms += Math.max(0, s.job.est - (Date.now() - s.job.at));
+  ms += P.arrivingTotal * (P.hist?.n ? (P.hist.sum / P.hist.n) * 1000 : 200); // ponytail: arrivals at the mean render time (their template is not known yet)
   return ms / Math.max(1, P.slots.length);
 }
 
@@ -403,14 +406,17 @@ async function runInline(j) {
   } catch (e) { j.reject(e); }
 }
 
-/** Why an interactive render for this principal would be refused now (429/503 with retryAfter), or null. */
+/** Why an interactive render for this principal would be refused now (429/503 with retryAfter), or null. Counts the
+ *  requests that have arrived but not reached the queue yet (P.arriving: reading the body, auth, the template), so a
+ *  flood is refused from arrival, not only once it reaches the pool. */
 function refusal(who) {
   if (poolSize() < 1 || P.noWorker) return null;
-  const fresh = !P.waiting.get(who) && !P.running.get(who);
-  const queued = P.queue.filter(x => !x.cls).length;
-  if (queued >= (fresh ? 2 * queueMax() : queueMax())) return busy('The server is busy rendering other reports. Try again shortly.', 503, waitAhead(0) || 1000);
-  if ((P.waiting.get(who) || 0) >= perPrincipalMax()) return busy('Too many of your renders are waiting. Wait for them to finish, then try again.', 429, waitAhead(0) || 1000);
+  const mine = (P.waiting.get(who) || 0) + (P.arriving.get(who) || 0);
+  const fresh = !mine && !P.running.get(who);
+  const queued = P.queue.filter(x => !x.cls).length + P.arrivingTotal;
   const wait = waitAhead(0);
+  if (queued >= (fresh ? 2 * queueMax() : queueMax())) return busy('The server is busy rendering other reports. Try again shortly.', 503, wait || 1000);
+  if (mine >= perPrincipalMax()) return busy('Too many of your renders are waiting. Wait for them to finish, then try again.', 429, wait || 1000);
   if (!fresh && queued && wait > maxWaitMs()) return busy(`The server is busy: this render would wait about ${Math.round(wait / 1000)} s. Try again shortly.`, 503, wait);
   return null;
 }
@@ -419,14 +425,53 @@ function refusal(who) {
  *  to a caller who is over the limit (submit checks again). @param {any} principal */
 export function admit(principal) { const no = refusal(principalId(principal)); if (no) { P.stats.rejected++; throw no; } }
 
+const credOf = (req) => { const h = req.headers; const c = h.get('authorization') || h.get('x-api-key') || h.get('cookie') || ''; return crypto.createHash('sha256').update(c).digest('base64url').slice(0, 22); };
+
+/**
+ * The first line of a render route, before auth or the body: admission from arrival. Counts this request as arriving
+ * for its caller (known by the credential it presents, mapped to its principal once it has signed in) and refuses it
+ * at once (429/503, retryAfter) when the caller or the server is over the limit. bind(principal) after auth checks again
+ * as that principal; submit({ ticket }) moves the count to the queue; release() (in finally) ends it. Unknown
+ * credentials only fill their own bucket.
+ * @param {Request} req
+ */
+export function arrive(req) {
+  const cred = credOf(req);
+  let who = P.credWho.get(cred) ?? `cred:${cred}`;
+  const no = refusal(who);
+  if (no) { P.stats.rejected++; throw no; }
+  let live = true;
+  bump(P.arriving, who, 1); P.arrivingTotal++;
+  const t = {
+    release() { if (!live) return; live = false; bump(P.arriving, who, -1); P.arrivingTotal--; },
+    /** auth refused this credential (a revoked key): its later requests count as their own, not as the principal it once was */
+    forget() { P.credWho.delete(cred); },
+    /** @param {any} principal */
+    bind(principal) {
+      const id = principalId(principal);
+      if (P.credWho.size > 10000) P.credWho.clear();
+      P.credWho.set(cred, id);
+      if (live && id !== who) { bump(P.arriving, who, -1); bump(P.arriving, id, 1); }
+      who = id;
+      if (!live) return;
+      bump(P.arriving, who, -1); // checked as if not yet here (this request is the one asking)
+      const no = refusal(who);
+      bump(P.arriving, who, 1);
+      if (no) { P.stats.rejected++; t.release(); throw no; }
+    },
+  };
+  return t;
+}
+
 /**
  * Queue one task for the pool. Rejects at once with 429 or 503 (and .retryAfter, seconds) when the server is full.
  * @param {any} msg { kind: 'render', ref|def, how?, opt } or { kind: 'thumb', def, principal, base }
- * @param {{ background?: boolean, principal?: any, key?: string, signal?: AbortSignal, transfer?: any[], started?: { v: boolean } }} [o] key: what to
+ * @param {{ background?: boolean, principal?: any, key?: string, signal?: AbortSignal, transfer?: any[], started?: { v: boolean }, ticket?: { release: () => void } }} [o] key: what to
  *   estimate the render time by (the template); signal: the request's, a render still waiting when the caller leaves is
  *   dropped; transfer: what the message moves to the worker (a stream's port)
  */
-export function submit(msg, { background = false, principal, key = '', signal, transfer, started } = {}) {
+export function submit(msg, { background = false, principal, key = '', signal, transfer, started, ticket } = {}) {
+  ticket?.release(); // from here it is counted in the queue, not as arriving
   const who = principalId(principal);
   const cls = background ? 1 : 0;
   return new Promise((resolve, reject) => {
@@ -436,7 +481,7 @@ export function submit(msg, { background = false, principal, key = '', signal, t
     j.msg.id = j.id;
     if (poolSize() < 1 || P.noWorker) return void runInline(j);
     fill();
-    const fresh = !P.waiting.get(who) && !P.running.get(who);
+    const fresh = !P.waiting.get(who) && !P.running.get(who) && !P.arriving.get(who);
     if (!cls) { const no = refusal(who); if (no) { P.stats.rejected++; return reject(no); } }
     j.fresh = fresh; // its wait is one turn of round robin, however long the renders ahead of it are
     if (signal) {
@@ -456,25 +501,25 @@ export function submit(msg, { background = false, principal, key = '', signal, t
  * def: a definition the caller has already read and checked (batches).
  * @returns {Promise<{ bytes: Uint8Array, contentType: string, ext: string, name: string|null, pages: number, ms: number|null, warnings: number }>}
  */
-/** @param {{ ref?: any, def?: any, how?: string, opt?: any }} r @param {{ background?: boolean, signal?: AbortSignal }} [o] */
-export function renderInPool({ ref, def, how = 'template', opt = {} }, { background = false, signal } = {}) {
+/** @param {{ ref?: any, def?: any, how?: string, opt?: any }} r @param {{ background?: boolean, signal?: AbortSignal, ticket?: { release: () => void } }} [o] */
+export function renderInPool({ ref, def, how = 'template', opt = {} }, { background = false, signal, ticket } = {}) {
   const key = typeof ref === 'string' ? ref : def?.name ? `def:${def.name}` : 'inline';
-  return submit({ kind: 'render', ref, def, how, opt }, { background, principal: opt.principal, key, signal });
+  return submit({ kind: 'render', ref, def, how, opt }, { background, principal: opt.principal, key, signal, ticket });
 }
 
 /**
  * renderInPool for a format that can stream (the data CSV): the result is the usual one (bytes), or, when the report
  * streams, { stream: ReadableStream, contentType, ext, name, pages: 0, done } where done settles when the render ends.
  * The response starts with the first rows; memory stays flat however many rows (docs/research/STREAMING-1M.md).
- * @param {{ ref?: any, def?: any, how?: string, opt?: any }} r @param {{ background?: boolean, signal?: AbortSignal }} [o]
+ * @param {{ ref?: any, def?: any, how?: string, opt?: any }} r @param {{ background?: boolean, signal?: AbortSignal, ticket?: { release: () => void } }} [o]
  * @returns {Promise<any>}
  */
-export function streamInPool({ ref, def, how = 'template', opt = {} }, { background = false, signal } = {}) {
+export function streamInPool({ ref, def, how = 'template', opt = {} }, { background = false, signal, ticket } = {}) {
   const key = typeof ref === 'string' ? ref : def?.name ? `def:${def.name}` : 'inline';
   const { port1, port2 } = new MessageChannel();
   const src = portSource(port1, { csv: opt.format === 'csv', format: opt.format || null, report: typeof ref === 'string' ? ref : 'inline' });
   const started = { v: false }; // once the head is out, a failed render cannot run again
-  const done = submit({ kind: 'render', ref, def, how, opt, stream: true, port: port2 }, { background, principal: opt.principal, key, signal, transfer: [port2], started });
+  const done = submit({ kind: 'render', ref, def, how, opt, stream: true, port: port2 }, { background, principal: opt.principal, key, signal, transfer: [port2], started, ticket });
   let streaming = false;
   // the head (port) and the end (the worker's reply) come on different channels, in either order
   return new Promise((resolve, reject) => {
@@ -490,7 +535,8 @@ export function poolStats() {
     memory: { ...plan(), rssMB: Math.round(process.memoryUsage.rss() / 1048576) },
     workers: { size: poolSize(), alive: P.slots.length, ready: P.slots.filter(s => s.ready).length, busy: P.slots.filter(s => s.job).length, inline: P.noWorker },
     queue: { interactive: q(0), background: q(1), max: queueMax(), perPrincipalMax: perPrincipalMax(), estimatedWaitMs: Math.round(waitAhead(1)) },
-    principals: { running: P.running.size, waiting: P.waiting.size },
+    principals: { running: P.running.size, waiting: P.waiting.size, arriving: P.arriving.size },
+    arriving: P.arrivingTotal,
     totals: { ...P.stats },
     durations: { buckets: BUCKETS, counts: [...(P.hist?.counts || [])], sum: P.hist?.sum || 0, count: P.hist?.n || 0 },
   };

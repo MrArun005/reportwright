@@ -4,8 +4,8 @@
 // PW_SIGN_P12 (its path) and PW_SIGN_PASSWORD. Only routes behind an API key may sign:
 // a signature vouches for the content, and anyone who can reach an open route could choose it.
 import fs from 'node:fs/promises';
-import { SignPdf } from '@signpdf/signpdf';
-import { P12Signer } from '@signpdf/signer-p12';
+import crypto from 'node:crypto';
+import { readPkcs12 } from './pkcs12.js';
 
 /**
  * options: exportPdf's sign option (@reportwright/pdf signs as it writes, with a .p12 signer through its cmsSigner).
@@ -25,7 +25,7 @@ export async function pdfSigner({ name = 'ReportWright', reason = 'Issued by Rep
     try { p12 = await fs.readFile(file); } catch { throw unreadable(); }
     cached = { file, mtimeMs: st.mtimeMs, size: st.size, password, p12, signer: await p12Signer(p12, password) };
   }
-  const { p12, signer: p12signer } = cached;
+  const { signer: p12signer } = cached;
   /** the deprecated @signpdf signer, made only when its sign() is used */
   let legacy;
   return {
@@ -33,7 +33,12 @@ export async function pdfSigner({ name = 'ReportWright', reason = 'Issued by Rep
     // loaded when used: it needs pdf-lib, which is only a development dependency now
     prepare: async (doc) => (await import('@signpdf/placeholder-pdf-lib')).pdflibAddPlaceholder({ pdfDoc: doc, reason, contactInfo, name, location }),
     save: { useObjectStreams: false }, // the signature dictionary must stay findable in the file
-    sign: async (pdf) => new Uint8Array(await new SignPdf().sign(Buffer.from(pdf), legacy ??= new P12Signer(p12, { passphrase: password }))),
+    sign: async (pdf) => {
+      const { SignPdf, Signer } = await import('@signpdf/signpdf');
+      // @signpdf's signer interface over this one: a detached CMS over the bytes it is given
+      legacy ??= new (class extends Signer { async sign(/** @type {Buffer} */ b, /** @type {Date} */ at) { return Buffer.from(await p12signer({ digest: crypto.createHash('sha256').update(b).digest(), hash: 'SHA-256', subFilter: 'adbe.pkcs7.detached', date: at || new Date() })); } })();
+      return new Uint8Array(await new SignPdf().sign(Buffer.from(pdf), legacy));
+    },
   };
 }
 
@@ -49,30 +54,24 @@ export const p12Loads = () => loads;
  * @param {Uint8Array} p12 @param {string} password
  */
 export async function p12Signer(p12, password) {
-  const forge = (await import('node-forge')).default;
   const { cmsSigner } = await import('@reportwright/pdf');
   const setup = (/** @type {string} */ m) => Object.assign(new Error(m), { status: 500 });
   loads++;
   let box;
-  try { box = forge.pkcs12.pkcs12FromAsn1(forge.asn1.fromDer(forge.util.createBuffer(Buffer.from(p12).toString('binary'))), password); }
+  try { box = readPkcs12(p12, password); }
   catch { throw setup('PW_SIGN_P12 could not be opened (a wrong PW_SIGN_PASSWORD, or not a PKCS#12 file)'); }
-  const bags = (/** @type {string} */ type) => box.getBags({ bagType: type })[type] ?? [];
-  const key = /** @type {any} */ ([...bags(forge.pki.oids.pkcs8ShroudedKeyBag), ...bags(forge.pki.oids.keyBag)][0]?.key);
-  if (!key?.n) throw setup('PW_SIGN_P12 has no RSA private key');
-  const certs = bags(forge.pki.oids.certBag).map((b) => /** @type {any} */ (b.cert)).filter(Boolean);
-  const mine = certs.findIndex((c) => c.publicKey.n?.equals(key.n));
+  const key = box.keys[0];
+  if (key?.asymmetricKeyType !== 'rsa') throw setup('PW_SIGN_P12 has no RSA private key');
+  const certs = box.certs.map((d) => new crypto.X509Certificate(d));
+  const mine = certs.findIndex((c) => c.checkPrivateKey(key));
   if (mine < 0) throw setup("PW_SIGN_P12 has no certificate for its key");
   certs.unshift(certs.splice(mine, 1)[0]);
   // an expired or not yet valid certificate signs nothing: readers would show the signature as invalid
-  const now = Date.now(), v = certs[0].validity;
-  if (!(v.notBefore.getTime() <= now && now <= v.notAfter.getTime())) throw setup("PW_SIGN_P12's certificate is expired or not yet valid");
+  const now = Date.now(), c = certs[0];
+  if (!(Date.parse(c.validFrom) <= now && now <= Date.parse(c.validTo))) throw setup("PW_SIGN_P12's certificate is expired or not yet valid");
   return cmsSigner({
-    certs: certs.map((c) => forge.pki.certificateToPem(c)).join('\n'),
+    certs: certs.map((x) => new Uint8Array(x.raw)),
     keyAlgorithm: 'rsa',
-    sign(bytes, hash) {
-      const md = { 'SHA-256': forge.md.sha256, 'SHA-384': forge.md.sha384, 'SHA-512': forge.md.sha512 }[hash].create();
-      md.update(Buffer.from(bytes).toString('binary'));
-      return Uint8Array.from(Buffer.from(key.sign(md), 'binary'));
-    },
+    sign: (bytes, hash) => new Uint8Array(crypto.sign({ 'SHA-256': 'sha256', 'SHA-384': 'sha384', 'SHA-512': 'sha512' }[hash], bytes, key)), // PKCS#1 v1.5
   });
 }

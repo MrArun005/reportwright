@@ -1,0 +1,66 @@
+name: QA stress
+on:
+  workflow_call:
+    inputs:
+      ref: { type: string, default: '' }
+      tier: { type: string, default: 'quick' }
+  workflow_dispatch:
+    inputs:
+      ref: { type: string, default: '' }
+      tier: { type: choice, options: [quick, full], default: 'quick' }
+  push:
+    branches: [qa/stress]
+permissions:
+  contents: read
+jobs:
+  shard:
+    runs-on: ubuntu-latest   # 4 cores: the parallel shard reports 'auto' vs off on it
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - { name: stream, checks: stream }
+          - { name: render, checks: nonstream nesting }
+          - { name: content, checks: samples scripts fonts }
+          - { name: images, checks: images }
+          - { name: leak, checks: leak }
+          - { name: parallel, checks: parallel }
+    env:
+      TZ: Asia/Kolkata
+      QA_SUITE: stress
+      QA_TIER: ${{ inputs.tier || 'quick' }}
+      QA_DIR: ${{ github.workspace }}/qa-out
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils qpdf imagemagick time
+      - if: matrix.shard.name == 'content'
+        run: npm run fonts:cjk
+      - name: Run ${{ matrix.shard.checks }}
+        run: node --expose-gc --max-old-space-size=8192 qa/stress/run.mjs ${{ matrix.shard.checks }}
+      - if: always()
+        run: node qa/stress/summarize.mjs qa-out stress-${{ matrix.shard.name }}
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with: { name: 'qa-stress-part-${{ matrix.shard.name }}', path: 'qa-out/results.jsonl', if-no-files-found: ignore }
+  report:
+    needs: shard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { ref: '${{ inputs.ref }}', sparse-checkout: qa }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with: { pattern: 'qa-stress-part-*', path: qa-out }
+      - run: node qa/stress/summarize.mjs qa-out stress --fail-on-fail
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qa-stress-results
+          path: |
+            qa-out/results.json
+            qa-out/summary.md

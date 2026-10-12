@@ -4,10 +4,9 @@
 // page's compressed content stream and what it used (fonts, glyphs, opacities). A job sent while the pages are still
 // being counted (defer) is laid out and held, its bands that read Globals laid out again once the count comes
 // ({ total }). Jobs run one at a time, in the order they came. Node only.
-import { render, FontStore } from '../engine/index.js';
-import { reband, CAPPED } from '../engine/paged.js';
-import { createPdfStream, paintPage, paintEnv } from './pdfstream.js';
-import { latin1 } from './pdfpaint.js';
+import { __streamPaint } from './streampaint.js';
+
+const { render, FontStore, createPdfStream, paintPage, paintEnv, latin1, reband, CAPPED } = __streamPaint;
 
 const proc = /** @type {any} */ (globalThis).process;
 const { parentPort, workerData } = proc.getBuiltinModule('node:worker_threads');
