@@ -74,7 +74,27 @@ Renders run in a pool of worker threads, never on the thread that answers reques
 
 ### Health
 
-`GET /api/v1/health` (a service key, or an admin's key with accounts on): the render pool's workers (`size`, `alive`, `ready`, `busy`), queue depth by class (`interactive`, `background`), the estimated wait in ms, and totals since start (`done`, `failed`, `rejected`, `timedOut`, `crashed`, `recycled`, `dropped`).
+`GET /api/v1/health` (a service key, or an admin's key with accounts on): the render pool's workers (`size`, `alive`, `ready`, `busy`), queue depth by class (`interactive`, `background`), the estimated wait in ms, and totals since start (`done`, `failed`, `rejected`, `timedOut`, `crashed`, `recycled`, `dropped`). The answer is `{ ok, uptimeS, rssMB, render }`. `render.arriving` counts renders that have arrived but not yet reached the queue (body, auth and template still being read); the admission check counts them too.
+
+### Probes, metrics and cron
+
+- `GET /api/v1/livez`: `{ ok: true }` while the process answers. No key.
+- `GET /api/v1/readyz`: `{ ok, checks: { storage, workers } }`. 200 when storage answers a read within 3 s and a render worker is ready (or renders run on the request thread); 503 otherwise. No key.
+- `GET /api/v1/metrics`: Prometheus text (renders by outcome, a render duration histogram, queue depth, workers, memory, HTTP answers). A service key, or an admin's key with accounts on, as for `/health`.
+- `GET /api/v1/cron`: one scheduler tick plus the batch queue, for hosts without a long-lived process (Vercel Cron). Needs `Authorization: Bearer $CRON_SECRET`; the secret must be at least 16 characters, and without it the route answers 404. Idempotent.
+
+### Other routes
+
+| Route | What it does |
+|---|---|
+| `GET /api/auth/me` | `{ email, role }` of the signed-in user, or 401. |
+| `GET /api/auth/oidc/start`, `GET /api/auth/saml/login` | Start an OIDC or SAML sign-in (`?next=/path`). |
+| `GET /api/auth/saml/finish` | Completes the SAML sign-in begun in this browser (`?h=`). |
+| `GET`, `DELETE /api/account/devices` | The signed-in user's known browsers; DELETE `{ id }` removes one. Only for the user themselves. |
+| `/api/data/proxy` | REST proxy for data sources. Only hosts in `PW_PROXY_ALLOW`, at every redirect, never a private address. |
+| `POST /api/data/sql/build` | Designers only. Turns the visual builder's query into one SELECT for the connection's dialect. Runs nothing. |
+| `GET /api/data/sql/schema?connection=` | Designers only. Tables, columns and relations of a SQL connection, read through its read-only login. |
+| `/api/sample/hard`, `/api/sample/torture`, `/api/sample/sales/[year]`, `/api/sample/stress/[rows]` | Sample data for the demo reports. `hard` takes `?rows=` (max 200,000). |
 
 ### PDF passwords and permissions
 

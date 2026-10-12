@@ -22,7 +22,7 @@ The package is small: the fonts are downloaded on demand (no install script runs
 it is written.
 
 ```bash
-npm i @reportwright/engine @reportwright/fonts @reportwright/fonts-cjk
+npm i @reportwright/engine@next @reportwright/fonts@next @reportwright/fonts-cjk@next
 npx reportwright-fonts-cjk              # into the cache folder (below), where defaultFontStore() looks
 npx reportwright-fonts-cjk public/pw/fonts/cjk   # or a folder you serve to the viewer (fontsUrl + cjk/)
 ```

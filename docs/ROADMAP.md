@@ -23,18 +23,18 @@ Three facts work for us:
 | Export | PDF, Excel, HTML (**interactive, works offline**), CSV. All on the server too. |
 | Server | Render API, batches, schedules (DST-safe), webhooks, API keys, SSRF guard, optional basic auth. |
 | Designer | Toolbox, inspector, data panel, expression editor with autocomplete, **chart gallery drawn from the report's own API data**, smart guides, rulers, align/distribute, themes, named styles, version history, light and dark theme. |
-| Tests | 116 Vitest (engine, golden, security, interactivity), e2e suite, engine boundary check. |
+| Tests | 981 unit tests at the last recorded gate (FEATURES), e2e suite, engine boundary check, and QA suites under `tests/` (load, security, rival-best, engines). |
 
 ### Honest gaps
 
-- Two font families only; no RTL/Indic/CJK shaping in the report body.
-- Data setup is "type a JSONPath"; no SQL; no response explorer.
-- No `.rdlx`/`.rdl` importer.
-- No users, roles or permissions; one shared password.
-- Files on one disk; the job queue dies on restart.
+- Fonts: Latin, Hindi, Arabic, Hebrew, Thai and CJK are bundled or added through `fonts-cjk`; other Indic scripts need an uploaded font.
+- SQL on the server: SQLite and MySQL released; PostgreSQL and SQL Server built, not released; Oracle, Snowflake and BigQuery built, not live-tested.
+- Importers exist for ActiveReports (`.rdlx-json`), SSRS (`.rdl`, `.rdlc`), JasperReports (`.jrxml`) and BIRT (`.rptdesign`). SSRS maps and Jasper/BIRT crosstabs are dropped on import (being fixed).
+- Accounts, roles, per-report and per-folder permissions, OIDC and SAML sign-in, two-factor sign-in and an audit log are built. The audit hash chain is beta.
+- Storage can be shared (SQLite, PostgreSQL, MySQL, SQL Server, S3-compatible). Queue and scheduler use database leases; Redis is not used.
 - Embed bundle 2.6 MB; interactive HTML 8 MB.
-- 7 chart types; no rich text in cells; no PDF/A, forms or signatures.
-- Not published on npm; no docs site; no community.
+- Charts: more than 7 types (see FEATURES). PDF/A and PKCS#12 signatures are built.
+- Published on npm (`next` at 0.14.0-rc.6; see README). A live demo site exists. No community figures are recorded here.
 
 ## The scorecard
 
