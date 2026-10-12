@@ -1,66 +1,45 @@
-// CI diagnostic (not a test): one node-oracledb variant per process, on the CLOB-only query that hung in db-live.
-// usage: node tests/live/oracle-diag.mjs <variant>   (env PW_LIVE_ORACLE)
+// CI diagnostic (not a test): one scenario per process, on the CLOB-only query that hung in db-live.
+// usage: node tests/live/oracle-diag.mjs <variant>   (env PW_LIVE_ORACLE, PW_SQL_TIMEOUT_MS)
 import oracledb from 'oracledb';
 import { oracleConfig } from '../../src/server/sql/oracle.js';
+import { runSql } from '../../src/server/sql.js';
 
 const v = process.argv[2];
 const Q = 'select notes from pwowner.types_t where id = 1';
-const Q2 = 'select id, notes from pwowner.types_t where id = 1';
-const Q3 = 'select notes from pwowner.types_t where id = 3';
-const variants = {
-  // N and M reuse A's query below
-  A: { q: Q, opts: {} },                                             // execute, defaults
-  B: { q: Q, opts: { fetchArraySize: 100, prefetchRows: 100 } },
-  C: { q: Q, opts: { resultSet: true, fetchArraySize: 100, prefetchRows: 100, outFormat: oracledb.OUT_FORMAT_OBJECT } },
-  D: { q: Q, opts: { fetchInfo: { NOTES: { type: oracledb.STRING } } } },           // CLOB as string
-  E: { q: Q, opts: { fetchTypeHandler: (m) => (m.dbType === oracledb.DB_TYPE_CLOB ? { type: oracledb.STRING } : undefined) } },
-  F: { q: Q2, opts: {} },                                            // two columns
-  G: { q: Q3, opts: {} },                                            // the 3.2 MB CLOB row
-  H: { q: Q3, opts: { fetchInfo: { NOTES: { type: oracledb.STRING } } } },
-  I: { q: Q, opts: {}, readLob: true },                               // execute, then getData on the locator
-  J: { q: 'select 1 as one from dual', opts: {} },                   // control
-};
-const spec = variants[v === 'N' ? 'A' : v === 'M' ? 'A' : v];
-if (!spec) { console.log('unknown variant', v); process.exit(2); }
 const t0 = Date.now();
 const log = (...a) => console.log(`[${v} +${Date.now() - t0}ms]`, ...a);
-// driver-shaped flows (K: as src/server/sql/oracle.js; L: K without getStatementInfo; N: A after a 30 s wait; M: count first)
-const flow = async (conn, sqlText, { info = true, resultSetOpts = { fetchArraySize: 100, prefetchRows: 100 } } = {}) => {
-  if (info) { const i = await conn.getStatementInfo(sqlText); log('stmt type', i.statementType); }
-  await conn.execute('SET TRANSACTION READ ONLY'); log('readonly');
-  const r = await conn.execute(sqlText, [], { resultSet: true, outFormat: oracledb.OUT_FORMAT_OBJECT, ...resultSetOpts });
-  log('resultset opened', JSON.stringify(r.metaData.map(m => m.name)));
+const withConn = async (fn, opts = {}) => {
+  const c = await oracledb.getConnection(oracleConfig(process.env.PW_LIVE_ORACLE));
+  c.callTimeout = 5000;
+  try { return await fn(c); } finally { await c.close(opts).catch(() => {}); }
+};
+const readAll = async (c, sql, o) => {
+  await c.execute('SET TRANSACTION READ ONLY');
+  const r = await c.execute(sql, [], { resultSet: true, outFormat: oracledb.OUT_FORMAT_OBJECT, ...o });
   const rs = r.resultSet;
   try {
     for (;;) {
-      const batch = await rs.getRows(100);
-      log('batch', batch.length);
-      if (!batch.length) break;
-      for (const row of batch) for (const [k, val] of Object.entries(row)) if (val && typeof val.getData === 'function') { const d = await val.getData(); log('lob read', k, d.length); await val.close?.().catch(() => {}); }
+      const b = await rs.getRows(100);
+      if (!b.length) break;
+      for (const row of b) for (const val of Object.values(row)) if (val && typeof val.getData === 'function') log('lob', (await val.getData()).length);
     }
-  } finally { await rs.close(); log('rs closed'); }
+  } finally { await rs.close(); }
+  await c.rollback();
 };
-if (v === 'K' || v === 'L') { const c = await oracledb.getConnection(oracleConfig(process.env.PW_LIVE_ORACLE)); c.callTimeout = 5000; try { await flow(c, Q, { info: v === 'K' }); } catch (e) { log('ERROR', e.code, e.message.split('\n')[0]); } finally { await c.rollback().catch(() => {}); await c.close().catch(() => {}); log('closed'); } process.exit(0); }
-if (v === 'N') { await new Promise(r => setTimeout(r, 30000)); }
-if (v === 'M') { const c = await oracledb.getConnection(oracleConfig(process.env.PW_LIVE_ORACLE)); c.callTimeout = 5000; const r0 = await c.execute('select count(*) n from pwowner.types_t'); log('count', JSON.stringify(r0.rows)); await c.close().catch(() => {}); }
-const conn = await oracledb.getConnection(oracleConfig(process.env.PW_LIVE_ORACLE));
-conn.callTimeout = 5000; // a hang becomes an error, not a stuck process
-try {
-  log('connected');
-  await conn.execute('SET TRANSACTION READ ONLY');
-  log('readonly set');
-  const r = await conn.execute(spec.q, [], { ...spec.opts });
-  log('executed rows=', r.rows?.length, 'cols=', JSON.stringify(r.metaData?.map(m => m.name)));
-  const first = r.rows?.[0];
-  const val = Array.isArray(first) ? first[first.length - 1] : first?.NOTES;
-  if (spec.readLob && val && typeof val.getData === 'function') { const s = await val.getData(); log('lob len', s.length); }
-  else log('value type', typeof val, val && val.constructor?.name, typeof val === 'string' ? val.length : '');
-  await conn.rollback();
-  log('OK');
-} catch (e) {
-  log('ERROR', e.code || '', e.message.split('\n')[0]);
-  process.exitCode = 1;
-} finally {
-  await conn.close({ drop: true }).catch(() => {});
-  log('closed');
-}
+// the driver's own path (pool, probe, statement info, read-only, batches), one query, in this process
+const drv = async (label, q) => { const t = Date.now(); try { const r = await runSql({ connection: 'x', query: q }); log(label, 'ok', Date.now() - t, 'ms', JSON.stringify(r).slice(0, 50)); } catch (e) { log(label, 'ERR', Date.now() - t, 'ms', e.status, e.message); } };
+const scenarios = {
+  // plain node-oracledb, fetch options as the driver uses them
+  D1: () => withConn(c => readAll(c, Q, { fetchArraySize: 100, prefetchRows: 100 })),
+  D2: () => withConn(c => readAll(c, Q, { fetchArraySize: 1, prefetchRows: 1 })),
+  D3: () => withConn(c => readAll(c, Q, {})),
+  // the driver's path, first call / after a count / twice
+  P1: () => drv('clob', Q),
+  P2: async () => { await drv('select1', 'select 1 as one from dual'); await drv('clob', Q); },
+  P3: async () => { await drv('clob1', Q); await drv('clob2', Q); },
+  P4: async () => { await drv('count', 'select count(*) as n from pwowner.types_t'); await drv('clob', Q); },
+};
+const s = scenarios[v];
+if (!s) { log('unknown'); process.exit(2); }
+try { await s(); log('OK'); } catch (e) { log('ERROR', e.code || '', e.message.split('\n')[0]); }
+process.exit(0);
