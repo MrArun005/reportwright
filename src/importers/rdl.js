@@ -490,8 +490,10 @@ function toRdlx(root, notes, year, resolve) {
 
   /* ---------------------------------------------------------------- maps */
 
-  // an untrusted file: caps on what one map may decode (each hit is noted)
-  const MAP_MAX_SHAPES = 20_000, MAP_MAX_POINTS = 1_000_000, MAP_MAX_BYTES = 16e6;
+  // an untrusted file: running totals over every map in the import, checked before each decode / append (a hit is noted)
+  const MAP_MAX_SHAPES = 20_000, MAP_MAX_POINTS = 200_000, MAP_MAX_BYTES = 4e6;
+  let mapShapes = 0, mapPoints = 0, mapBytes = 0;
+  const OVER = { over: true }; // sqlGeography: the shape would pass the points cap
 
   /**
    * An SSRS map → { Type: 'ssrsmap' } for rdlx.js: the first polygon layer colours its shapes by the analytical data (the
@@ -503,13 +505,18 @@ function toRdlx(root, notes, year, resolve) {
     const notes = it.__notes;
     const layers = kids(kid(e, 'MapLayers'));
     const features = [];
-    let points = 0, bad = 0, over = false;
+    let bad = 0, over = false;
     const embedded = (layer, geom) => {
       for (const sh of kids(kid(layer, geom === 'line' ? 'MapLines' : geom === 'point' ? 'MapPoints' : 'MapPolygons'))) {
-        if (features.length >= MAP_MAX_SHAPES || points >= MAP_MAX_POINTS) { over = true; break; }
-        const g = sqlGeography(raw(sh, 'VectorData'), MAP_MAX_POINTS - points);
+        const vd = raw(sh, 'VectorData') || '';
+        const bytes = Math.floor(vd.length * 3 / 4);
+        if (mapShapes >= MAP_MAX_SHAPES || mapPoints >= MAP_MAX_POINTS || mapBytes + bytes > MAP_MAX_BYTES) { over = true; break; }
+        mapBytes += bytes;
+        const g = sqlGeography(vd, MAP_MAX_POINTS - mapPoints);
+        if (g === OVER) { over = true; break; }
         if (!g) { bad++; continue; }
-        points += g.n;
+        mapShapes++;
+        mapPoints += g.n;
         delete g.n;
         features.push({ type: 'Feature', properties: Object.fromEntries(list(sh, 'MapFields', 'MapField').map(f => [raw(f, 'Name'), raw(f, 'Value')])), geometry: g });
       }
@@ -567,7 +574,7 @@ function toRdlx(root, notes, year, resolve) {
       if (kid(layer, 'MapPolygonRules')?.children.length > 1 || kid(layer, 'MapCenterPointRules')) notes.push(`some rules of the layer "${layer.attrs.Name}" (sizes, markers, centre points) are left out.`);
     }
     if (bad) notes.push(`${bad} embedded shapes could not be read (or are too large), so they are left out.`);
-    if (over) notes.push(`it has more than ${MAP_MAX_SHAPES.toLocaleString('en-US')} shapes or ${MAP_MAX_POINTS.toLocaleString('en-US')} points; the rest are left out (simplify the shapes, or supply GeoJSON).`);
+    if (over) notes.push(`the report's maps hold more than ${MAP_MAX_SHAPES.toLocaleString('en-US')} shapes, ${MAP_MAX_POINTS.toLocaleString('en-US')} points or ${MAP_MAX_BYTES / 1e6} MB of shape data; the rest are left out (simplify the shapes, or supply GeoJSON).`);
     if (features.length) it.GeoJson = JSON.stringify({ type: 'FeatureCollection', features });
     else if (!it.ShapeDataSet) notes.push('its shapes could not be read from the file: paste GeoJSON into the map\'s Shapes (Properties → Shapes: GeoJSON text).');
     if (!layers.length) notes.push('it has no layers.');
@@ -581,7 +588,7 @@ function toRdlx(root, notes, year, resolve) {
   function sqlGeography(b64, maxPoints) {
     let bin;
     try { bin = atob(String(b64 || '').replace(/\s+/g, '')); } catch { return null; }
-    if (bin.length < 6 || bin.length > MAP_MAX_BYTES) return null;
+    if (bin.length < 6) return null;
     const buf = new ArrayBuffer(bin.length), u8 = new Uint8Array(buf);
     for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
     const dv = new DataView(buf);
@@ -595,7 +602,8 @@ function toRdlx(root, notes, year, resolve) {
       if (flags & 8) return { type: 'Point', coordinates: point(), n: 1 };
       if (flags & 16) return { type: 'LineString', coordinates: [point(), point()], n: 2 };
       need(4); const np = dv.getUint32(o, true); o += 4;
-      if (np > maxPoints || np * 16 > bin.length) return null; // the count cannot exceed what the bytes hold
+      if (np * 16 > bin.length) return null; // the count cannot exceed what the bytes hold
+      if (np > maxPoints) return OVER;
       for (let i = 0; i < np; i++) pts.push(point());
       if (flags & 1) o += 8 * np; // Z
       if (flags & 2) o += 8 * np; // M

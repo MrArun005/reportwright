@@ -110,6 +110,25 @@ describe('hostile files finish fast and say what they left out', () => {
     const W = r.warnings.join('\n');
     expect(W).toMatch(/1 embedded shapes could not be read/);
     expect(W).toMatch(/more than 20,000 shapes/);
+    expect(JSON.parse(all(r.definition).find(i => i.type === 'map').geojson).features.length).toBe(20_000);
+  });
+  it('points are a running total over every map: two maps of 120,000 points each, the second is cut with a note', () => {
+    const one = `<MapPolygon><VectorData>${geo(120_000)}</VectorData></MapPolygon>`;
+    const src = mapWith(one);
+    const second = src.match(/<Map Name="SalesMap">[\s\S]*<\/Map>/)[0].replace('SalesMap', 'SalesMap2');
+    const t0 = Date.now();
+    const r = importRdl(src.replace('</Map>', '</Map>' + second));
+    expect(Date.now() - t0).toBeLessThan(10_000);
+    const maps = all(r.definition).filter(i => i.type === 'map');
+    expect(maps.map(m => (m.geojson ? JSON.parse(m.geojson).features.length : 0))).toEqual([1, 0]);
+    expect(r.warnings.join('\n')).toMatch(/SalesMap2: the report's maps hold more than .*200,000 points/);
+  });
+  it('one shape with more points or bytes than the total caps is refused, not decoded', () => {
+    for (const n of [210_000, 300_000]) { // over the points cap; over the bytes cap
+      const r = importRdl(mapWith(`<MapPolygon><VectorData>${geo(n)}</VectorData></MapPolygon>`));
+      expect(r.warnings.join('\n')).toMatch(/the report's maps hold more than/);
+      expect(all(r.definition).find(i => i.type === 'map').geojson).toBe('');
+    }
   });
   it('many shapes in one geography (quadratic figure lookup) stays linear', () => {
     const t0 = Date.now();
