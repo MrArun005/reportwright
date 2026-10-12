@@ -48,7 +48,7 @@ console.log(`· coverage: ${rows} rows, ${total} cards`);
 // 2. a source filter changes the cards to that tool's examples
 const ssrs = index.examples.filter(e => e.slug === 'ssrs').length;
 await p.locator('#f-tool button', { hasText: 'SSRS' }).click();
-await p.waitForFunction((t) => document.querySelector('#count').textContent.startsWith(`${t} of`), total);
+await p.waitForFunction((n) => document.querySelectorAll('#cards > li.card').length === n, ssrs);
 assert.equal(await p.locator('#cards > li.card').count(), ssrs, 'SSRS filter count');
 assert.equal(await p.locator('#count').innerText(), countText(ssrs, total));
 await p.locator('#f-tool button', { hasText: 'All' }).click();
