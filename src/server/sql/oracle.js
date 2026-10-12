@@ -63,9 +63,11 @@ export async function probeOracle(conn, oracledb) {
   return '';
 }
 
+// LOB types (CLOB, NCLOB, BLOB) are not here: a LOB's size is known only by reading it, so no cap can hold before the read.
+// A SQL source converts them (TO_CHAR, DBMS_LOB.SUBSTR). Anything not listed is refused at the statement's metadata, before any row
 const READABLE = new Set(['DB_TYPE_NUMBER', 'DB_TYPE_BINARY_INTEGER', 'DB_TYPE_BINARY_FLOAT', 'DB_TYPE_BINARY_DOUBLE', 'DB_TYPE_VARCHAR', 'DB_TYPE_NVARCHAR',
   'DB_TYPE_CHAR', 'DB_TYPE_NCHAR', 'DB_TYPE_DATE', 'DB_TYPE_TIMESTAMP', 'DB_TYPE_TIMESTAMP_TZ', 'DB_TYPE_TIMESTAMP_LTZ', 'DB_TYPE_RAW', 'DB_TYPE_BOOLEAN',
-  'DB_TYPE_INTERVAL_DS', 'DB_TYPE_INTERVAL_YM', 'DB_TYPE_ROWID', 'DB_TYPE_CLOB', 'DB_TYPE_NCLOB', 'DB_TYPE_BLOB']);
+  'DB_TYPE_INTERVAL_DS', 'DB_TYPE_INTERVAL_YM', 'DB_TYPE_ROWID']);
 
 /**
  * @param {string} url @param {string} text @param {any[]} values
@@ -105,21 +107,19 @@ export async function oracle(url, text, values, ctx) {
         clk.overdue();
         await conn.execute('SET TRANSACTION READ ONLY');
         clk.overdue();
-        // fetchArraySize is the round trip, and the most rows the driver buffers ahead of the row and byte counters below.
-        // 1 meant one network round trip per row (a 50-row read took seconds); 100 keeps a read of wide rows to a few MB
-        // (a row is at most a few tens of kB), and the counters refuse the batch the moment a cap is crossed
-        // CLOB and NCLOB come back as text (fetchTypeHandler), not as LOB locators: the locator path hung in CI (a CLOB-only
-        // query, and the pooled connection after it). The row and byte counters below still refuse a value over the cap, but
-        // only after the text is read (a locator's length could be checked first; the text cannot)
-        const r = await conn.execute(text, values, { resultSet: true, outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: 100, prefetchRows: 100,
-          fetchTypeHandler: (m) => (m.dbType === oracledb.DB_TYPE_CLOB || m.dbType === oracledb.DB_TYPE_NCLOB ? { type: oracledb.STRING } : undefined) });
+        // Every value is bounded before it is materialised. The statement is run with no prefetch and a small fetch
+        // array (10 rows): the metadata is checked (only the readable types above; no LOB), the widest possible row is
+        // checked against the byte cap (so a batch of 10 cannot go past it), and only then are rows fetched, in batches
+        // the row and byte counters see one row at a time
+        const FETCH_ROWS = 10;
+        const r = await conn.execute(text, values, { resultSet: true, outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: FETCH_ROWS, prefetchRows: 0 });
         const rs = r.resultSet;
         try {
           const odd = (r.metaData || []).find(m => !READABLE.has(m.dbType?.name ?? m.dbTypeName));
           if (odd) throw fail(`The column "${String(odd.name).slice(0, 60)}" is ${odd.dbTypeName || 'a type'} a SQL source cannot read. Convert it in the query (TO_CHAR, DBMS_LOB.SUBSTR).`, 400);
-          // the widest a row can be (a VARCHAR2 can be 32 kB; text is held at 2 bytes a character): each batch is as
-          // many rows as fit in a quarter of the cap, so a batch of wide rows never goes far past it
+          // the widest a row can be (a VARCHAR2 can be 32 kB; text is held at 2 bytes a character)
           const widest = (r.metaData || []).reduce((n, m) => n + 2 * (Number(m.byteSize) || 64) + 64, 0);
+          if (widest * FETCH_ROWS > Number(limits.bytes)) throw fail(`The rows are too wide to read in batches under ${Math.round(Number(limits.bytes) / 1048576)} MB. Select fewer or narrower columns.`, 400);
           const per = Math.max(1, Math.min(200, Math.floor(Number(limits.bytes) / 4 / Math.max(1, widest))));
           const rows = [];
           const take = count();
@@ -128,18 +128,8 @@ export async function oracle(url, text, values, ctx) {
             const batch = await rs.getRows(per);
             if (!batch.length) break;
             if (batch.length > per) throw fail('Oracle sent more rows than were asked for.', 500);
-            for (const row of batch) {
-              for (const [k, v] of Object.entries(row)) {
-                if (v && typeof v === 'object' && typeof v.getData === 'function') {
-                  // a LOB: its length (characters for CLOB, bytes for BLOB) is checked before a byte of it is read
-                  take.reserve(Number(v.length) * (v.type === oracledb.DB_TYPE_BLOB ? 1 : 4));
-                  row[k] = await v.getData();
-                  if (typeof v.close === 'function') await v.close().catch(() => {});
-                }
-              }
-              take(row);
-              rows.push(row);
-            }
+            for (const row of batch) take(row);
+            rows.push(...batch);
           }
           ok = true;
           return rows;

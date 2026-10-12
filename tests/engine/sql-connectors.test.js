@@ -142,6 +142,9 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
     expect(log.filter(x => x[0] !== 'probe' && x[0] !== 'options').map(x => x[0])).toEqual(['info', 'execute', 'execute', 'close', 'rollback', 'release']);
     // the batch read is one round trip per batch: fetchArraySize is a batch, not one row (one row a trip was seconds for 50 rows)
     expect(log.find(x => x[0] === 'options')[1].fetchArraySize).toBeGreaterThan(1);
+    // bypass 3 (closed): a prefetch would fetch rows before the metadata and width checks run
+    expect(log.find(x => x[0] === 'options')[1].prefetchRows).toBe(0);
+    expect(log.find(x => x[0] === 'options')[1].fetchArraySize).toBeLessThanOrEqual(10);
     // the grant check is a positive list over the user, its roles and PUBLIC; READ on a DIRECTORY counts
     expect(log.find(x => x[0] === 'probe' && /all_tab_privs/.test(x[1]) && /'PUBLIC' FROM dual/.test(x[1]))?.[1]).toMatch(/DIRECTORY/);
     // PUBLIC's grants on Oracle's own objects are the install default, of any privilege (SYS grants PUBLIC DELETE on some
@@ -176,16 +179,30 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
     limits.rows = 10;
     await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t' }, {})).rejects.toThrow(/more than 10 rows/);
     Object.assign(limits, keep);
+    // bypass 1 (closed): a CLOB was read through its locator, whose length is known only by reading it. LOB types are
+    // refused from the statement's metadata, before any row or byte of the value is read
     let read = false;
     const lob = { length: 50_000_000, type: 'clob', getData: async () => { read = true; return 'x'; } };
     oracleMock({ rows: [{ C: lob }], meta: [{ name: 'C', dbType: { name: 'DB_TYPE_CLOB' } }] });
     limits.bytes = 1048576;
-    await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select c from t' }, {})).rejects.toThrow(/MB/);
+    await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select c from t' }, {})).rejects.toThrow(/CLOB.*cannot read|cannot read/);
+    expect(read).toBe(false);
+    for (const t of ['DB_TYPE_NCLOB', 'DB_TYPE_BLOB']) {
+      oracleMock({ rows: [{ C: lob }], meta: [{ name: 'C', dbType: { name: t }, dbTypeName: t }] });
+      await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select c from t' }, {}), t).rejects.toThrow(/cannot read/);
+    }
     expect(read).toBe(false);
     for (const t of ['DB_TYPE_LONG', 'DB_TYPE_XMLTYPE', 'DB_TYPE_OBJECT', 'DB_TYPE_JSON']) {
       oracleMock({ rows: [{ L: 'x' }], meta: [{ name: 'L', dbType: { name: t }, dbTypeName: t }] });
       await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select l from t' }, {}), t).rejects.toThrow(/cannot read/);
     }
+  });
+  // bypass 2 (closed): a batch of 10 rows was fetched whatever the width; a row too wide for 10 in the cap is refused before a fetch
+  it('refuses rows too wide for a batch under the cap, before any row is fetched', async () => {
+    const log = oracleMock({ rows: [{ W: 'w' }], meta: [{ name: 'W', dbType: { name: 'DB_TYPE_VARCHAR' }, byteSize: 32767 }] });
+    limits.bytes = 100000; // 2 x 32767 + 64 per cell x 10 rows is more than this
+    await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select w from t' }, {})).rejects.toThrow(/too wide/);
+    limits.bytes = keep.bytes;
   });
   it('wide rows come in small batches: a batch is never far past the cap', async () => {
     const asked = [];

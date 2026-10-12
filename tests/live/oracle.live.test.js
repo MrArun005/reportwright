@@ -31,17 +31,23 @@ describe.skipIf(!process.env.PW_LIVE_ORACLE)('Oracle (live, gvenzl/oracle-free)'
     expect(await runSql(src('select id from pwowner.types_t where label = @l'), { l: LABEL })).toEqual([{ ID: 1 }]);
   });
 
-  it('types round-trip: NUMBER, BINARY_DOUBLE, VARCHAR2 unicode, DATE, TIMESTAMP, CLOB, and NULLs', async () => {
-    const [r] = await runSql(src('select id, amount, ratio, label, born, seen, notes from pwowner.types_t where id = 1'));
+  it('types round-trip: NUMBER, BINARY_DOUBLE, VARCHAR2 unicode, DATE, TIMESTAMP, and NULLs', async () => {
+    const cols = 'id, amount, ratio, label, born, seen';
+    const [r] = await runSql(src(`select ${cols} from pwowner.types_t where id = 1`));
     expect(r.ID).toBe(1);
     expect(r.AMOUNT).toBe(1234.5);
     expect(r.RATIO).toBe(1.5);
     expect(r.LABEL).toBe(LABEL);
     expect(String(r.BORN)).toContain('2024');
     expect(String(r.SEEN)).toContain('2024');
-    expect(r.NOTES).toHaveLength(5000);
-    const [n] = await runSql(src('select id, amount, ratio, label, born, seen, notes from pwowner.types_t where id = 2'));
-    expect(n).toEqual({ ID: 2, AMOUNT: null, RATIO: null, LABEL: null, BORN: null, SEEN: null, NOTES: null });
+    const [n] = await runSql(src(`select ${cols} from pwowner.types_t where id = 2`));
+    expect(n).toEqual({ ID: 2, AMOUNT: null, RATIO: null, LABEL: null, BORN: null, SEEN: null });
+  });
+
+  it('a CLOB column is refused from the metadata, before any of it is read (no LOB path)', async () => {
+    await expect(runSql(src('select id, notes from pwowner.types_t where id = 1'))).rejects.toThrow(/cannot read/);
+    // the text of a CLOB the query converts itself is the way to read one (TO_CHAR of a short part, or a LOB-free column)
+    expect(await runSql(src('select id from pwowner.types_t where id = 1'))).toEqual([{ ID: 1 }]);
   });
 
   it('only one read: a write, a lock, or a second statement is refused before the database runs it', async () => {
@@ -98,10 +104,5 @@ describe.skipIf(!process.env.PW_LIVE_ORACLE)('Oracle (live, gvenzl/oracle-free)'
 
 
   // last: a capped call drops its connection (not pooled), so the calls after it would pay for a new session
-  it('a huge CLOB (about 3.2 MB, over the 1 MB cap) is refused by its length before a byte of it is read', async () => {
-    await expect(runSql(src('select notes from pwowner.types_t where id = 3'))).rejects.toThrow(/more than 1 MB/);
-    // a value under the cap still reads whole
-    expect((await runSql(src('select notes from pwowner.types_t where id = 1')))[0].NOTES).toHaveLength(5000);
-  });
 
 });
