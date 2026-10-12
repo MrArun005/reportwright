@@ -94,7 +94,7 @@ export function reportStatus(rec) {
   for (const it of rec.items || [])
     for (const n of it.notes || []) if (n.kind === 'approximated') issues.push(n.message);
   for (const x of unresolved) issues.push(`${x.kind} not found: ${x.ref}`);
-  issues.push(...notes);
+  for (const n of notes) issues.push(n);
   const many =
     status === 'manual'
       ? s.dropped + untranslated > 3
