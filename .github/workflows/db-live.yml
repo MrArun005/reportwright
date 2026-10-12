@@ -53,6 +53,10 @@ jobs:
           test -n "$CID" || { echo "::error::Oracle container not found"; docker ps -a; exit 1; }
           docker exec -i "$CID" sqlplus -S "system/PwSys1234@//localhost:1521/FREEPDB1" < tests/live/oracle-setup.sql
           docker exec -i "$CID" sqlplus -S "sys/PwSys1234@//localhost:1521/FREEPDB1 as sysdba" < tests/live/oracle-revoke.sql
+      - name: Oracle CLOB diagnostic (one driver variant per process, 60 s cap each)
+        if: always()
+        run: |
+          for v in J A B C D E F G H I; do echo "=== variant $v"; timeout 60 node tests/live/oracle-diag.mjs "$v" || echo "variant $v exit $?"; done
       - name: Oracle live tests
         run: npx vitest run tests/live/oracle.live.test.js
 
