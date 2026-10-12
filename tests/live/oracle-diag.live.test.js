@@ -58,6 +58,10 @@ Object.assign(scenarios, {
   P10: async () => { await bind('bind-uni', 'select id from pwowner.types_t where label = @l', { l: LBL }); await drv('clob', Q); },
   P11: async () => { await bind('bind-id', 'select id from pwowner.types_t where id = @id', { id: 1 }); await drv('types1', TYPES1); await drv('types2', TYPES2); await drv('clob', Q); },
 });
+Object.assign(scenarios, {
+  P12: async () => { await drv('types1', TYPES1); await drv('count', CNT); await drv('clob', Q); },
+  P13: async () => { await bind('bind-id', 'select id from pwowner.types_t where id = @id', { id: 1 }); await drv('types1', TYPES1); await drv('types2', TYPES2); await drv('count', CNT); await drv('clob', Q); await drv('count2', CNT); },
+});
 const name = process.env.DIAG_SCENARIO;
 it.skipIf(!name)(`diagnostic ${name}`, async () => {
   const s = scenarios[name];

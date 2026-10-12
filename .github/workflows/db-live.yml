@@ -56,7 +56,7 @@ jobs:
       - name: Oracle CLOB diagnostic (one driver variant per process, 60 s cap each)
         if: always()
         run: |
-          for v in P9 P10 P11; do echo "=== scenario $v"; DIAG_SCENARIO=$v timeout 120 npx vitest run tests/live/oracle-diag.live.test.js || echo "scenario $v exit $?"; done
+          for v in P12 P13; do echo "=== scenario $v"; DIAG_SCENARIO=$v timeout 120 npx vitest run tests/live/oracle-diag.live.test.js || echo "scenario $v exit $?"; done
       - name: Oracle live tests
         run: npx vitest run tests/live/oracle.live.test.js
 
