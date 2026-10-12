@@ -88,7 +88,7 @@ export async function oracle(url, text, values, ctx) {
       const entry = pools.get(key);
       const pool = await entry.ready;
       const conn = await clk.inTime(pool.getConnection(), (c) => c.close().catch(() => {}));
-      let ok = false;
+      let ok = false, lobRead = false;
       try {
         // break() stops the call in flight; callTimeout bounds each round trip to the time left
         clk.track({ cancel: () => { conn.break().catch(() => {}); } });
@@ -129,6 +129,7 @@ export async function oracle(url, text, values, ctx) {
                 if (v && typeof v === 'object' && typeof v.getData === 'function') {
                   // a LOB: its length (characters for CLOB, bytes for BLOB) is checked before a byte of it is read
                   take.reserve(Number(v.length) * (v.type === oracledb.DB_TYPE_BLOB ? 1 : 4));
+                  lobRead = true; // a connection that read a LOB is not pooled: the next call on it hung (see tests/live/oracle.live.test.js)
                   row[k] = await v.getData();
                   if (typeof v.close === 'function') await v.close().catch(() => {});
                 }
@@ -142,7 +143,7 @@ export async function oracle(url, text, values, ctx) {
         } finally { await rs.close().catch(() => {}); }
       } finally {
         await conn.rollback().catch(() => {});
-        await conn.close(ok ? undefined : { drop: true }).catch(() => {}); // a broken, capped or failed call: not pooled
+        await conn.close(ok && !lobRead ? undefined : { drop: true }).catch(() => {}); // a broken, capped, failed or LOB-reading call: not pooled
       }
     })());
   } finally { clk.stop(); }
