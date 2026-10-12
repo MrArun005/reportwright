@@ -663,7 +663,7 @@ function toRdlx(root, notes, charts, reportName, resolve) {
         corner: texts(kid(e, 'crosstabHeaderCell') || kid(e, 'headerCell'))[0],
       });
       if (extra) notes.push(`${extra} shapes or other elements in its cells are not shown: a ReportWright matrix shows group headers, values and totals.`);
-      Object.assign(it, tx, { Name: it.Name });
+      Object.assign(it, tx, { Name: it.Name, __notes: [...notes, ...tx.__notes] });
       if (ds !== MAIN && !kids(root, 'subDataset').some(s => s.attrs.name === ds)) notes.push(`its data set "${ds}" is not in the file.`);
       return it;
     } finally { xtab = saved; }

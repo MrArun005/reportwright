@@ -1611,6 +1611,11 @@ function mapItem(ar, cx, ctx) {
  * @typedef {{ name: string, key?: string, desc?: boolean, size: string, header?: any, total?: 'before'|'after'|null, totalHeader?: any }} Group
  */
 export function crosstabTablix(s) {
+  // an untrusted file: the matrix keeps 8 levels a side (tablixMatrix's limit) and 16 values; the body is levels × values
+  const notes = [];
+  if (s.rows.length > 8 || s.columns.length > 8) notes.push('it has more than 8 levels of groups on a side; the deeper levels are left out.');
+  if (s.values.length > 16) notes.push(`it has ${s.values.length} measures; the first 16 are kept.`);
+  s = { ...s, rows: s.rows.slice(0, 8), columns: s.columns.slice(0, 8), values: s.values.slice(0, 16) };
   const text = (v) => ({ Type: 'textbox', Value: v });
   const chain = (gs, leafKids) => {
     let inner = leafKids;
@@ -1629,7 +1634,7 @@ export function crosstabTablix(s) {
   const leaves = (ms, out = [], tot = null) => { for (const m of ms) { const t = m.__total ?? tot; if (m.Children.length) leaves(m.Children, out, t); else out.push({ total: t, k: m.__value ?? 0 }); } return out; };
   const rL = leaves(rowMs), cL = leaves(colMs);
   return {
-    Type: 'tablix', Name: s.name, DataSetName: s.dataSet, Filters: [], SortExpressions: [], RepeatColumnHeaders: s.repeatHeaders === false ? 'false' : 'true',
+    Type: 'tablix', Name: s.name, __notes: notes, DataSetName: s.dataSet, Filters: [], SortExpressions: [], RepeatColumnHeaders: s.repeatHeaders === false ? 'false' : 'true',
     Body: { Columns: cL.map(() => ({ Width: s.columnWidth })), Rows: rL.map(r => ({ Height: s.rowHeight, Cells: cL.map(c => ({ Item: s.cell(r.total, c.total, c.k) })) })) },
     Corner: s.corner ? [[{ Item: s.corner }]] : [],
     RowHierarchy: { LevelSizes: s.rows.map(g => g.size), Members: rowMs },

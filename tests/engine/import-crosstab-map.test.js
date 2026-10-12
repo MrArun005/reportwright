@@ -91,3 +91,44 @@ describe('SSRS map → map item', () => {
     expect(t).toMatch(/2,500|100/); // the legend
   });
 });
+
+describe('hostile files finish fast and say what they left out', () => {
+  const geo = (np, nf = 1, ns = 1) => { // SQL Server geography header claiming np points, nf figures, ns shapes
+    const b = Buffer.alloc(6 + 4 + np * 16 + 4 + nf * 5 + 4 + ns * 9); let o = 0;
+    b.writeInt32LE(4326, o); o += 4; b[o++] = 1; b[o++] = 4; b.writeUInt32LE(np, o); o += 4 + np * 16;
+    b.writeUInt32LE(nf, o); o += 4; for (let i = 0; i < nf; i++) { b[o] = 2; b.writeInt32LE(0, o + 1); o += 5; }
+    b.writeUInt32LE(ns, o); o += 4; for (let i = 0; i < ns; i++) { b.writeInt32LE(-1, o); b.writeInt32LE(i % nf, o + 4); b[o + 8] = 3; o += 9; }
+    return b.toString('base64');
+  };
+  const mapWith = (polys) => read('rdl/map-sales.rdl').replace(/<MapPolygons>[\s\S]*<\/MapPolygons>/, `<MapPolygons>${polys}</MapPolygons>`);
+  it('a point count larger than the bytes, and many shapes', () => {
+    const lying = Buffer.from(geo(4)); lying.writeUInt32LE(0x7fffffff, 6);
+    const poly = (v) => `<MapPolygon><VectorData>${v}</VectorData></MapPolygon>`;
+    const t0 = Date.now();
+    const r = importRdl(mapWith(poly(lying.toString('base64')) + poly(geo(5)).repeat(25_000)));
+    expect(Date.now() - t0).toBeLessThan(10_000);
+    const W = r.warnings.join('\n');
+    expect(W).toMatch(/1 embedded shapes could not be read/);
+    expect(W).toMatch(/more than 20,000 shapes/);
+  });
+  it('many shapes in one geography (quadratic figure lookup) stays linear', () => {
+    const t0 = Date.now();
+    const r = importRdl(mapWith(`<MapPolygon><VectorData>${geo(4, 4, 60_000)}</VectorData></MapPolygon>`));
+    expect(Date.now() - t0).toBeLessThan(5_000);
+    expect(r.error).toBeUndefined();
+  });
+  it('a crosstab with many groups and measures is capped with a note', () => {
+    const src = read('jrxml/crosstab-sales.jrxml');
+    const groups = Array.from({ length: 40 }, (_, i) => `<rowGroup name="G${i}" width="10" totalPosition="End"><bucket class="java.lang.String"><bucketExpression><![CDATA[$F{region}]]></bucketExpression></bucket></rowGroup>`).join('');
+    const ms = Array.from({ length: 40 }, (_, i) => `<textField><reportElement x="0" y="0" width="5" height="5"/><textFieldExpression><![CDATA[$V{AmountSum}]]></textFieldExpression></textField>`).join('');
+    const hostile = src.replace('<columnGroup', groups + '<columnGroup').replace(/(<crosstabCell width="60" height="20"><cellContents>)/, `$1${ms}`);
+    const t0 = Date.now();
+    const r = importJrxml(hostile);
+    expect(Date.now() - t0).toBeLessThan(5_000);
+    const m = all(r.definition).find(i => i.type === 'matrix');
+    expect(m.rowGroups.length).toBeLessThanOrEqual(8);
+    expect(m.values.length).toBeLessThanOrEqual(16);
+    expect(r.warnings.join('\n')).toMatch(/more than 8 levels/);
+    expect(r.warnings.join('\n')).toMatch(/the first 16 are kept/);
+  });
+});

@@ -654,7 +654,7 @@ function toRdlx(root, notes, reportName) {
       cell: (r, cl, k) => ((r || cl) && values[k].total) || values[k].cell,
       corner: text(ext(e, 'header')[0]),
     });
-    Object.assign(it, tx, { Width: pt(w) });
+    Object.assign(it, tx, { Width: pt(w), __notes: [...notes, ...tx.__notes] });
     const h = 20 * (columns.length + 3);
     it.Height = pt(h);
     return { it, h };
