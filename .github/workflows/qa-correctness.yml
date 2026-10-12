@@ -17,6 +17,8 @@ env:
   TZ: Asia/Kolkata
   QA_SUITE: correctness
 
+permissions:
+  contents: read
 jobs:
   unit:
     runs-on: ubuntu-latest
@@ -43,9 +45,9 @@ jobs:
         ports: ['1433:1433']
         options: --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P Pw-test-1234 -Q 'SELECT 1' || exit 1" --health-interval 10s --health-timeout 5s --health-retries 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ inputs.ref }}' }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund
       - run: sudo apt-get update && sudo apt-get install -y poppler-utils
@@ -57,7 +59,7 @@ jobs:
       - if: always()
         run: node scripts/qa.mjs summarize correctness
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with: { name: qa-correctness-part-unit, path: qa-out/*.jsonl, if-no-files-found: ignore }
 
   checks:
@@ -70,9 +72,9 @@ jobs:
     env:
       QA_SHARD: ${{ matrix.shard }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ inputs.ref }}' }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund
       - if: matrix.shard == 'snapshots'
@@ -103,7 +105,7 @@ jobs:
       - if: always()
         run: node scripts/qa.mjs summarize correctness
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with: { name: 'qa-correctness-part-${{ matrix.shard }}', path: qa-out/*.jsonl, if-no-files-found: ignore }
 
   parity:
@@ -112,15 +114,15 @@ jobs:
     env:
       QA_SHARD: parity
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ inputs.ref }}' }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund
       # conda-forge has no poppler 26.04 (26.02, 26.05, ...), so the pinned version is built from source once and cached
       - id: pin
         run: echo "v=$(node -p "require('./scripts/parity-tolerance.json').rendererVersion")" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         id: poppler
         with: { path: ~/poppler, key: 'poppler-${{ steps.pin.outputs.v }}-${{ runner.os }}-v2' }
       - run: sudo apt-get update && sudo apt-get install -y qpdf cmake ninja-build libfreetype-dev libfontconfig-dev libjpeg-dev libopenjp2-7-dev libpng-dev liblcms2-dev zlib1g-dev libnss3-dev
@@ -135,7 +137,7 @@ jobs:
             -DBUILD_CPP_TESTS=OFF -DBUILD_MANUAL_TESTS=OFF -DENABLE_UTILS=ON
           cmake --build "$RUNNER_TEMP/pb" && cmake --install "$RUNNER_TEMP/pb"
       - if: steps.poppler.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with: { path: ~/poppler, key: 'poppler-${{ steps.pin.outputs.v }}-${{ runner.os }}-v2' }
       - run: |
           echo "$HOME/poppler/bin" >> "$GITHUB_PATH"
@@ -149,7 +151,7 @@ jobs:
       - if: always()
         run: node scripts/qa.mjs summarize correctness
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with: { name: qa-correctness-part-parity, path: qa-out/*.jsonl, if-no-files-found: ignore }
 
   results:
@@ -157,11 +159,11 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ inputs.ref }}', sparse-checkout: scripts }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with: { pattern: qa-correctness-part-*, path: parts, merge-multiple: true }
       - run: node scripts/qa.mjs summarize correctness parts
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with: { name: qa-correctness-results, path: "qa-out/results.json\nqa-out/summary.md" }

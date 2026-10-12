@@ -68,7 +68,7 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
           cache: npm
-      - run: npm i -g npm@latest # trusted publishing needs npm 11.5 or later
+      - run: npm i -g npm@11.21.0 # exact version; trusted publishing needs npm 11.5 or later
       - run: npm ci --no-audit --no-fund
       - run: npm run build:packages
       - run: npx vitest run tests/engine/packages.test.js
