@@ -1,0 +1,57 @@
+# The Migration examples page: scripts/build-examples.mjs imports the official sample reports with the batch importer and
+# renders the ones whose data is embedded, then the site build copies them. Runs when an importer, the sample corpora or the site changes.
+name: Examples
+on:
+  pull_request:
+    paths:
+      - 'scripts/build-examples.mjs'
+      - 'scripts/build-site.mjs'
+      - 'src/cli/**'
+      - 'src/importers/**'
+      - 'src/engine/**'
+      - 'src/exporters/**'
+      - 'tests/fixtures/rdl/corpus/**'
+      - 'tests/fixtures/jrxml/corpus/**'
+      - 'tests/fixtures/birt/corpus/**'
+      - 'site/**'
+      - '.github/workflows/examples.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/build-examples.mjs'
+      - 'scripts/build-site.mjs'
+      - 'src/cli/**'
+      - 'src/importers/**'
+      - 'src/engine/**'
+      - 'src/exporters/**'
+      - 'tests/fixtures/rdl/corpus/**'
+      - 'tests/fixtures/jrxml/corpus/**'
+      - 'tests/fixtures/birt/corpus/**'
+      - 'site/**'
+      - '.github/workflows/examples.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Poppler (pdftoppm) for the thumbnails
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - name: Build the site, with the migration examples (import, render, notes)
+        run: npm run build:site
+      - name: Check the examples index
+        run: |
+          node -e "const i=require('./site/examples/index.json'); const n=i.examples.filter(e=>e.status==='imported').length; console.log(n+' imported of '+i.examples.length); if(!n) process.exit(1)"
+          test -f dist-site/examples/index.json && test -f dist-site/examples.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: migration-examples
+          path: dist-site/examples
+          retention-days: 7
