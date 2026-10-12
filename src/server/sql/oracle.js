@@ -108,7 +108,7 @@ export async function oracle(url, text, values, ctx) {
         // fetchArraySize is the round trip, and the most rows the driver buffers ahead of the row and byte counters below.
         // 1 meant one network round trip per row (a 50-row read took seconds); 100 keeps a read of wide rows to a few MB
         // (a row is at most a few tens of kB), and the counters refuse the batch the moment a cap is crossed
-        const r = await conn.execute(text, values, { resultSet: true, outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: 100, prefetchRows: 100 });
+        const r = await conn.execute(text, values, { resultSet: true, outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: 1, prefetchRows: 1 });
         const rs = r.resultSet;
         try {
           const odd = (r.metaData || []).find(m => !READABLE.has(m.dbType?.name ?? m.dbTypeName));
