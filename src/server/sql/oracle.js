@@ -112,13 +112,15 @@ export async function oracle(url, text, values, ctx) {
         // checked against the byte cap (so a batch of 10 cannot go past it), and only then are rows fetched, in batches
         // the row and byte counters see one row at a time
         const FETCH_ROWS = 10;
+        // the metadata first, from a zero-row read of the same text (no resultSet: a resultSet over a LOB column hung in CI)
+        const probeMeta = (await conn.execute(`SELECT * FROM (\n${text}\n) WHERE ROWNUM < 1`, values, { outFormat: oracledb.OUT_FORMAT_OBJECT })).metaData || [];
+        const odd = probeMeta.find(m => !READABLE.has(m.dbType?.name ?? m.dbTypeName));
+        if (odd) throw fail(`The column "${String(odd.name).slice(0, 60)}" is ${odd.dbTypeName || 'a type'} a SQL source cannot read. Convert it in the query (TO_CHAR, DBMS_LOB.SUBSTR).`, 400);
         const r = await conn.execute(text, values, { resultSet: true, outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: FETCH_ROWS, prefetchRows: 0 });
         const rs = r.resultSet;
         try {
-          const odd = (r.metaData || []).find(m => !READABLE.has(m.dbType?.name ?? m.dbTypeName));
-          if (odd) throw fail(`The column "${String(odd.name).slice(0, 60)}" is ${odd.dbTypeName || 'a type'} a SQL source cannot read. Convert it in the query (TO_CHAR, DBMS_LOB.SUBSTR).`, 400);
           // the widest a row can be (a VARCHAR2 can be 32 kB; text is held at 2 bytes a character)
-          const widest = (r.metaData || []).reduce((n, m) => n + 2 * (Number(m.byteSize) || 64) + 64, 0);
+          const widest = probeMeta.reduce((n, m) => n + 2 * (Number(m.byteSize) || 64) + 64, 0);
           if (widest * FETCH_ROWS > Number(limits.bytes)) throw fail(`The rows are too wide to read in batches under ${Math.round(Number(limits.bytes) / 1048576)} MB. Select fewer or narrower columns.`, 400);
           const per = Math.max(1, Math.min(200, Math.floor(Number(limits.bytes) / 4 / Math.max(1, widest))));
           const rows = [];
