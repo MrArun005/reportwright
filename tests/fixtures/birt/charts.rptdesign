@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<report xmlns="http://www.eclipse.org/birt/2005/design" version="3.2.23" id="1">
+  <property name="units">in</property>
+  <data-sources><oda-data-source extensionID="org.eclipse.birt.report.data.oda.jdbc" name="Sales DB" id="2"><property name="odaURL">jdbc:x</property></oda-data-source></data-sources>
+  <data-sets>
+    <oda-data-set extensionID="org.eclipse.birt.report.data.oda.jdbc.JdbcSelectDataSet" name="Sales" id="3">
+      <property name="dataSource">Sales DB</property>
+      <list-property name="resultSet">
+        <structure><property name="position">1</property><property name="name">REGION</property><property name="dataType">string</property></structure>
+        <structure><property name="position">2</property><property name="name">YEAR</property><property name="dataType">integer</property></structure>
+        <structure><property name="position">3</property><property name="name">AMOUNT</property><property name="dataType">float</property></structure>
+      </list-property>
+      <xml-property name="queryText">select REGION, YEAR, AMOUNT from SALES</xml-property>
+    </oda-data-set>
+  </data-sets>
+  <page-setup><simple-master-page name="Simple MasterPage" id="4"><property name="type">a4</property></simple-master-page></page-setup>
+  <body>
+    <extended-item extensionName="Chart" name="SalesBar" id="18">
+      <xml-property name="xmlRepresentation"><![CDATA[<model:ChartWithAxes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:model="http://www.birt.eclipse.org/ChartModel" xmlns:layout="http://www.birt.eclipse.org/ChartModelLayout" xmlns:type="http://www.birt.eclipse.org/ChartModelType"><Type>Bar Chart</Type><SubType>Stacked</SubType><Block><Children xsi:type="layout:TitleBlock"><Label><Caption><Value>Sales by region</Value></Caption></Label><Visible>true</Visible></Children><Children xsi:type="layout:Legend"><Visible>true</Visible><Position>Right</Position></Children></Block><Dimension>Two_Dimensional</Dimension>
+<Axes><Type>Text</Type><Title><Caption><Value>Region</Value></Caption><Visible>true</Visible></Title>
+<AssociatedAxes><Type>Linear</Type><Title><Caption><Value>Amount</Value></Caption><Visible>true</Visible></Title>
+<SeriesDefinitions><Query><Definition>row["YEAR"]</Definition></Query>
+<Series xsi:type="type:BarSeries"><DataDefinition><Definition>row["AMOUNT"]</Definition></DataDefinition><SeriesIdentifier>Amount</SeriesIdentifier></Series>
+<Grouping><Enabled>true</Enabled><AggregateExpression>Sum</AggregateExpression></Grouping></SeriesDefinitions></AssociatedAxes>
+<SeriesDefinitions><Series><DataDefinition><Definition>row["REGION"]</Definition></DataDefinition></Series><Grouping><Enabled>true</Enabled></Grouping></SeriesDefinitions>
+</Axes></model:ChartWithAxes>]]></xml-property>
+      <property name="dataSet">Sales</property>
+      <list-property name="boundDataColumns">
+        <structure><property name="name">REGION</property><expression name="expression" type="javascript">dataSetRow["REGION"]</expression></structure>
+        <structure><property name="name">YEAR</property><expression name="expression" type="javascript">dataSetRow["YEAR"]</expression></structure>
+        <structure><property name="name">AMOUNT</property><expression name="expression" type="javascript">dataSetRow["AMOUNT"]</expression></structure>
+      </list-property>
+      <property name="height">2.5in</property><property name="width">5in</property>
+    </extended-item>
+    <extended-item extensionName="Chart" name="SharePie" id="18">
+      <xml-property name="xmlRepresentation"><![CDATA[<model:ChartWithoutAxes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:model="http://www.birt.eclipse.org/ChartModel" xmlns:layout="http://www.birt.eclipse.org/ChartModelLayout" xmlns:type="http://www.birt.eclipse.org/ChartModelType"><Type>Pie Chart</Type><SubType>Standard</SubType><Block><Children xsi:type="layout:TitleBlock"><Label><Caption><Value>Share</Value></Caption></Label><Visible>true</Visible></Children><Children xsi:type="layout:Legend"><Visible>true</Visible><Position>Right</Position></Children></Block>
+<SeriesDefinitions><Series><DataDefinition><Definition>row["REGION"]</Definition></DataDefinition></Series><Grouping><Enabled>true</Enabled></Grouping>
+<SeriesDefinitions><Series xsi:type="type:PieSeries"><DataDefinition><Definition>row["AMOUNT"]</Definition></DataDefinition><SeriesIdentifier>Count</SeriesIdentifier></Series><Grouping><Enabled>true</Enabled><AggregateExpression>Count</AggregateExpression></Grouping></SeriesDefinitions>
+</SeriesDefinitions></model:ChartWithoutAxes>]]></xml-property>
+      <property name="dataSet">Sales</property>
+      <list-property name="boundDataColumns">
+        <structure><property name="name">REGION</property><expression name="expression" type="javascript">dataSetRow["REGION"]</expression></structure>
+        <structure><property name="name">YEAR</property><expression name="expression" type="javascript">dataSetRow["YEAR"]</expression></structure>
+        <structure><property name="name">AMOUNT</property><expression name="expression" type="javascript">dataSetRow["AMOUNT"]</expression></structure>
+      </list-property>
+      <property name="height">2.5in</property><property name="width">5in</property>
+    </extended-item>
+    <extended-item extensionName="Chart" name="Plan" id="14">
+      <xml-property name="xmlRepresentation"><![CDATA[<model:ChartWithAxes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:model="http://www.birt.eclipse.org/ChartModel" xmlns:layout="http://www.birt.eclipse.org/ChartModelLayout" xmlns:type="http://www.birt.eclipse.org/ChartModelType"><Type>Gantt Chart</Type></model:ChartWithAxes>]]></xml-property>
+      <property name="dataSet">Sales</property>
+      <list-property name="boundDataColumns">
+        <structure><property name="name">REGION</property><expression name="expression" type="javascript">dataSetRow["REGION"]</expression></structure>
+        <structure><property name="name">YEAR</property><expression name="expression" type="javascript">dataSetRow["YEAR"]</expression></structure>
+        <structure><property name="name">AMOUNT</property><expression name="expression" type="javascript">dataSetRow["AMOUNT"]</expression></structure>
+      </list-property>
+      <property name="height">2.5in</property><property name="width">5in</property>
+    </extended-item>
+  </body>
+</report>
