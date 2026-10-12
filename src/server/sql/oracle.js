@@ -131,7 +131,7 @@ export async function oracle(url, text, values, ctx) {
             if (!batch.length) break;
             if (batch.length > per) throw fail('Oracle sent more rows than were asked for.', 500);
             for (const row of batch) take(row);
-            rows.push(...batch);
+            for (const r of batch) rows.push(r);
           }
           ok = true;
           return rows;
