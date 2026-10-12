@@ -46,11 +46,12 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund
       - run: sudo apt-get update && sudo apt-get install -y poppler-utils
-      - name: Create the data owner and the read-only login (tests/live/oracle-setup.sql)
+      - name: Create the data owner and the read-only login (tests/live/oracle-setup.sql), then revoke PUBLIC's network and file EXECUTE (oracle-revoke.sql)
         run: |
           CID=$(docker ps -q --filter "ancestor=gvenzl/oracle-free:23-slim" | head -1)
           test -n "$CID" || { echo "::error::Oracle container not found"; docker ps -a; exit 1; }
           docker exec -i "$CID" sqlplus -S "system/PwSys1234@//localhost:1521/FREEPDB1" < tests/live/oracle-setup.sql
+          docker exec -i "$CID" sqlplus -S "sys/PwSys1234@//localhost:1521/FREEPDB1 as sysdba" < tests/live/oracle-revoke.sql
       - name: Oracle live tests
         run: npx vitest run tests/live/oracle.live.test.js
 
