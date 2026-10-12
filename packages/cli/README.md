@@ -93,19 +93,21 @@ npx pw diff orders.pw.json orders-v2.pw.json -d orders=orders.json
 |---|---|
 | `pw render <report.pw.json>` | `-p name=value` (repeat), `-d source=data.json` (repeat), `-f` format (default `pdf`), `-o file\|-`, `--base URL` (where relative data URLs go), `--allow-internal`, `--pdfa`, `--ua`, `--values` (Excel totals as values), `--html tables\|static` (the HTML file; unset: the report's `export.html`, then `PW_HTML_EXPORT`; interactive needs the viewer), `--drill-links inline\|new-tab\|off` (drill-through needs a public `--base`), `--static` (alias of `--html static`), `--layout` (CSV of the printed layout), `--password`, `--owner-password`, `--deny print\|modify\|copy\|annotate\|fillForms\|accessibility\|assemble\|printHighQuality` |
 | `pw import <file>` | `-o out.pw.json` |
+| `pw assess <folder>` | `-o dir`, `--recursive`, `--usage file`, `--retire-days N` (180), `--hours simple=…,medium=…,complex=…`, `--fail-under pct`, `--max-files N` (500), `--max-bytes N` (8 MB) |
 | `pw import <folder>` | `-o outDir`, `--recursive`, `--force`, `--verify`, `--report path`, `--max-files N` (2000), `--max-bytes N` (16 MB) |
 | `pw test [folder]` | `--update`, `--layout` |
 | `pw diff <old> <new>` | `-p`, `-d`, `--base` |
+| `pw compare <original.pdf> <converted.pdf\|report.pw.json>` | `-o dir` (default `.`), `-d`, `-p`, `--base`, `--tolerance PT` (2), `--threshold PCT` (0), `--dpi 72-100` (72), `--numbers-only`, `--no-visual`, `--no-positions` |
 | `pw --version` | prints the CLI and engine versions |
 
-Exit codes: 0 ok; 1 a test failed or the pages differ; 2 bad usage (`pw import <folder>`: 2 some failed, 1 none imported).
+Exit codes: 0 ok; 1 a test failed, the pages differ or `pw compare` found a difference over its gate; 2 bad usage (`pw import <folder>`: 2 some failed, 1 none imported).
 
 ## Supported formats
 
 | Direction | Formats |
 |---|---|
 | Output (`-f`) | `pdf` (also `--pdfa`, `--ua`, encrypted), `xlsx`, `docx`, `pptx`, `html`, `csv`, `json`, `txt` |
-| Import | SSRS `.rdl` / `.rdlc` (+ shared data sources `.rds`), JasperReports `.jrxml` (+ style templates `.jrtx`), BIRT `.rptdesign`, ActiveReports `.rdlx-json`, referenced images. Jasper and BIRT crosstabs carry over as matrices (groups, measures, totals, styles); SSRS maps as map items (embedded shapes as GeoJSON; shapefile / SQL spatial layers need GeoJSON, noted) |
+| Import | SSRS `.rdl` / `.rdlc` (+ shared data sources `.rds`), JasperReports `.jrxml` (+ style templates `.jrtx`), BIRT `.rptdesign`, ActiveReports `.rdlx-json`, referenced images. Jasper and BIRT crosstabs carry over as matrices (groups, measures, totals, styles); Jasper and BIRT charts as charts; Jasper markup as rich text; SSRS custom code's simple functions as report functions; SSRS maps as map items (embedded shapes as GeoJSON; a shapefile layer's `.shp` + `.dbf` are read when they are in the imported folder; SQL spatial layers are drawn from the query's geography binary or `STAsText()` WKT) |
 
 ## Requirements and limits
 
@@ -126,6 +128,31 @@ Exit codes: 0 ok; 1 a test failed or the pages differ; 2 bad usage (`pw import <
 `streamed`), so a large report's memory stays flat; other reports, `--password` and `-o -` render the whole model first.
 It writes to a temporary file beside the target and renames it when the export succeeded: a failed run leaves no
 damaged PDF, and an older file at the path stays as it was.
+
+## Assess a folder first
+
+`pw assess <folder>` answers "should we migrate, and how much work is it?" without writing a single converted report.
+It runs the bulk importer in dry-run mode and writes only `assessment.html` and `assessment.json` (to `-o`, default `.`).
+
+```sh
+npx pw assess legacy -o assessment --usage runs.csv --retire-days 180 --hours simple=0.25,medium=2,complex=8 --fail-under 60
+```
+
+- The summary leads with "X reports can be retired, Y migrate automatically, Z need work", then the status counts,
+  readiness, the effort estimate, the top blockers (grouped, with the reports each affects), the untranslated expressions
+  by function, and the server settings to configure (`PW_DB_<NAME>`).
+- **Status:** `full` converts as it is; `small` has approximated items, report notes or missing files; `manual` has dropped
+  items or untranslated expressions; `failed` does not parse. Configuring data sources and fonts is not a fix.
+- **Tiers:** Retire (only with `--usage`: no run in `--retire-days`, default 180); Simple (effort Low); Medium; Complex
+  (effort High, or failed). Effort: Low up to 3 issues in a small report, Medium above that; High for manual work with more than 3.
+- **Hours:** per report, Simple 0.25 h, Medium 2 h, Complex 8 h, Retire 0 h. Override with `--hours simple=…,medium=…,complex=…`.
+  These are planning numbers, not measurements.
+- **Usage:** a CSV or JSON table. The SSRS execution log (one row per run) is exported from the report server database with:
+  `SELECT ItemPath, TimeStart, UserName, Format, Status FROM ExecutionLog3 WHERE ItemType = 'Report' AND TimeStart >= DATEADD(day, -365, GETDATE())`.
+  A generic table has a report name (`name`, `report` or `reportpath`), `runs` and `lastrun` (or `last run date`). Rows
+  join to reports by file name without the extension. A report with no row has no runs.
+- **Exit codes:** 0 always, or 1 when the readiness is below `--fail-under <pct>`; 2 bad usage.
+- Limits: 500 files, 8 MB per file, 256 MB in all (`--max-files`, `--max-bytes`).
 
 ## Bulk import
 
@@ -170,9 +197,39 @@ e.g. `Sales Report.rdl` → `sales-report.pw.json`), because `pw render` and the
   folder are read, so `../` and absolute paths cannot reach outside it. Symbolic links that point out of the folder,
   or to folders, are refused and listed. Every output path is checked to stay in `<outDir>`, and nothing is written
   through a link. `--max-files` and `--max-bytes` cap the file count and each file's size. Nothing in an imported file
-  is run: custom code and scriptlets stay text.
+  is run: scriptlets stay text, and SSRS custom code is translated (simple single-Return functions become report
+  functions), never executed. A map's shapefile (`.shp` + `.dbf`) is read only from inside the folder, with the same caps.
 
 `pw --version` (or `-v`) prints the CLI's version and the version of the engine it carries.
+
+## Prove a migrated report matches: `pw compare`
+
+```bash
+npx pw compare sales-ssrs.pdf sales.pw.json -d sales=sales.json -o compare/
+npx pw compare sales-ssrs.pdf sales-rw.pdf --threshold 0.5     # two PDFs
+npx pw compare sales-ssrs.pdf sales.pw.json -d sales=sales.json --numbers-only   # CI: only the numbers
+```
+
+Writes `compare.html` (self-contained) and `compare.json`, prints a summary. A `.pw.json` second argument is rendered
+first, with `-d`/`-p` as in `pw render`. What it checks:
+
+- **Numbers first (Reconciliation).** Every number on both sides, with its page, position and label (the words before it
+  on its line). Equal values count as equal however they are formatted (`1,234.50` = `1234.5` = `1.234,50` =
+  `$1,234.50`; `(12.00)` = `-12`); a rounding difference (`1,234.504` → `1,234.50`) is flagged as `rounding`; anything
+  else is `mismatched` with the delta and % delta. **Totals** (labels with total, sum, grand, subtotal, Gesamt, Summe,
+  totale, somme, suma, 合計…) are reconciled separately.
+- **Text.** Words aligned page by page: missing, extra, changed; moved more than `--tolerance` points (positions
+  normalised for a different page size). Positions need `pdftotext` (poppler-utils); without it the words are compared
+  in reading order, from `@reportwright/pdf`'s reader, and moves are not reported.
+- **Pixels** (when `pdftoppm` is installed): both pages at `--dpi`, a red-on-faded overlay and the % of pixels that
+  differ per page.
+
+Verdict: **Matches**, **Minor differences** (only moves or pixels) or **Differences found**. Exit 1 when any number or
+total differs (rounding included), the page counts differ, or the % of differing words or pixels passes `--threshold`;
+`--numbers-only` gates on the numbers alone. Inputs are untrusted: each PDF is read under the reader's budget (at most
+50 MB, 300 pages, 20,000 words a page, 50 pages rendered, 4 megapixels a page, tools stopped after 15 s). The
+viewer and designer have no compare button yet: use the CLI or `POST /api/reports/compare`. See
+[docs/migration-compare.md](https://github.com/MrArun005/reportwright/blob/main/docs/migration-compare.md).
 
 ## Snapshot tests: `pw test`
 

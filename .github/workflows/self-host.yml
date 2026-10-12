@@ -4,13 +4,15 @@ on:
     branches: [feat/self-host]
   pull_request:
     paths: ['deploy/**', 'Dockerfile', '.github/workflows/self-host.yml']
+permissions:
+  contents: read
 jobs:
   compose:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults: { run: { working-directory: deploy/compose } }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Missing secret fails clearly
         run: |
           ! docker compose --env-file /dev/null config 2>err.txt

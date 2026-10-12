@@ -2,7 +2,13 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { render, FontStore, fontFile, defaultFontStore, exportPdf, exportXlsx, exportDocx, exportPptx, exportHtml, exportCsv, needsExportData } from '@reportwright/engine';
+import module from 'node:module';
+import { compileCacheDir } from './compile-cache.js';
+
+// Node's compile cache (a private folder; PW_NO_COMPILE_CACHE=1 turns it off) before the engine bundle is compiled, so
+// every worker after the first, in this process or the next, skips compiling it
+try { const dir = compileCacheDir(); if (dir) module.enableCompileCache?.(dir); } catch { /* no cache */ }
+const { render, FontStore, fontFile, defaultFontStore, exportPdf, exportXlsx, exportDocx, exportPptx, exportHtml, exportCsv, needsExportData } = await import('@reportwright/engine');
 
 const fonts = workerData?.fontsDir ? new FontStore((key) => fs.readFile(path.join(workerData.fontsDir, fontFile(key)))) : defaultFontStore();
 const EXPORT = {

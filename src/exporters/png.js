@@ -34,6 +34,23 @@ function rawBytes(w, h, bits, interlace) {
  * @param {Uint8Array} b @returns {string|null}
  */
 export function pngProblem(b) {
+  // ponytail: verdicts cached by a SHA-256 of the bytes (Node only), 256 entries LRU; content-keyed, so safe across tenants
+  const key = crypto ? crypto.createHash('sha256').update(b).digest('base64') : null;
+  if (key && verdicts.has(key)) { const v = verdicts.get(key); verdicts.delete(key); verdicts.set(key, v); return v; }
+  const v = check(b);
+  if (key) { verdicts.set(key, v); if (verdicts.size > 256) verdicts.delete(verdicts.keys().next().value); }
+  return v;
+}
+const proc = /** @type {any} */ (globalThis).process;
+const crypto = proc?.getBuiltinModule?.('node:crypto');
+const zlib = proc?.getBuiltinModule?.('node:zlib');
+/** @type {Map<string, string|null>} */
+const verdicts = new Map();
+/** the verdict cache's size, for tests */
+export const pngVerdictCacheSize = () => verdicts.size;
+
+/** @param {Uint8Array} b @returns {string|null} */
+function check(b) {
   const SIG = [137, 80, 78, 71, 13, 10, 26, 10];
   if (b.length < 8 || SIG.some((x, i) => b[i] !== x)) return 'not a PNG';
   const u32 = (i) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
@@ -64,6 +81,13 @@ export function pngProblem(b) {
   if (!ch || ![1, 2, 4, 8, 16].includes(ihdr.depth) || ihdr.w < 1 || ihdr.h < 1 || ihdr.interlace > 1) return 'an unsupported PNG header';
   const want = rawBytes(ihdr.w, ihdr.h, ch * ihdr.depth, ihdr.interlace);
   if (want > PNG_LIMITS.rawBytes) return `${Math.round(want / 1048576)} MB of pixel data, more than ${PNG_LIMITS.rawBytes / 1048576} MB`;
+  // node:zlib (8× faster) when the whole output is small; any error falls back to fflate so verdicts stay fflate's
+  if (zlib && want <= 16 * 1048576) {
+    try {
+      const n = zlib.inflateSync(idat.length === 1 ? idat[0] : Buffer.concat(idat), { maxOutputLength: want }).length;
+      return n === want ? null : 'the image data is cut short';
+    } catch { /* fflate decides */ }
+  }
   // inflate as a stream, counting, nothing kept: a bomb stops (the throw leaves push) as soon as it passes the header
   let got = 0, over = false, failed = false;
   const OVER = new Error('over');
