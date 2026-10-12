@@ -88,7 +88,7 @@ export async function oracle(url, text, values, ctx) {
       const entry = pools.get(key);
       const pool = await entry.ready;
       const conn = await clk.inTime(pool.getConnection(), (c) => c.close().catch(() => {}));
-      let ok = false, lobRead = false;
+      let ok = false;
       try {
         // break() stops the call in flight; callTimeout bounds each round trip to the time left
         clk.track({ cancel: () => { conn.break().catch(() => {}); } });
@@ -108,7 +108,11 @@ export async function oracle(url, text, values, ctx) {
         // fetchArraySize is the round trip, and the most rows the driver buffers ahead of the row and byte counters below.
         // 1 meant one network round trip per row (a 50-row read took seconds); 100 keeps a read of wide rows to a few MB
         // (a row is at most a few tens of kB), and the counters refuse the batch the moment a cap is crossed
-        const r = await conn.execute(text, values, { resultSet: true, outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: 1, prefetchRows: 1 });
+        // CLOB and NCLOB come back as text (fetchTypeHandler), not as LOB locators: the locator path hung in CI (a CLOB-only
+        // query, and the pooled connection after it). The row and byte counters below still refuse a value over the cap, but
+        // only after the text is read (a locator's length could be checked first; the text cannot)
+        const r = await conn.execute(text, values, { resultSet: true, outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: 100, prefetchRows: 100,
+          fetchTypeHandler: (m) => (m.dbType === oracledb.DB_TYPE_CLOB || m.dbType === oracledb.DB_TYPE_NCLOB ? { type: oracledb.STRING } : undefined) });
         const rs = r.resultSet;
         try {
           const odd = (r.metaData || []).find(m => !READABLE.has(m.dbType?.name ?? m.dbTypeName));
@@ -129,7 +133,6 @@ export async function oracle(url, text, values, ctx) {
                 if (v && typeof v === 'object' && typeof v.getData === 'function') {
                   // a LOB: its length (characters for CLOB, bytes for BLOB) is checked before a byte of it is read
                   take.reserve(Number(v.length) * (v.type === oracledb.DB_TYPE_BLOB ? 1 : 4));
-                  lobRead = true; // ponytail: a LOB read in CI left the pooled connection hung (a CLOB-only query hung even on a fresh one; root cause not isolated)
                   row[k] = await v.getData();
                   if (typeof v.close === 'function') await v.close().catch(() => {});
                 }
@@ -143,7 +146,7 @@ export async function oracle(url, text, values, ctx) {
         } finally { await rs.close().catch(() => {}); }
       } finally {
         await conn.rollback().catch(() => {});
-        await conn.close(ok && !lobRead ? undefined : { drop: true }).catch(() => {}); // a broken, capped, failed or LOB-reading call: not pooled
+        await conn.close(ok ? undefined : { drop: true }).catch(() => {}); // a broken, capped or failed call: not pooled
       }
     })());
   } finally { clk.stop(); }
