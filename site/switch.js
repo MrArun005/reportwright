@@ -175,7 +175,7 @@ const GAPS = [
   ]],
   ['JasperReports', 'API.md "JasperReports import"; 49 demo samples, 99.8% of 1,492 elements kept', [
     'Crosstabs, table components, generic elements and multi-axis charts are not converted (noted).',
-    'Markup (HTML, styled text) shows as plain text; rotated text is not rotated.',
+    'Markup (HTML, styled, RTF) becomes rich text (bold, italic, underline, font, size, colour, sup/sub, breaks); other tags keep their text with a note. Styled or RTF markup built by an expression shows as plain text.',
     'Rows from Java code (a data source) have no equivalent: point a JSON source at the data.',
     'Scriptlet-set variables, <code>PAGE_COUNT</code> and <code>COLUMN_*</code> variables show as text.',
     'Expressions with <code>instanceof</code>, <code>new SimpleDateFormat(…)</code>, Groovy <code>${}</code> strings and <code>$R{}</code> resource bundles stay as text with a note.',

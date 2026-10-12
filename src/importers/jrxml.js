@@ -17,6 +17,7 @@
  */
 import { parseXml, XmlError } from './xml.js';
 import { importRdlx, crosstabTablix, translateExpression, ImportBudgetError, OUTPUT_LIMITS, reportId, safeName, rewordItems } from './rdlx.js';
+import { jasperMarkup, rtfMarkup } from './markup.js';
 import { javaToVb, javaPattern, halfEvenDigits, kindOf, integral, Untranslatable } from './java.js';
 
 const MAX_EXPR = 20_000;
@@ -311,7 +312,7 @@ function toRdlx(root, notes, charts, reportName, resolve) {
     set('bold', B(a.bold ?? a.isBold)); set('italic', B(a.italic ?? a.isItalic)); set('underline', B(a.underline ?? a.isUnderline)); set('strike', B(a.strikeThrough ?? a.isStrikeThrough));
     set('hAlign', a.hTextAlign ?? a.textAlignment ?? a.hAlign ?? a.horizontalAlignment ?? a.horizontalTextAlign);
     set('vAlign', a.vTextAlign ?? a.verticalAlignment ?? a.vAlign ?? a.verticalTextAlign);
-    set('pattern', a.pattern); set('rotation', a.rotation); set('markup', a.markup);
+    set('pattern', a.pattern); set('rotation', a.rotation); set('markup', a.markup ?? (B(a.isStyledText) ? 'styled' : undefined));
     set('radius', a.radius);
     set('blankWhenNull', B(a.blankWhenNull ?? a.isBlankWhenNull));
     return o;
@@ -438,6 +439,22 @@ function toRdlx(root, notes, charts, reportName, resolve) {
   }
 
   /** @param {any} n @param {any} c */
+  /** A literal of Jasper markup → a rich text item (the HTML subset), with a note for what is dropped or cut. */
+  function rich(it, text, kind) {
+    if (kind !== 'html' && kind !== 'styled' && kind !== 'rtf') { (it.__notes ||= []).push(`its text is ${kind} markup; ReportWright shows it as plain text.`); return; }
+    const r = kind === 'rtf' ? rtfMarkup(text) : jasperMarkup(text, kind);
+    it.Type = 'richtext'; it.Html = r.html; delete it.Value;
+    if (r.unknown.length) (it.__notes ||= []).push(`its ${kind} markup uses ${r.unknown.slice(0, 8).join(', ')}, which ReportWright leaves out (the text is kept).`);
+    if (r.cut) (it.__notes ||= []).push(`its ${kind} markup has ${r.cut}; the rest is left out.`);
+  }
+  /** Jasper's rotation (Left: reads upwards, Right: downwards, UpsideDown) → the ActiveReports angle (counter-clockwise). */
+  function rotate(it, r) {
+    const angle = { Left: 90, Right: 270, UpsideDown: 180 }[r];
+    if (!angle) return;
+    if (it.Type === 'richtext') (it.__notes ||= []).push(`its text is rotated (${r}) in JasperReports; rich text is drawn upright here.`);
+    else it.Angle = angle;
+  }
+
   function item(n, c) {
     const a = n.a, re = n.re, e = n.el;
     const base = { __pos: e.pos, Name: nameFor(n, n.kind), Left: pt(a.x), Top: pt(a.y), Width: pt(a.width), Height: pt(a.height) };
@@ -450,7 +467,6 @@ function toRdlx(root, notes, charts, reportName, resolve) {
     const pw = exprOf(re, 'printWhenExpression') ?? exprOf(e, 'printWhenExpression');
     if (pw) { const v = setting(pw, it, 'the condition that prints it', ctx); if (v) it.Visibility = { Hidden: `=Not (${v.slice(1)})` }; }
     if (a.positionType === 'FixRelativeToBottom') (it.__notes ||= []).push('it stays at the bottom of a band that grows in JasperReports; here it keeps its place.');
-    if (a.rotation && a.rotation !== 'None') (it.__notes ||= []).push(`its text is rotated (${a.rotation}) in JasperReports; here it is not.`);
     switch (n.kind) {
       case 'staticText': {
         it.Type = 'textbox';
@@ -458,7 +474,8 @@ function toRdlx(root, notes, charts, reportName, resolve) {
         it.Value = t.startsWith('=') ? `="${t.replace(/"/g, '""')}"` : t;
         it.CanGrow = false;
         it.Style = rdlxStyle(st, 'text', it, ctx);
-        if (st.markup && st.markup !== 'none') (it.__notes ||= []).push(`its text is ${st.markup} markup; ReportWright shows it as plain text.`);
+        if (st.markup && st.markup !== 'none') rich(it, t, st.markup);
+        rotate(it, st.rotation ?? a.rotation);
         return it;
       }
       case 'textField': {
@@ -477,7 +494,15 @@ function toRdlx(root, notes, charts, reportName, resolve) {
         if (!st.blankWhenNull) style.NullText = 'null'; // Jasper prints a null value as "null" unless blankWhenNull
         if (pat) (it.__notes ||= []).push('its format is set by an expression (patternExpression); it is left out.');
         it.Style = style;
-        if (st.markup && st.markup !== 'none') (it.__notes ||= []).push(`its text is ${st.markup} markup; ReportWright shows it as plain text.`);
+        if (st.markup && st.markup !== 'none') {
+          const lit = /^\s*"((?:[^"\\]|\\.)*)"\s*$/.exec(src ?? '');
+          if (lit) rich(it, lit[1].replace(/\\n/g, '\n').replace(/\\(.)/g, '$1'), st.markup);
+          else if (st.markup === 'html') {
+            it.Type = 'richtext'; it.Html = it.Value; delete it.Value;
+            (it.__notes ||= []).push('its HTML comes from the data; ReportWright reads b, i, u, sup, sub, br and span styles (a <font> tag in the data is left out, its text kept).');
+          } else (it.__notes ||= []).push(`its text is ${st.markup} markup built by an expression; ReportWright shows it as plain text.`);
+        }
+        rotate(it, st.rotation ?? a.rotation);
         link(e, it, ctx);
         return it;
       }
