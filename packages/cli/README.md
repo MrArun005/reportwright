@@ -105,7 +105,7 @@ Exit codes: 0 ok; 1 a test failed or the pages differ; 2 bad usage (`pw import <
 | Direction | Formats |
 |---|---|
 | Output (`-f`) | `pdf` (also `--pdfa`, `--ua`, encrypted), `xlsx`, `docx`, `pptx`, `html`, `csv`, `json`, `txt` |
-| Import | SSRS `.rdl` / `.rdlc` (+ shared data sources `.rds`), JasperReports `.jrxml` (+ style templates `.jrtx`), BIRT `.rptdesign`, ActiveReports `.rdlx-json`, referenced images. Jasper and BIRT crosstabs carry over as matrices (groups, measures, totals, styles); Jasper and BIRT charts as charts; Jasper markup as rich text; SSRS maps as map items (embedded shapes as GeoJSON; a shapefile layer's `.shp` + `.dbf` are read when they are in the imported folder; SQL spatial layers need GeoJSON, noted) |
+| Import | SSRS `.rdl` / `.rdlc` (+ shared data sources `.rds`), JasperReports `.jrxml` (+ style templates `.jrtx`), BIRT `.rptdesign`, ActiveReports `.rdlx-json`, referenced images. Jasper and BIRT crosstabs carry over as matrices (groups, measures, totals, styles); Jasper and BIRT charts as charts; Jasper markup as rich text; SSRS maps as map items (embedded shapes as GeoJSON; a shapefile layer's `.shp` + `.dbf` are read when they are in the imported folder; SQL spatial layers are drawn from the query's geography binary or `STAsText()` WKT) |
 
 ## Requirements and limits
 

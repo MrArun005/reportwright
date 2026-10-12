@@ -529,7 +529,8 @@ function toRdlx(root, notes, year, resolve) {
       else if (sd.name === 'MapSpatialDataSet') {
         const ds = raw(sd, 'DataSetName'), f = raw(sd, 'SpatialField');
         if (!it.ShapeDataSet) { it.ShapeDataSet = ds; it.Geometry = `=Fields!${f}.Value`; }
-        notes.push(`the layer "${layer.attrs.Name}" reads SQL Server spatial data (${ds}.${f}): make that query return the shape as GeoJSON (e.g. ${f}.STAsText() converted to GeoJSON, or a GeoJSON column), or supply GeoJSON text.`);
+        // decoded at render time (src/engine/geo.js spatialValue): WKT from STAsText(), the geography binary, or GeoJSON
+        it.__info.push(`the layer "${layer.attrs.Name}" draws SQL Server spatial data (${ds}.${f}) as the query returns it: the geography binary, WKT (${f}.STAsText()) or GeoJSON.`);
       } else if (sd.name === 'MapSpatialDataRegion') notes.push(`the layer "${layer.attrs.Name}" reads its shapes from another data region; supply GeoJSON for it.`);
       return sd;
     };

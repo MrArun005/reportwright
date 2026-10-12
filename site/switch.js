@@ -157,7 +157,7 @@ $('#res-download').addEventListener('click', () => {
 /* ---------- 02 what does not carry over ---------- */
 const GAPS = [
   ['SSRS / Report Builder', 'API.md "SSRS import", FEATURES.md; 32 Microsoft samples import with no item dropped', [
-    'Maps become map items; a shapefile layer is read only when its .shp and .dbf are imported with the report folder (<code>pw import &lt;folder&gt;</code>), otherwise noted. Custom report items are left out, with a note.',
+    'Maps become map items; SQL spatial layers draw from the query (return the column or <code>STAsText()</code>); a shapefile layer is read only when its .shp and .dbf are imported with the report folder (<code>pw import &lt;folder&gt;</code>), otherwise noted. Custom report items are left out, with a note.',
     'RDL 2005 Table, Matrix and List are not read: upgrade the file in Report Builder first.',
     'Custom code (<code>Code.</code> calls) is kept as text and never run; rewrite what you need as report functions.',
     'Gauges are approximated: a half-circle gauge with the first pointer\'s value and the scale\'s minimum and maximum.',

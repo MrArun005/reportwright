@@ -178,3 +178,51 @@ describe('SSRS shapefile maps: the .shp and .dbf next to the report → GeoJSON'
     expect(performance.now() - t0).toBeLessThan(5000);
   });
 });
+
+describe('SSRS SQL spatial maps: the spatial field is decoded at render time', () => {
+  const r = importRdl(read('rdl/map-spatial.rdl'));
+  const map = all(r.definition).find(i => i.type === 'map');
+  const wktW = 'POLYGON ((0 0, 0 10, 10 10, 10 0, 0 0))';
+  // the same square as SQL Server's geography binary (version 1, one polygon figure, lat/long pairs)
+  const geoBin = (pts) => {
+    const b = Buffer.alloc(6 + 4 + pts.length * 16 + 4 + 5 + 4 + 9); let o = 0;
+    b.writeInt32LE(4326, o); o += 4; b[o++] = 1; b[o++] = 4; b.writeUInt32LE(pts.length, o); o += 4;
+    for (const [lon, lat] of pts) { b.writeDoubleLE(lat, o); b.writeDoubleLE(lon, o + 8); o += 16; }
+    b.writeUInt32LE(1, o); o += 4; b[o] = 2; b.writeInt32LE(0, o + 1); o += 5;
+    b.writeUInt32LE(1, o); o += 4; b.writeInt32LE(-1, o); b.writeInt32LE(0, o + 4); b[o + 8] = 3;
+    return b;
+  };
+  const east = [[10, 0], [10, 10], [20, 10], [20, 0], [10, 0]];
+  const sources = (shapes) => ({ [r.definition.dataSets.find(d => d.name === 'StateSales').source]: [{ State: 'Westland', Amount: 5 }, { State: 'Eastland', Amount: 9 }], ...Object.fromEntries(r.definition.dataSets.filter(d => d.name === 'StateShapes').map(d => [d.source, shapes])) });
+  const shapesDrawn = (out) => out.pages[0].items.filter(i => i.t === 'path').length;
+  it('imports the layer with its data set and no "supply GeoJSON" note', () => {
+    expect(validate(r.definition).errors).toEqual([]);
+    expect(map).toMatchObject({ dataSet: 'StateShapes', geometry: '=Fields.Geo' });
+    expect(r.warnings.join('\n')).not.toMatch(/supply GeoJSON|return the shape as GeoJSON/);
+  });
+  it('draws WKT, the geography binary (bytes, a JSON Buffer, 0x hex, base64) and GeoJSON text', async () => {
+    const bin = geoBin(east);
+    for (const geo of [bin, { type: 'Buffer', data: [...bin] }, '0x' + bin.toString('hex'), bin.toString('base64'), JSON.stringify({ type: 'Polygon', coordinates: [east] })]) {
+      const out = await render(r.definition, { fontStore, sources: sources([{ STATENAME: 'Westland', Geo: wktW }, { STATENAME: 'Eastland', Geo: geo }]) });
+      expect(out.warnings.filter(w => /shape|coordinates/.test(w))).toEqual([]);
+      expect(shapesDrawn(out)).toBeGreaterThanOrEqual(2);
+      expect(words(out)).toContain('Sales by state');
+    }
+  });
+  it('hostile spatial values: capped on emitted coordinates, nesting and size; unreadable ones are named', async () => {
+    const t0 = performance.now();
+    const huge = 'LINESTRING (' + Array.from({ length: 210_000 }, (_, i) => `${i % 180} 1`).join(', ') + ')';
+    let out = await render(r.definition, { fontStore, sources: sources([{ STATENAME: 'Westland', Geo: wktW }, { STATENAME: 'Big', Geo: huge }]) });
+    expect(out.warnings.join('\n')).toMatch(/more than 200,000 coordinates; the shape "Big"/);
+    const bad = ['POLYGON ' + '('.repeat(5000) + '0 0' + ')'.repeat(5000), 'POLYGON ((0 0, 1 1 1 1 1, 2 2))', 'GEOMETRYCOLLECTION (POINT (1 2))', '0x00', 'POLYGON ((' + '1'.repeat(5e6) + '))'];
+    out = await render(r.definition, { fontStore, sources: sources(bad.map((Geo, i) => ({ STATENAME: `B${i}`, Geo }))) });
+    expect(out.warnings.filter(w => /has no Polygon/.test(w)).length).toBe(bad.length);
+    // a binary that claims more points than it holds, and one over the cap
+    const lying = geoBin(east); lying.writeUInt32LE(0x7fffffff, 6);
+    const many = geoBin(Array.from({ length: 210_000 }, (_, i) => [i % 180, 1]));
+    out = await render(r.definition, { fontStore, sources: sources([{ STATENAME: 'L', Geo: lying }, { STATENAME: 'M', Geo: many }]) });
+    expect(out.warnings.join('\n')).toMatch(/shape "L" has no Polygon/);
+    expect(out.warnings.join('\n')).toMatch(/more than 200,000 coordinates; the shape "M"/);
+    expect(performance.now() - t0).toBeLessThan(8000);
+  });
+});
