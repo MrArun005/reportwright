@@ -1,0 +1,107 @@
+# Live database tests for the SQL drivers in src/server/sql/ (Oracle, BigQuery, Snowflake). The mocked unit tests in
+# tests/engine/sql-connectors.test.js do not prove the drivers work against a real server; these do.
+name: db-live
+
+on:
+  push:
+    branches: [test/live-oracle-bigquery]
+  pull_request:
+    paths:
+      - 'src/server/sql*'
+      - 'src/server/sql/**'
+      - 'tests/live/**'
+      - 'vitest.config.mjs'
+      - '.github/workflows/db-live.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-live-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  oracle:
+    name: oracle (gvenzl/oracle-free 23)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      oracle:
+        image: gvenzl/oracle-free:23-slim
+        env:
+          ORACLE_PASSWORD: PwSys1234
+          APP_USER: pwapp
+          APP_USER_PASSWORD: PwApp1234
+        ports: ['1521:1521']
+        options: --health-cmd healthcheck.sh --health-interval 10s --health-timeout 10s --health-retries 60 --health-start-period 60s
+    env:
+      PW_SQL_MAX_ROWS: '50'
+      PW_SQL_TIMEOUT_MS: '3000'
+      PW_LIVE_ORACLE: oracle://pwreader:PwReader1234@127.0.0.1:1521/FREEPDB1
+      PW_LIVE_ORACLE_APP: oracle://pwapp:PwApp1234@127.0.0.1:1521/FREEPDB1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - name: Create the data owner and the read-only login (tests/live/oracle-setup.sql)
+        run: |
+          CID=$(docker ps -q --filter "ancestor=gvenzl/oracle-free:23-slim" | head -1)
+          test -n "$CID" || { echo "::error::Oracle container not found"; docker ps -a; exit 1; }
+          docker exec -i "$CID" sqlplus -S "system/PwSys1234@//localhost:1521/FREEPDB1" < tests/live/oracle-setup.sql
+      - name: Oracle live tests
+        run: npx vitest run tests/live/oracle.live.test.js
+
+  bigquery:
+    name: bigquery (goccy/bigquery-emulator, an emulator not Google BigQuery)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PW_SQL_MAX_ROWS: '50'
+      PW_SQL_TIMEOUT_MS: '3000'
+      PW_LIVE_BIGQUERY: http://127.0.0.1:9050
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      # a step, not a service container: the emulator needs its command-line flags (project, seed file)
+      - name: Start the emulator, seeded from tests/live/bigquery-seed.yaml
+        run: |
+          docker run -d --name bqemu -p 9050:9050 -v "$GITHUB_WORKSPACE/tests/live/bigquery-seed.yaml:/seed.yaml:ro" \
+            ghcr.io/goccy/bigquery-emulator:0.6.6 --host=0.0.0.0 --port=9050 --project=pwtest --data-from-yaml=/seed.yaml
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:9050/bigquery/v2/projects/pwtest/datasets >/dev/null && { echo "emulator up"; exit 0; }; sleep 2; done
+          docker logs bqemu; exit 1
+      - name: BigQuery emulator tests
+        run: npx vitest run tests/live/bigquery.live.test.js
+      - name: Emulator log on failure
+        if: failure()
+        run: docker logs bqemu || true
+
+  snowflake:
+    name: snowflake (runs only when secret PW_LIVE_SNOWFLAKE_URL is set)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PW_SQL_MAX_ROWS: '50'
+      PW_SQL_TIMEOUT_MS: '30000'
+      PW_LIVE_SNOWFLAKE: ${{ secrets.PW_LIVE_SNOWFLAKE_URL }}
+    steps:
+      - name: Gate on the secret
+        id: gate
+        run: |
+          if [ -n "$PW_LIVE_SNOWFLAKE" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"; else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"; echo "::notice::Snowflake live tests skipped: secret PW_LIVE_SNOWFLAKE_URL is not set"; fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.enabled == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.enabled == 'true'
+        with: { node-version: 22, cache: npm }
+      - if: steps.gate.outputs.enabled == 'true'
+        run: npm ci --no-audit --no-fund
+      - name: Snowflake live tests
+        if: steps.gate.outputs.enabled == 'true'
+        run: npx vitest run tests/live/snowflake.live.test.js
