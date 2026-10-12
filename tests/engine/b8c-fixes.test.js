@@ -90,8 +90,8 @@ describe('N19: deprecation messages all say the same thing (removed in 1.0)', ()
     });
     expect(bad).toEqual([]);
   });
-  it('the exportHtml message says "will be removed in 1.0"', () => {
-    expect(fs.readFileSync(path.join(root, 'src', 'exporters', 'html.js'), 'utf8')).toMatch(/the old form will be removed in 1\.0/);
+  it('the exportHtml message says the old form "was removed in 1.0"', () => {
+    expect(fs.readFileSync(path.join(root, 'src', 'exporters', 'html.js'), 'utf8')).toMatch(/was removed in 1\.0/);
   });
 });
 

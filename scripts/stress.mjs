@@ -49,7 +49,7 @@ for (const f of formats) {
     if (f === 'pdf') await time('pdf', () => exportPdf(model, fontStore, { title: 'Stress' }));
     if (f === 'xlsx') await time('xlsx', async () => exportXlsx(model, { title: 'Stress' }));
     if (f === 'docx') await time('docx', () => exportDocx(model, { title: 'Stress' }));
-    if (f === 'html') await time('html', () => exportHtml(model, fontStore, { title: 'Stress' }));
+    if (f === 'html') await time('html', () => exportHtml(model, { fonts: fontStore, title: 'Stress' }));
     if (f === 'csv') await time('csv', () => exportCsv(model, {}));
   } catch (e) { console.log(`${f.padEnd(8)} FAILED: ${e.message}`); }
 }

@@ -66,9 +66,9 @@ describe('engine text and CLI help (B7 docs drift)', () => {
     expect(NO_CJK_FONTS).toMatch(/npx reportwright-fonts-cjk/);
     expect(NO_CJK_FONTS.indexOf('npx reportwright-fonts-cjk')).toBeLessThan(NO_CJK_FONTS.indexOf('npm run fonts:cjk'));
   });
-  it('the old positional export form says it will be removed in 1.0 (N12)', () => {
+  it('the old positional export form says it was removed in 1.0 (N12)', () => {
     expect(read('packages/engine/entry.js')).not.toMatch(/removed in 0\.9/);
-    expect(read('packages/engine/entry.js')).toMatch(/will be removed in 1\.0/);
+    expect(read('packages/engine/entry.js')).toMatch(/was removed in 1\.0/);
   });
   it('the CLI help marks audit and migrate-storage as server only (N13)', () => {
     const r = spawnSync(process.execPath, [path.join(ROOT, 'bin', 'pw.mjs'), '--help'], { encoding: 'utf8' });

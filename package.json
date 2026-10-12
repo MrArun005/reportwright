@@ -1,6 +1,6 @@
 {
   "name": "reportwright",
-  "version": "0.14.0-rc.6",
+  "version": "1.0.0",
   "license": "MIT",
   "private": true,
   "engines": {

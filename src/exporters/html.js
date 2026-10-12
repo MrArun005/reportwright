@@ -13,26 +13,19 @@ import { needsTableData } from './regions.js';
  * localhost, 127.x): a file sent to a client never links to a server it cannot reach.
  * Unless static, a file whose report has tables also gets a Tables view (htmldata.js): the tables as HTML, re-sorted on
  * their interactive-sort columns, groups opened and closed, rows filtered, by one inline script the file's CSP allows.
- * exportHtml(model, { fonts, ...options }). The 0.7 form exportHtml(model, fontStore, options) still works (deprecated).
+ * exportHtml(model, { fonts, ...options }). The 0.7 form exportHtml(model, fontStore, options) was removed in 1.0.
  * @param {any} model
  * @param {{ fonts?: import('../engine/text/fonts.js').FontStore, fontStore?: import('../engine/text/fonts.js').FontStore, title?: string, drillBase?: string, subset?: (font: Uint8Array, cps: Iterable<number>, o?: { layout?: boolean }) => Promise<Uint8Array>,
- *   static?: boolean, drillLinks?: 'inline'|'new-tab'|'off', locale?: string, currency?: string, lang?: string, strings?: Partial<typeof DATA_STRINGS>, timeoutMs?: number } | import('../engine/text/fonts.js').FontStore} [options]
- * @param {any} [legacyOpt] the options of the 0.7 form
+ *   static?: boolean, drillLinks?: 'inline'|'new-tab'|'off', locale?: string, currency?: string, lang?: string, strings?: Partial<typeof DATA_STRINGS>, timeoutMs?: number }} [options]
  */
-export function exportHtml(model, options, legacyOpt) {
+export function exportHtml(model, options) {
   const isStore = (/** @type {any} */ x) => !!x && typeof x.load === 'function' && typeof x.get === 'function' && x.bytes instanceof Map;
-  /** @type {any} */ let fontStore, opt;
-  if (isStore(options)) {
-    if (!warnedLegacy) { warnedLegacy = true; console.warn('[reportwright] DEPRECATED: exportHtml(model, fontStore, options) is replaced by exportHtml(model, { fonts: fontStore, ...options }); the old form will be removed in 1.0'); }
-    fontStore = options; opt = legacyOpt || {};
-  } else {
-    opt = /** @type {any} */ (options) || {};
-    fontStore = opt.fonts || opt.fontStore;
-    if (!isStore(fontStore)) throw new TypeError('exportHtml(model, { fonts }): fonts must be a FontStore (defaultFontStore() or new FontStore(loader)), got ' + (fontStore === undefined ? 'nothing' : typeof fontStore));
-  }
+  if (isStore(options)) throw new TypeError('exportHtml(model, fontStore, options) was removed in 1.0: use exportHtml(model, { fonts: fontStore, ...options })');
+  const opt = /** @type {any} */ (options) || {};
+  const fontStore = opt.fonts || opt.fontStore;
+  if (!isStore(fontStore)) throw new TypeError('exportHtml(model, { fonts }): fonts must be a FontStore (defaultFontStore() or new FontStore(loader)), got ' + (fontStore === undefined ? 'nothing' : typeof fontStore));
   return withDeadline(htmlOf(model, fontStore, opt), /** @type {any} */ (opt).timeoutMs);
 }
-let warnedLegacy = false;
 /** @type {(model: any, fontStore: any, opt: any) => Promise<string>} */
 async function htmlOf(model, fontStore, opt) {
   const used = new Map();
