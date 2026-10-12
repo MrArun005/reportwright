@@ -32,6 +32,7 @@ const p = await ctx.newPage();
 const errors = [];
 p.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
 p.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
+p.on('response', r => { if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.url()}`); });
 
 // 1. the page, the coverage table and the card count
 await p.goto(`${BASE}/examples.html`);
