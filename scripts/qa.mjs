@@ -69,7 +69,11 @@ if (cmd === 'check') {
 } else if (cmd === 'aggregate') {
   const [dir, outDir] = rest;
   const rows = [];
-  for (const f of fs.existsSync(dir) ? fs.readdirSync(dir, { recursive: true }) : []) if (path.basename(String(f)) === 'results.json') rows.push(...JSON.parse(fs.readFileSync(path.join(dir, String(f)), 'utf8')));
+  for (const f of fs.existsSync(dir) ? fs.readdirSync(dir, { recursive: true }) : []) if (path.basename(String(f)) === 'results.json') {
+    // only a suite's rows count: the deep benchmark's raw results.json (an object) rides along in the same artifacts
+    const j = JSON.parse(fs.readFileSync(path.join(dir, String(f)), 'utf8'));
+    if (Array.isArray(j)) rows.push(...j.filter(r => r && typeof r.suite === 'string' && typeof r.result === 'string'));
+  }
   const suites = [...new Set(rows.map(r => r.suite))];
   const count = (rs, k) => rs.filter(r => r.result === k).length;
   const board = ['## QA scoreboard', '', '| Suite | PASS | FAIL | WARN | SKIP |', '|---|---|---|---|---|',

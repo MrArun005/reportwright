@@ -9,6 +9,11 @@ on:
       ref: { description: 'git ref the suites test (default: this run''s commit)', type: string, default: '' }
       tier: { description: 'quick or full', type: string, default: quick }
 
+# the called suites ask for these (pdf-libs/engines read earlier runs' artifacts); a caller must grant at least as much
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   correctness:
     if: inputs.suites == 'all' || contains(format(',{0},', inputs.suites), ',correctness,')
