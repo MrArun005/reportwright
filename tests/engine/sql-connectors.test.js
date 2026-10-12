@@ -123,7 +123,7 @@ function oracleMock({ type = 1, rows = [], meta = [{ name: 'A', dbType: { name: 
       const asked = Object.keys(answers).find(k => new RegExp(k === 'PUBLIC' ? "grantee = 'PUBLIC' AND privilege = 'EXECUTE'" : `from ${k}\\b`, 'i').test(t));
       if (o?.maxRows) return { rows: asked ? answers[asked] : [] }; // the login probe
       log.push(['execute', t, v]);
-      if (!o?.resultSet) return {};
+      if (!o?.resultSet) return { metaData: meta }; // the zero-row probe of the column types
       log.push(['options', o]);
       if (hang) await new Promise((_, rej) => { conn.break = async () => { log.push(['break']); rej(Object.assign(new Error('cancelled'), { code: 'NJS-123' })); }; });
       let i = 0;
@@ -139,7 +139,7 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
   it('the server parse must say SELECT; it runs READ ONLY and is rolled back', async () => {
     let log = oracleMock({ rows: [{ A: 1 }, { A: 2 }] });
     expect(await runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t where b = @b' }, { b: 3 })).toEqual([{ A: 1 }, { A: 2 }]);
-    expect(log.filter(x => x[0] !== 'probe' && x[0] !== 'options').map(x => x[0])).toEqual(['info', 'execute', 'execute', 'close', 'rollback', 'release']);
+    expect(log.filter(x => x[0] !== 'probe' && x[0] !== 'options').map(x => x[0])).toEqual(['info', 'execute', 'execute', 'execute', 'close', 'rollback', 'release']);
     // the batch read is one round trip per batch: fetchArraySize is a batch, not one row (one row a trip was seconds for 50 rows)
     expect(log.find(x => x[0] === 'options')[1].fetchArraySize).toBeGreaterThan(1);
     // bypass 3 (closed): a prefetch would fetch rows before the metadata and width checks run
@@ -152,7 +152,8 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
     expect(log.find(x => x[0] === 'probe' && /all_tab_privs/.test(x[1]))?.[1]).toMatch(/grantee = 'PUBLIC' AND NVL\(type, 'PACKAGE'\) <> 'DIRECTORY'\s+AND table_schema IN \(SELECT username FROM all_users WHERE oracle_maintained = 'Y'\)/);
     const main = log.filter(x => x[0] !== 'probe');
     expect(main[1][1]).toBe('SET TRANSACTION READ ONLY');
-    expect(main[2].slice(1)).toEqual(['select a from t where b = :1', [3]]);
+    expect(main[2][1]).toMatch(/WHERE ROWNUM < 1/); // the zero-row metadata probe
+    expect(main[3].slice(1)).toEqual(['select a from t where b = :1', [3]]);
     log = oracleMock({ type: 3 }); // not a SELECT (the server says so, whatever the text looks like)
     await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t' }, {})).rejects.toThrow(/one SELECT/);
     expect(log.some(x => x[0] === 'execute')).toBe(false);
