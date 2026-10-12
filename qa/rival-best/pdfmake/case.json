@@ -1,0 +1,2 @@
+{"rival": "pdfmake", "case": "nested tables (30 orders, each with a 5-line inner table)",
+ "theirs": "node theirs.mjs", "ours": "node ours.mjs"}

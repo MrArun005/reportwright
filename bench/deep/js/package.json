@@ -1,0 +1,18 @@
+{
+  "name": "deep-bench-js",
+  "private": true,
+  "type": "module",
+  "description": "JavaScript contestants of the deep benchmark (bench/deep/README.md). Exact versions.",
+  "dependencies": {
+    "@pdf-lib/fontkit": "1.1.1",
+    "@react-pdf/renderer": "4.9.0",
+    "jspdf": "4.2.1",
+    "mupdf": "1.28.1",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.4.299",
+    "pdfkit": "0.20.2",
+    "pdfmake": "0.3.11",
+    "puppeteer": "25.13.0",
+    "react": "19.3.0"
+  }
+}

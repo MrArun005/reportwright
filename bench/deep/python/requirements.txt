@@ -1,0 +1,8 @@
+# Python contestants of the deep benchmark, exact versions (bench/deep/README.md). borb is not here: see the README.
+reportlab==5.0.1
+weasyprint==70.0
+PyMuPDF==1.28.2
+pikepdf==10.16.0
+pypdf[crypto]==6.20.0
+pdfminer.six==20260107
+pdfplumber==0.11.10

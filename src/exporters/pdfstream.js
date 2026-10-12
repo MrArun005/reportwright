@@ -948,6 +948,7 @@ export function paintPage(pg, H, env) {
   const c = new Content(env.shared);
   const { tags } = env;
   if (tags) { c.tagged = true; tags.page(pg.win ?? 0); }
+  c.noNotdef = !!env.embedded; // PDF/A (embedAll) or tagged: no .notdef reference (PDF/A 6.2.11.8)
   for (let ii = 0; ii < pg.items.length; ii++) {
     const it = pg.items[ii];
     // tagged: every item in its own marked content, its text in its own text object and its lines one by one, operator
@@ -999,8 +1000,8 @@ export function paintPage(pg, H, env) {
         if (clipped) { c.q(); c.s += `${n2(it.clip.x)} ${n2(H - it.clip.y - it.clip.h)} ${n2(it.clip.w)} ${n2(it.clip.h)} re W n\n`; }
         for (const l of it.lines) {
           if (!l.runs) {
-            // tagged: a character the font lacks is left out (PDF/UA forbids drawing .notdef), its space kept, as pdf.js's tjOf
-            const str = cleanText(l.text), tj = tags ? notdefTJ(env, it.font, str) : null;
+            // PDF/A or tagged: a character the font lacks is left out (PDF/A and PDF/UA forbid drawing .notdef), its space kept, as pdf.js's tjOf
+            const str = cleanText(l.text), tj = env.embedded ? notdefTJ(env, it.font, str) : null;
             if (tj) c.text(env.pf(it.font), it.size, color, l.x, H - l.y, tj, true);
             else c.text(env.pf(it.font), it.size, color, l.x, H - l.y, env.literal(it.font, str));
             continue;

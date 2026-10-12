@@ -37,6 +37,8 @@ const has = (cmd, a = ['-v']) => spawnSync(cmd, a).status === 0;
 const VERAPDF = has('verapdf', ['--version']);
 try { checkRenderer(); } catch (e) { console.error(String(/** @type {any} */ (e).message)); process.exit(2); }
 for (const t of ['pdftoppm', 'pdftotext', 'qpdf']) if (!has(t, t === 'qpdf' ? ['--version'] : ['-v'])) { console.error(`${t} is needed`); process.exit(2); }
+// pdfsig checks the signed cases; poppler builds it only with NSS3 (a missing one fails those rows, named, below)
+if (!has('pdfsig', ['-v'])) console.error('pdfsig is not installed: the signed cases fail (poppler needs -DENABLE_NSS3=ON to build it)');
 
 const fontStore = new FontStore(async (k) => fs.readFileSync(path.join(root, 'public/fonts', fontFile(k))));
 const subset = createSubsetter(() => fs.promises.readFile(path.join(root, 'public/harfbuzz-subset.wasm')));
@@ -132,7 +134,12 @@ async function make1(c, writer) {
 
 let n = 0;
 const file = (b) => { const f = path.join(tmp, `${++n}.pdf`); fs.writeFileSync(f, b); return f; };
-const run = (cmd, a) => spawnSync(cmd, a, { maxBuffer: 1 << 30 });
+/** a tool's run: a tool that is not installed throws its name (the case then fails with it), never a null stdout */
+const run = (cmd, a) => {
+  const r = spawnSync(cmd, a, { maxBuffer: 1 << 30 });
+  if (r.error) throw new Error(`${cmd} could not run (${r.error.code}): install it on this machine`);
+  return r;
+};
 /** the open file's user password, for the tools (encrypted cases) */
 let pw = '';
 const upw = () => (pw ? ['-upw', pw] : []);
@@ -163,7 +170,6 @@ function features(f) {
 const table = [];
 /** cases decided by tier 3 */
 const tier3 = [];
-let failed = 0;
 for (const c of cases) {
   if (only && !only.some(o => c.id.includes(o))) continue;
   pw = c.password || '';
@@ -219,14 +225,17 @@ for (const c of cases) {
     const m = String(/** @type {any} */ (e)?.message || e);
     if (row.path) row.valid = `FAIL ${m.slice(0, 120)}`; else row.path = `not rendered: ${m.slice(0, 80)}`;
   }
-  if (Object.values(row).some(v => typeof v === 'string' && v.includes('FAIL'))) failed++;
   table.push(row);
   console.error(`${row.report}: ${row.path} words ${row.text} tree ${row.tree} drawing ${row.drawing} pixels ${row.pixels} ${row.valid} ${row.deterministic}`);
 }
 console.log('| report | path | pages | tier 1 words | tier 1 tree | drawing | pixels (tiers 2/3) | valid | features | deterministic | bytes old → new |');
 console.log('|---|---|---|---|---|---|---|---|---|---|---|');
 for (const r of table) console.log(`| ${Object.values(r).join(' | ')} |`);
+// the count and the list are the same rows: every row with a FAIL cell
+const bad = table.filter(r => Object.values(r).some(v => typeof v === 'string' && v.includes('FAIL')));
+const failed = bad.length;
 const went = table.filter(r => r.path === 'new writer' || r.path === 'streamed');
 console.log(`\n${table.length} reports, ${went.length} through @reportwright/pdf, ${table.filter(r => r.path.startsWith('pdf-lib')).length} still on pdf-lib, ${table.filter(r => r.path.startsWith('not rendered')).length} not rendered; ${failed} failing.`);
 if (tier3.length) console.log(`\nCases that reached tier 3 (600 dpi):\n${tier3.join('\n')}`);
+if (failed) console.log(`FAIL rows (${failed}): ${bad.map(r => r.report).join(', ')}`);
 process.exit(failed ? 1 : 0);

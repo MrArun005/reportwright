@@ -1,0 +1,51 @@
+# QA suite pdf-libs: wraps the deep benchmark (bench-deep-run.yml, groups: create-writers read-edit robustness) and grades it into the QA contract
+# (qa/rival-best/lib/grade_bench.py has the PASS/WARN/FAIL rule). A loss is a result, never tuned away.
+name: qa-pdf-libs
+on:
+  workflow_call:
+    inputs:
+      ref: {type: string, default: ""}
+      tier: {type: string, default: quick}
+      pdf_ref: {type: string, default: "", description: "git ref of MrArun005/reportwright-pdf to build @reportwright/pdf from; empty = npm"}
+  workflow_dispatch:
+    inputs:
+      ref: {type: string, default: "", description: "git ref of this repo (engine) to test; empty = npm"}
+      tier: {type: choice, options: [quick, full], default: quick}
+      pdf_ref: {type: string, default: "", description: "git ref of MrArun005/reportwright-pdf; empty = npm"}
+  push:
+    branches: [qa/bench]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  bench:
+    uses: ./.github/workflows/bench-deep-run.yml
+    with:
+      tier: ${{ inputs.tier || 'quick' }}
+      groups: "create-writers read-edit robustness"
+      pdf_ref: ${{ inputs.pdf_ref }}
+      pdf_repo: ${{ inputs.pdf_ref != '' && 'MrArun005/reportwright-pdf' || '' }}
+      prefix: qa-pdf-libs-
+      control: qa/rival-best/push-tier
+      workflow: qa-pdf-libs.yml
+      title: "QA: @reportwright/pdf vs PDF libraries"
+    secrets: inherit
+  grade:
+    needs: bench
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: qa-pdf-libs-bench-deep-results
+          path: bench-out
+      - name: Grade
+        run: python3 qa/rival-best/lib/grade_bench.py bench-out/results.json pdf-libs libs out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-pdf-libs-results
+          path: out/

@@ -1,0 +1,17 @@
+# Rust contestants of the deep benchmark (bench/deep/README.md), exact versions.
+# cargo build --release; run: target/release/bench <lib> <job> <size> <outdir>
+[package]
+name = "bench"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+printpdf = { version = "=0.12.8", default-features = false, features = ["png", "jpeg"] }
+lopdf = "=0.45.0"
+pdf-extract = "=0.12.1"
+ttf-parser = "=0.25.1"
+serde_json = "=1.0.145"
+
+[profile.release]
+opt-level = 3

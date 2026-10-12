@@ -1,0 +1,3 @@
+{"rival": "Puppeteer", "case": "HTML/CSS fidelity page (gradient header, flexbox card grid, rounded corners, shadows)",
+ "theirs": "node theirs.mjs",
+ "gap": "no HTML/CSS layout input: linear-gradient, flexbox, box-shadow and border-radius cannot be expressed (rich text is an HTML subset of paragraphs/spans/lists)"}

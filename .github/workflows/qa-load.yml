@@ -1,0 +1,74 @@
+name: QA load
+on:
+  workflow_call:
+    inputs:
+      ref: { type: string, default: '' }
+      tier: { type: string, default: 'quick' }
+  workflow_dispatch:
+    inputs:
+      ref: { type: string, default: '' }
+      tier: { type: choice, options: [quick, full], default: 'quick' }
+  push:
+    branches: [qa/load]
+jobs:
+  shard:
+    # one server per shard (its own runner): the scenarios' numbers never share a machine or a queue
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [ramp, spike, limits, soak]
+    env:
+      TZ: Asia/Kolkata
+      QA_SUITE: load
+      QA_TIER: ${{ inputs.tier || 'quick' }}
+      QA_DIR: ${{ github.workspace }}/qa-out
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - uses: grafana/setup-k6-action@v1
+      - name: Start the server (PW_AUTH=users, first admin) and sign in
+        run: qa/load/server.sh 3700
+      - name: Scenario ${{ matrix.shard }}
+        run: qa/load/shard.sh ${{ matrix.shard }} 3700
+      - if: always()
+        run: node qa/stress/summarize.mjs qa-out load-${{ matrix.shard }}
+      - if: always()
+        run: tail -60 /tmp/next-qa.log
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-load-part-${{ matrix.shard }}
+          path: |
+            qa-out/results.jsonl
+            qa-out/*.json
+            qa-out/*.log
+            qa-out/rss.txt
+          if-no-files-found: ignore
+  report:
+    needs: shard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}', sparse-checkout: qa }
+      - uses: actions/download-artifact@v4
+        with: { pattern: 'qa-load-part-*', path: qa-out }
+      - run: node qa/stress/summarize.mjs qa-out load --fail-on-fail
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-load-results
+          path: |
+            qa-out/results.json
+            qa-out/summary.md
