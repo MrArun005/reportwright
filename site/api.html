@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReportWright · API</title>
+<meta name="description" content="ReportWright's REST API (/api/v1): render a report to PDF or Excel, run a batch and download it, schedule a report, check health. Copy-paste examples in curl, Node.js and Python, plus a render you can try in your browser.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="api.css">
+<script>try { const t = localStorage.getItem('pw-site-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}</script>
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="index.html" aria-label="ReportWright home">
+    <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path d="M4 1v6M1 4h6M28 1v6M25 4h6M4 25v6M1 28h6M28 25v6M25 28h6" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="7" width="14" height="18" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 12h8M12 15.5h8M12 19h5" stroke="var(--accent)" stroke-width="1.6"/></svg>
+    <span>ReportWright</span>
+  </a>
+  <nav class="nav" id="site-nav" aria-label="Site">
+    <a href="index.html#gallery">Gallery</a>
+    <a href="learn.html">Recipes</a>
+    <a href="switch.html">Switch</a>
+    <a href="bench.html">Benchmarks</a>
+    <a href="api.html" aria-current="page">API</a>
+    <a href="play.html">Playground</a>
+  </nav>
+  <div class="bar-end">
+    <span class="licence">MIT licensed</span>
+    <button class="icon-btn" id="theme" type="button" aria-label="Switch light or dark theme" title="Light / dark">
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 3a7 7 0 0 1 0 14z" fill="currentColor"/></svg>
+    </button>
+    <a class="btn btn-solid" href="https://github.com/MrArun005/reportwright/blob/main/deploy/compose/README.md">Self-host</a>
+    <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="Site menu" aria-expanded="false" aria-controls="site-nav">
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.8" fill="none"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="top">
+  <section class="sect api-intro" aria-labelledby="api-h">
+    <p class="kicker"><span class="mark">●</span> REST API · /api/v1 · self-hosted server</p>
+    <h1 id="api-h">Make reports from <em>your own systems.</em></h1>
+    <p class="lede">The self-hosted ReportWright server has a REST API. Send a report definition or a template name and a JSON payload, get back a PDF, an Excel file, Word, PowerPoint, HTML or CSV. Run a batch of thousands of documents in the background, or put one on a cron schedule. Every example on this page uses the request and response shapes in the API reference.</p>
+    <p class="api-links">
+      <a class="btn" href="https://github.com/MrArun005/reportwright/blob/main/docs/API.md">API reference (docs/API.md)</a>
+      <a class="btn" href="https://github.com/MrArun005/reportwright/blob/main/deploy/compose/README.md">Self-host guide (deploy/compose)</a>
+    </p>
+    <p class="fine">Keys: set <code>PW_API_KEYS</code> on your server and send one with each request as <code>Authorization: Bearer &lt;key&gt;</code> or <code>x-api-key</code>. The examples read the key from <code>PW_API_KEY</code> in your shell. Base URL: replace <code>https://reports.example.com</code> with your server.</p>
+  </section>
+
+  <section class="sect" id="examples" aria-labelledby="examples-h">
+    <header class="sect-head">
+      <h2 id="examples-h">Copy-paste examples</h2>
+      <p class="sect-note">Pick a language on each tab. Copy copies the one you see.</p>
+    </header>
+
+    <article class="ex" id="render-pdf" aria-labelledby="render-pdf-h">
+      <h3 id="render-pdf-h">Render one report to PDF</h3>
+      <p class="ex-note"><code>POST /api/v1/render</code>. The answer is the file itself. The page count comes back in the <code>x-reportwright-pages</code> header. Errors are JSON <code>{ error }</code>; a busy server answers 429 or 503 with <code>Retry-After</code>.</p>
+      <div class="code-split" data-tabs>
+        <div class="tabs" role="tablist" aria-label="Language: render to PDF">
+          <button type="button" role="tab" id="render-pdf-curl" aria-controls="render-pdf-curl-p" aria-selected="true" tabindex="0">curl</button>
+          <button type="button" role="tab" id="render-pdf-node" aria-controls="render-pdf-node-p" aria-selected="false" tabindex="-1">Node.js</button>
+          <button type="button" role="tab" id="render-pdf-py" aria-controls="render-pdf-py-p" aria-selected="false" tabindex="-1">Python</button>
+        </div>
+        <div class="tab-body">
+          <button class="copy" type="button">Copy</button>
+          <pre class="code" role="tabpanel" id="render-pdf-curl-p" aria-labelledby="render-pdf-curl" tabindex="0"><code>curl -X POST https://reports.example.com/api/v1/render \
+  -H "Authorization: Bearer $PW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template": "loan-statement",
+    "format": "pdf",
+    "parameters": { "accountId": "LN-2025-001982" },
+    "fileName": "statement-LN-2025-001982"
+  }' \
+  --output statement.pdf</code></pre>
+          <pre class="code" role="tabpanel" id="render-pdf-node-p" aria-labelledby="render-pdf-node" tabindex="0" hidden><code>import fs from 'node:fs';
+
+const res = await fetch('https://reports.example.com/api/v1/render', {
+  method: 'POST',
+  headers: { authorization: `Bearer ${process.env.PW_API_KEY}`, 'content-type': 'application/json' },
+  body: JSON.stringify({
+    template: 'loan-statement',
+    format: 'pdf',
+    parameters: { accountId: 'LN-2025-001982' },
+    fileName: 'statement-LN-2025-001982',
+  }),
+});
+if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+fs.writeFileSync('statement.pdf', Buffer.from(await res.arrayBuffer()));</code></pre>
+          <pre class="code" role="tabpanel" id="render-pdf-py-p" aria-labelledby="render-pdf-py" tabindex="0" hidden><code>import os
+import requests
+
+r = requests.post(
+    "https://reports.example.com/api/v1/render",
+    headers={"Authorization": f"Bearer {os.environ['PW_API_KEY']}"},
+    json={
+        "template": "loan-statement",
+        "format": "pdf",
+        "parameters": {"accountId": "LN-2025-001982"},
+        "fileName": "statement-LN-2025-001982",
+    },
+    timeout=120,
+)
+r.raise_for_status()
+with open("statement.pdf", "wb") as f:
+    f.write(r.content)</code></pre>
+        </div>
+      </div>
+    </article>
+
+    <article class="ex" id="render-xlsx" aria-labelledby="render-xlsx-h">
+      <h3 id="render-xlsx-h">Render to Excel</h3>
+      <p class="ex-note">The same call with <code>format: 'xlsx'</code>. A data table with row-by-row expressions streams its rows, so such an answer has no <code>content-length</code>.</p>
+      <div class="code-split" data-tabs>
+        <div class="tabs" role="tablist" aria-label="Language: render to Excel">
+          <button type="button" role="tab" id="render-xlsx-curl" aria-controls="render-xlsx-curl-p" aria-selected="true" tabindex="0">curl</button>
+          <button type="button" role="tab" id="render-xlsx-node" aria-controls="render-xlsx-node-p" aria-selected="false" tabindex="-1">Node.js</button>
+          <button type="button" role="tab" id="render-xlsx-py" aria-controls="render-xlsx-py-p" aria-selected="false" tabindex="-1">Python</button>
+        </div>
+        <div class="tab-body">
+          <button class="copy" type="button">Copy</button>
+          <pre class="code" role="tabpanel" id="render-xlsx-curl-p" aria-labelledby="render-xlsx-curl" tabindex="0"><code>curl -X POST https://reports.example.com/api/v1/render \
+  -H "Authorization: Bearer $PW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template": "loan-statement",
+    "format": "xlsx",
+    "parameters": { "accountId": "LN-2025-001982" },
+    "fileName": "statement-LN-2025-001982"
+  }' \
+  --output statement.xlsx</code></pre>
+          <pre class="code" role="tabpanel" id="render-xlsx-node-p" aria-labelledby="render-xlsx-node" tabindex="0" hidden><code>import fs from 'node:fs';
+
+const res = await fetch('https://reports.example.com/api/v1/render', {
+  method: 'POST',
+  headers: { authorization: `Bearer ${process.env.PW_API_KEY}`, 'content-type': 'application/json' },
+  body: JSON.stringify({
+    template: 'loan-statement',
+    format: 'xlsx',
+    parameters: { accountId: 'LN-2025-001982' },
+    fileName: 'statement-LN-2025-001982',
+  }),
+});
+if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+fs.writeFileSync('statement.xlsx', Buffer.from(await res.arrayBuffer()));</code></pre>
+          <pre class="code" role="tabpanel" id="render-xlsx-py-p" aria-labelledby="render-xlsx-py" tabindex="0" hidden><code>import os
+import requests
+
+r = requests.post(
+    "https://reports.example.com/api/v1/render",
+    headers={"Authorization": f"Bearer {os.environ['PW_API_KEY']}"},
+    json={
+        "template": "loan-statement",
+        "format": "xlsx",
+        "parameters": {"accountId": "LN-2025-001982"},
+        "fileName": "statement-LN-2025-001982",
+    },
+    timeout=120,
+)
+r.raise_for_status()
+with open("statement.xlsx", "wb") as f:
+    f.write(r.content)</code></pre>
+        </div>
+      </div>
+    </article>
+
+    <article class="ex" id="batch" aria-labelledby="batch-h">
+      <h3 id="batch-h">Start a batch, poll it, download the zip</h3>
+      <p class="ex-note"><code>POST /api/v1/batches</code> answers 202 with the job, which runs in the background. Poll <code>GET /api/v1/batches/&lt;id&gt;</code> until the status is no longer <code>queued</code> or <code>running</code>, then fetch <code>/download</code>. One failed item does not stop the batch; its error is in <code>errors[]</code>.</p>
+      <div class="code-split" data-tabs>
+        <div class="tabs" role="tablist" aria-label="Language: batch">
+          <button type="button" role="tab" id="batch-curl" aria-controls="batch-curl-p" aria-selected="true" tabindex="0">curl</button>
+          <button type="button" role="tab" id="batch-node" aria-controls="batch-node-p" aria-selected="false" tabindex="-1">Node.js</button>
+          <button type="button" role="tab" id="batch-py" aria-controls="batch-py-p" aria-selected="false" tabindex="-1">Python</button>
+        </div>
+        <div class="tab-body">
+          <button class="copy" type="button">Copy</button>
+          <pre class="code" role="tabpanel" id="batch-curl-p" aria-labelledby="batch-curl" tabindex="0"><code># 1. start the batch (202 with the job)
+ID=$(curl -s -X POST https://reports.example.com/api/v1/batches \
+  -H "Authorization: Bearer $PW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template": "loan-statement",
+    "format": "pdf",
+    "fileName": "statement-{Parameters.accountId}",
+    "items": [
+      { "parameters": { "accountId": "LN-2026-004417" } },
+      { "parameters": { "accountId": "LN-2025-001982" } }
+    ],
+    "output": { "type": "zip" }
+  }' | jq -r '.id')
+
+# 2. poll until it is no longer queued or running
+while true; do
+  STATUS=$(curl -s https://reports.example.com/api/v1/batches/$ID \
+    -H "Authorization: Bearer $PW_API_KEY" | jq -r '.status')
+  case "$STATUS" in queued|running) sleep 2 ;; *) break ;; esac
+done
+echo "status: $STATUS"
+
+# 3. download the zip (completed or completed_with_errors)
+curl -s https://reports.example.com/api/v1/batches/$ID/download \
+  -H "Authorization: Bearer $PW_API_KEY" --output statements.zip</code></pre>
+          <pre class="code" role="tabpanel" id="batch-node-p" aria-labelledby="batch-node" tabindex="0" hidden><code>import fs from 'node:fs';
+
+const BASE = 'https://reports.example.com';
+const headers = { authorization: `Bearer ${process.env.PW_API_KEY}` };
+
+// 1. start the batch (202 with the job)
+const start = await fetch(`${BASE}/api/v1/batches`, {
+  method: 'POST',
+  headers: { ...headers, 'content-type': 'application/json' },
+  body: JSON.stringify({
+    template: 'loan-statement',
+    format: 'pdf',
+    fileName: 'statement-{Parameters.accountId}',
+    items: [
+      { parameters: { accountId: 'LN-2026-004417' } },
+      { parameters: { accountId: 'LN-2025-001982' } },
+    ],
+    output: { type: 'zip' },
+  }),
+});
+if (start.status !== 202) throw new Error(`HTTP ${start.status}: ${await start.text()}`);
+const { id } = await start.json();
+
+// 2. poll until it is no longer queued or running
+let job;
+do {
+  await new Promise((r) => setTimeout(r, 2000));
+  job = await (await fetch(`${BASE}/api/v1/batches/${id}`, { headers })).json();
+} while (job.status === 'queued' || job.status === 'running');
+console.log(job.status, 'done:', job.done, 'failed:', job.failed, job.errors);
+
+// 3. download the zip
+if (job.status === 'completed' || job.status === 'completed_with_errors') {
+  const zip = await fetch(`${BASE}/api/v1/batches/${id}/download`, { headers });
+  fs.writeFileSync('statements.zip', Buffer.from(await zip.arrayBuffer()));
+}</code></pre>
+          <pre class="code" role="tabpanel" id="batch-py-p" aria-labelledby="batch-py" tabindex="0" hidden><code>import os
+import time
+import requests
+
+BASE = "https://reports.example.com"
+headers = {"Authorization": f"Bearer {os.environ['PW_API_KEY']}"}
+
+# 1. start the batch (202 with the job)
+start = requests.post(f"{BASE}/api/v1/batches", headers=headers, timeout=60, json={
+    "template": "loan-statement",
+    "format": "pdf",
+    "fileName": "statement-{Parameters.accountId}",
+    "items": [
+        {"parameters": {"accountId": "LN-2026-004417"}},
+        {"parameters": {"accountId": "LN-2025-001982"}},
+    ],
+    "output": {"type": "zip"},
+})
+start.raise_for_status()
+job_id = start.json()["id"]
+
+# 2. poll until it is no longer queued or running
+while True:
+    job = requests.get(f"{BASE}/api/v1/batches/{job_id}", headers=headers, timeout=30).json()
+    if job["status"] not in ("queued", "running"):
+        break
+    time.sleep(2)
+print(job["status"], "done:", job["done"], "failed:", job["failed"], job.get("errors"))
+
+# 3. download the zip
+if job["status"] in ("completed", "completed_with_errors"):
+    z = requests.get(f"{BASE}/api/v1/batches/{job_id}/download", headers=headers, timeout=300)
+    z.raise_for_status()
+    with open("statements.zip", "wb") as f:
+        f.write(z.content)</code></pre>
+        </div>
+      </div>
+    </article>
+
+    <article class="ex" id="schedule" aria-labelledby="schedule-h">
+      <h3 id="schedule-h">Schedule a report</h3>
+      <p class="ex-note"><code>POST /api/v1/schedules</code> answers 201. A schedule runs a batch on a cron expression in a time zone. Cron supports <code>*</code>, lists, ranges and <code>*/n</code>; use numbers for days and months, not names. Also: <code>GET /api/v1/schedules</code> (each with <code>nextRunAt</code>), and <code>POST /api/v1/schedules/&lt;id&gt;/run</code> to run one now.</p>
+      <div class="code-split" data-tabs>
+        <div class="tabs" role="tablist" aria-label="Language: schedule">
+          <button type="button" role="tab" id="sched-curl" aria-controls="sched-curl-p" aria-selected="true" tabindex="0">curl</button>
+          <button type="button" role="tab" id="sched-node" aria-controls="sched-node-p" aria-selected="false" tabindex="-1">Node.js</button>
+          <button type="button" role="tab" id="sched-py" aria-controls="sched-py-p" aria-selected="false" tabindex="-1">Python</button>
+        </div>
+        <div class="tab-body">
+          <button class="copy" type="button">Copy</button>
+          <pre class="code" role="tabpanel" id="sched-curl-p" aria-labelledby="sched-curl" tabindex="0"><code>curl -X POST https://reports.example.com/api/v1/schedules \
+  -H "Authorization: Bearer $PW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Monthly statements",
+    "template": "loan-statement",
+    "cron": "0 7 1 * *",
+    "timezone": "Asia/Kolkata",
+    "itemsFrom": { "url": "/api/sample/loans", "path": "$[*]", "map": { "accountId": "$.id" } },
+    "output": { "type": "folder", "folder": "monthly" },
+    "fileName": "{Parameters.accountId}",
+    "webhook": "https://your-app/hooks/reportwright",
+    "enabled": true
+  }'</code></pre>
+          <pre class="code" role="tabpanel" id="sched-node-p" aria-labelledby="sched-node" tabindex="0" hidden><code>const res = await fetch('https://reports.example.com/api/v1/schedules', {
+  method: 'POST',
+  headers: { authorization: `Bearer ${process.env.PW_API_KEY}`, 'content-type': 'application/json' },
+  body: JSON.stringify({
+    name: 'Monthly statements',
+    template: 'loan-statement',
+    cron: '0 7 1 * *',
+    timezone: 'Asia/Kolkata',
+    itemsFrom: { url: '/api/sample/loans', path: '$[*]', map: { accountId: '$.id' } },
+    output: { type: 'folder', folder: 'monthly' },
+    fileName: '{Parameters.accountId}',
+    webhook: 'https://your-app/hooks/reportwright',
+    enabled: true,
+  }),
+});
+if (res.status !== 201) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+console.log(await res.json());</code></pre>
+          <pre class="code" role="tabpanel" id="sched-py-p" aria-labelledby="sched-py" tabindex="0" hidden><code>import os
+import requests
+
+r = requests.post(
+    "https://reports.example.com/api/v1/schedules",
+    headers={"Authorization": f"Bearer {os.environ['PW_API_KEY']}"},
+    json={
+        "name": "Monthly statements",
+        "template": "loan-statement",
+        "cron": "0 7 1 * *",
+        "timezone": "Asia/Kolkata",
+        "itemsFrom": {"url": "/api/sample/loans", "path": "$[*]", "map": {"accountId": "$.id"}},
+        "output": {"type": "folder", "folder": "monthly"},
+        "fileName": "{Parameters.accountId}",
+        "webhook": "https://your-app/hooks/reportwright",
+        "enabled": True,
+    },
+    timeout=30,
+)
+r.raise_for_status()
+print(r.status_code, r.json())</code></pre>
+        </div>
+      </div>
+    </article>
+
+    <article class="ex" id="health" aria-labelledby="health-h">
+      <h3 id="health-h">Health</h3>
+      <p class="ex-note"><code>GET /api/v1/health</code> with a service key. It reports the render pool (<code>size</code>, <code>alive</code>, <code>ready</code>, <code>busy</code>), queue depth by class, the estimated wait in ms, and totals since start (<code>done</code>, <code>failed</code>, <code>rejected</code>, <code>timedOut</code>, <code>crashed</code>, <code>recycled</code>, <code>dropped</code>).</p>
+      <div class="code-split" data-tabs>
+        <div class="tabs" role="tablist" aria-label="Language: health">
+          <button type="button" role="tab" id="health-curl" aria-controls="health-curl-p" aria-selected="true" tabindex="0">curl</button>
+          <button type="button" role="tab" id="health-node" aria-controls="health-node-p" aria-selected="false" tabindex="-1">Node.js</button>
+          <button type="button" role="tab" id="health-py" aria-controls="health-py-p" aria-selected="false" tabindex="-1">Python</button>
+        </div>
+        <div class="tab-body">
+          <button class="copy" type="button">Copy</button>
+          <pre class="code" role="tabpanel" id="health-curl-p" aria-labelledby="health-curl" tabindex="0"><code>curl https://reports.example.com/api/v1/health \
+  -H "Authorization: Bearer $PW_API_KEY"</code></pre>
+          <pre class="code" role="tabpanel" id="health-node-p" aria-labelledby="health-node" tabindex="0" hidden><code>const res = await fetch('https://reports.example.com/api/v1/health', {
+  headers: { authorization: `Bearer ${process.env.PW_API_KEY}` },
+});
+console.log(await res.json());</code></pre>
+          <pre class="code" role="tabpanel" id="health-py-p" aria-labelledby="health-py" tabindex="0" hidden><code>import os
+import requests
+
+r = requests.get(
+    "https://reports.example.com/api/v1/health",
+    headers={"Authorization": f"Bearer {os.environ['PW_API_KEY']}"},
+    timeout=10,
+)
+print(r.json())</code></pre>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="sect" id="try" aria-labelledby="try-h">
+    <header class="sect-head">
+      <h2 id="try-h">Try it in your browser</h2>
+      <p class="sect-note">Same engine as the API, running in your browser. No server.</p>
+    </header>
+    <p class="try-note"><strong>Same engine as the API, running in your browser — no server.</strong> The definition below is the Invoice sample from the gallery. Edit it, pick a format and render. Nothing is uploaded.</p>
+    <div class="try">
+      <div class="try-input">
+        <label for="try-json">Report definition (JSON)</label>
+        <textarea id="try-json" rows="24" spellcheck="false" aria-describedby="try-status">Loading the sample…</textarea>
+        <div class="try-row">
+          <label for="try-format">Format</label>
+          <select id="try-format">
+            <option value="pdf">PDF</option>
+            <option value="xlsx">Excel</option>
+            <option value="html">HTML</option>
+          </select>
+          <button id="try-render" class="btn btn-solid" type="button">Render</button>
+        </div>
+        <p id="try-status" class="try-status" role="status" aria-live="polite"></p>
+      </div>
+      <div class="try-output" aria-live="off">
+        <p class="try-empty" id="try-empty">The result appears here. PDF shows inline; Excel and HTML download.</p>
+        <iframe id="try-frame" title="Rendered PDF" hidden></iframe>
+        <p><a id="try-dl" class="btn" href="#" download hidden>Download</a></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="api-foot">
+  <p><a href="https://github.com/MrArun005/reportwright/blob/main/docs/API.md">docs/API.md</a> · <a href="https://github.com/MrArun005/reportwright/blob/main/deploy/compose/README.md">Self-host guide</a> · MIT licensed</p>
+</footer>
+
+<script type="module" src="api.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>
