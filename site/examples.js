@@ -91,6 +91,7 @@ function card(e) {
     el('figure', { className: 'card-fig' }, thumb),
     el('div', { className: 'card-body' },
       el('p', { className: 'card-meta' }, el('span', { className: 'tool', textContent: e.tool }), ' · ', el('span', { textContent: RENDER[e.render] || e.render })),
+      el('p', { className: 'licence-line' }, `Licence: ${e.licence}${e.licence === 'LGPL-3.0' ? ' (JasperReports samples, Copyright TIBCO Software / Cloud Software Group and the JasperReports contributors; redistributed unchanged with this notice)' : ''}`),
       el('h3', { textContent: e.title }),
       el('p', { className: 'result' }, badge, ' ', el('span', { textContent: importLine(e) })),
       top,
@@ -132,7 +133,7 @@ async function openViewer(e, btn) {
     mount.replaceChildren();
     $('#viewer-title').textContent = e.title;
     dlg.showModal();
-    mountViewer(mount, { server: BASE, definition: def, height: '70vh' });
+    window.__viewer = mountViewer(mount, { server: BASE, definition: def, height: '70vh' }); // the smoke test reads the page count
   } catch (err) {
     $('#ex-status').textContent = `Could not open the viewer: ${err.message}`;
   } finally { btn.disabled = false; }

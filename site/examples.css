@@ -69,3 +69,4 @@
 .ex-mount { padding: 12px 16px; }
 
 @media (max-width: 600px) { .ex { padding-left: 16px; padding-right: 16px; } .cards { grid-template-columns: 1fr; } }
+.licence-line { margin: 0; font-size: var(--fs-1); color: var(--muted); overflow-wrap: anywhere; }

@@ -14,6 +14,7 @@ on:
       - 'tests/fixtures/jrxml/corpus/**'
       - 'tests/fixtures/birt/corpus/**'
       - 'site/**'
+      - 'tests/e2e/examples-smoke.mjs'
       - '.github/workflows/examples.yml'
   push:
     branches: [main]
@@ -28,6 +29,7 @@ on:
       - 'tests/fixtures/jrxml/corpus/**'
       - 'tests/fixtures/birt/corpus/**'
       - 'site/**'
+      - 'tests/e2e/examples-smoke.mjs'
       - '.github/workflows/examples.yml'
   workflow_dispatch:
 permissions:
@@ -46,6 +48,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - name: Build the site, with the migration examples (import, render, notes)
         run: npm run build:site
+      - name: Playwright (chromium) for the smoke test
+        run: npx playwright install --with-deps chromium
+      - name: Smoke test the page (coverage, filters, viewer, designer, downloads)
+        run: node tests/e2e/examples-smoke.mjs
+        env:
+          DIST: dist-site
       - name: Check the examples index
         run: |
           node -e "const i=require('./site/examples/index.json'); const n=i.examples.filter(e=>e.status==='imported').length; console.log(n+' imported of '+i.examples.length); if(!n) process.exit(1)"
