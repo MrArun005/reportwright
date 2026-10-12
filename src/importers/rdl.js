@@ -239,7 +239,7 @@ function toRdlx(root, notes, year, resolve) {
         case 'Tablix': return tablix(e);
         case 'Chart': return year >= 2008 ? chart(e) : { Type: 'Chart (RDL 2005)', Name: e.attrs.Name };
         case 'GaugePanel': return gauge(e);
-        case 'Map': return { Type: 'Map', Name: e.attrs.Name }; // dropped with a note: SSRS maps (spatial layers) have no equivalent
+        case 'Map': return map(e);
         default: return { Type: e.name, Name: e.attrs.Name }; // the ActiveReports importer drops it with a note
       }
     } finally { itemNotes = saved; itemInfo = savedInfo; if (isRegion) regions--; }
@@ -486,6 +486,162 @@ function toRdlx(root, notes, year, resolve) {
       itemNotes = notesOf;
       return { ...base, Body: { Columns: cols.map(w => ({ Width: w })), Rows }, Corner, RowHierarchy: rowH, ColumnHierarchy: colH };
     } finally { region = saved; }
+  }
+
+  /* ---------------------------------------------------------------- maps */
+
+  // an untrusted file: running totals over every map in the import, checked before each decode / append (a hit is noted)
+  const MAP_MAX_SHAPES = 20_000, MAP_MAX_POINTS = 200_000, MAP_MAX_BYTES = 4e6;
+  let mapShapes = 0, mapPoints = 0, mapBytes = 0;
+  const OVER = { over: true }; // sqlGeography: the shape would pass the points cap
+
+  /**
+   * An SSRS map → { Type: 'ssrsmap' } for rdlx.js: the first polygon layer colours its shapes by the analytical data (the
+   * colour range rule), embedded shapes (the map gallery's) become GeoJSON, embedded lines are added to it, a point
+   * layer over a data set keeps its data set. Shapefiles and SQL spatial data cannot be read here: a note asks for GeoJSON.
+   */
+  function map(e) {
+    const it = { ...common(e, 'ssrsmap') }; // not 'map': ActiveReports' own map type stays unsupported
+    const notes = it.__notes;
+    const layers = kids(kid(e, 'MapLayers'));
+    const features = [];
+    let bad = 0, over = false;
+    const embedded = (layer, geom) => {
+      for (const sh of kids(kid(layer, geom === 'line' ? 'MapLines' : geom === 'point' ? 'MapPoints' : 'MapPolygons'))) {
+        const vd = raw(sh, 'VectorData') || '';
+        const bytes = Math.floor(vd.length * 3 / 4);
+        if (mapShapes >= MAP_MAX_SHAPES || mapPoints >= MAP_MAX_POINTS || mapBytes + bytes > MAP_MAX_BYTES) { over = true; break; }
+        mapBytes += bytes;
+        const g = sqlGeography(vd, MAP_MAX_POINTS - mapPoints);
+        if (g === OVER) { over = true; break; }
+        if (!g) { bad++; continue; }
+        mapShapes++;
+        mapPoints += g.n;
+        delete g.n;
+        features.push({ type: 'Feature', properties: Object.fromEntries(list(sh, 'MapFields', 'MapField').map(f => [raw(f, 'Name'), raw(f, 'Value')])), geometry: g });
+      }
+    };
+    const source = (layer) => {
+      const sd = kids(layer).find(x => /^MapSpatialData|^MapShapefile$/.test(x.name));
+      if (!sd) return;
+      if (sd.name === 'MapShapefile') notes.push(`the layer "${layer.attrs.Name}" reads the ESRI shapefile ${raw(sd, 'Source') || ''}, which cannot be converted here: convert it to GeoJSON (e.g. with mapshaper or ogr2ogr) and paste it into the map's Shapes.`);
+      else if (sd.name === 'MapSpatialDataSet') {
+        const ds = raw(sd, 'DataSetName'), f = raw(sd, 'SpatialField');
+        if (!it.ShapeDataSet) { it.ShapeDataSet = ds; it.Geometry = `=Fields!${f}.Value`; }
+        notes.push(`the layer "${layer.attrs.Name}" reads SQL Server spatial data (${ds}.${f}): make that query return the shape as GeoJSON (e.g. ${f}.STAsText() converted to GeoJSON, or a GeoJSON column), or supply GeoJSON text.`);
+      } else if (sd.name === 'MapSpatialDataRegion') notes.push(`the layer "${layer.attrs.Name}" reads its shapes from another data region; supply GeoJSON for it.`);
+      return sd;
+    };
+    let polygons = false;
+    for (const layer of layers) {
+      if (layer.name === 'MapTileLayer') { notes.push(`the Bing Maps tile background (layer "${layer.attrs.Name}") is left out.`); continue; }
+      const sd = source(layer);
+      const geom = layer.name === 'MapPolygonLayer' ? 'polygon' : layer.name === 'MapLineLayer' ? 'line' : layer.name === 'MapPointLayer' ? 'point' : null;
+      if (!geom) continue;
+      if (sd?.name === 'MapSpatialDataEmbedded') embedded(layer, geom);
+      if (geom === 'polygon' && !polygons) {
+        polygons = true;
+        const pair = list(layer, 'MapBindingFieldPairs', 'MapBindingFieldPair')[0];
+        if (pair) { it.ShapeKey = `=Fields!${raw(pair, 'FieldName')}.Value`; it.ValueKey = val(pair, 'BindingExpression'); }
+        it.ValueDataSet = raw(layer, 'DataSetName');
+        const rule = kid(kid(layer, 'MapPolygonRules'), 'MapColorRule') || kids(kid(layer, 'MapPolygonRules'))[0];
+        if (rule) {
+          it.Value = val(rule, 'DataValue');
+          if (rule.name === 'MapColorRangeRule') { it.ColorLow = raw(rule, 'StartColor'); it.ColorHigh = raw(rule, 'EndColor'); if (raw(rule, 'MiddleColor')) notes.push('its middle colour is left out: ReportWright shades from the start colour to the end colour.'); }
+          else if (rule.name === 'MapColorPaletteRule' || rule.name === 'MapCustomColorRule') notes.push('its shapes are coloured from a palette in SSRS; here they shade from light to dark blue by value.');
+          const dist = raw(rule, 'DistributionType'), n = Number(raw(rule, 'BucketCount'));
+          if (dist && dist !== 'Custom' && n >= 2) { it.ColorScale = 'classes'; it.Classes = Math.min(9, n); }
+          if (dist === 'Custom') notes.push('its custom buckets are read as equal classes.');
+          const fm = /\{([^}]+)\}/.exec(raw(rule, 'LegendText') || '');
+          if (fm) it.Format = fm[1];
+          it.Legend = raw(rule, 'LegendName') || kids(kid(e, 'MapLegends')).length ? 'bottom' : 'none';
+        }
+        const tpl = kid(layer, 'MapPolygonTemplate');
+        const act = tpl && action(tpl);
+        if (act) it.RegionAction = act;
+      } else if (geom === 'line') {
+        const tpl = kid(layer, 'MapLineTemplate');
+        const c = raw(tpl, 'BorderColor') || raw(kid(tpl, 'Style'), 'Color');
+        if (c) it.LineColor = c;
+        const w = raw(tpl, 'Width');
+        if (w) it.LineWidth = w;
+      } else if (geom === 'point') {
+        if (sd?.name === 'MapSpatialDataEmbedded') notes.push(`the embedded points of the layer "${layer.attrs.Name}" are left out: ReportWright places points from a data set's latitude and longitude.`);
+        else { it.PointDataSet = raw(layer, 'DataSetName') || it.ShapeDataSet; notes.push(`the point layer "${layer.attrs.Name}" needs latitude and longitude: set the map's Points latitude and longitude to the data set's fields.`); }
+        const c = raw(kid(kid(layer, 'MapPointTemplate'), 'Style'), 'Color') || raw(kid(layer, 'MapPointTemplate'), 'Color');
+        if (c) it.PointColor = c;
+      }
+      if (kid(layer, 'MapPolygonRules')?.children.length > 1 || kid(layer, 'MapCenterPointRules')) notes.push(`some rules of the layer "${layer.attrs.Name}" (sizes, markers, centre points) are left out.`);
+    }
+    if (bad) notes.push(`${bad} embedded shapes could not be read (or are too large), so they are left out.`);
+    if (over) notes.push(`the report's maps hold more than ${MAP_MAX_SHAPES.toLocaleString('en-US')} shapes, ${MAP_MAX_POINTS.toLocaleString('en-US')} points or ${MAP_MAX_BYTES / 1e6} MB of shape data; the rest are left out (simplify the shapes, or supply GeoJSON).`);
+    if (features.length) it.GeoJson = JSON.stringify({ type: 'FeatureCollection', features });
+    else if (!it.ShapeDataSet) notes.push('its shapes could not be read from the file: paste GeoJSON into the map\'s Shapes (Properties → Shapes: GeoJSON text).');
+    if (!layers.length) notes.push('it has no layers.');
+    return it;
+  }
+
+  /**
+   * SQL Server's geography serialization (MS-SSCLRT, versions 1 and 2), as the map gallery embeds it in VectorData,
+   * → a GeoJSON geometry; null when it is not that.
+   */
+  function sqlGeography(b64, maxPoints) {
+    let bin;
+    try { bin = atob(String(b64 || '').replace(/\s+/g, '')); } catch { return null; }
+    if (bin.length < 6) return null;
+    const buf = new ArrayBuffer(bin.length), u8 = new Uint8Array(buf);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    const dv = new DataView(buf);
+    let o = 4; // SRID
+    const ver = dv.getUint8(o++), flags = dv.getUint8(o++);
+    if (ver !== 1 && ver !== 2) return null;
+    const pts = [];
+    const need = (n) => { if (o + n > bin.length) throw new RangeError('short'); };
+    try {
+      const point = () => { need(16); const lat = dv.getFloat64(o, true), lon = dv.getFloat64(o + 8, true); o += 16; return [lon, lat]; };
+      if (flags & 8) return { type: 'Point', coordinates: point(), n: 1 };
+      if (flags & 16) return { type: 'LineString', coordinates: [point(), point()], n: 2 };
+      need(4); const np = dv.getUint32(o, true); o += 4;
+      if (np * 16 > bin.length) return null; // the count cannot exceed what the bytes hold
+      if (np > maxPoints) return OVER;
+      for (let i = 0; i < np; i++) pts.push(point());
+      if (flags & 1) o += 8 * np; // Z
+      if (flags & 2) o += 8 * np; // M
+      need(4); const nf = dv.getUint32(o, true); o += 4;
+      if (nf > np) return null;
+      const figs = [];
+      for (let i = 0; i < nf; i++) { need(5); figs.push(dv.getInt32(o + 1, true)); o += 5; }
+      need(4); const ns = dv.getUint32(o, true); o += 4;
+      if (ns > nf + 1e5) return null;
+      const shapes = [];
+      for (let i = 0; i < ns; i++) { need(9); shapes.push({ fig: dv.getInt32(o + 4, true), type: dv.getUint8(o + 8) }); o += 9; }
+      const ring = (f) => pts.slice(figs[f], f + 1 < figs.length ? figs[f + 1] : pts.length);
+      // the figures of shape k run to the next shape's first figure: found in one backward pass (linear)
+      const nextFig = new Array(ns);
+      for (let k = ns - 1, nx = figs.length; k >= 0; k--) { nextFig[k] = nx; if (shapes[k].fig >= 0) nx = shapes[k].fig; }
+      // shapes may name the same figures more than once: what is cut out (emitted) is counted against the cap, not np,
+      // and each figure is used by one shape only, so the output can never be larger than the points the file holds
+      let emitted = 0;
+      const used = new Uint8Array(figs.length);
+      const figsOf = (k) => {
+        const s0 = shapes[k].fig; if (s0 < 0 || s0 > figs.length) return [];
+        const out = [];
+        for (let j = s0; j < Math.min(nextFig[k], figs.length); j++) {
+          if (used[j]) throw new RangeError('figure reused');
+          used[j] = 1;
+          const r = ring(j);
+          emitted += r.length;
+          if (emitted > maxPoints) throw OVER;
+          out.push(r);
+        }
+        return out;
+      };
+      const polys = [], lines = [];
+      for (let k = 0; k < ns; k++) { const sh = shapes[k]; if (sh.type === 3) polys.push(figsOf(k)); else if (sh.type === 2) for (const r of figsOf(k)) lines.push(r); }
+      if (polys.length) return polys.length === 1 ? { type: 'Polygon', coordinates: polys[0], n: np } : { type: 'MultiPolygon', coordinates: polys, n: np };
+      if (lines.length) return lines.length === 1 ? { type: 'LineString', coordinates: lines[0], n: np } : { type: 'MultiLineString', coordinates: lines, n: np };
+      return null;
+    } catch (err) { return err === OVER ? OVER : null; }
   }
 
   /* ---------------------------------------------------------------- charts and gauges */
