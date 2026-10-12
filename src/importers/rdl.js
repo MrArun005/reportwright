@@ -619,13 +619,29 @@ function toRdlx(root, notes, year, resolve) {
       // the figures of shape k run to the next shape's first figure: found in one backward pass (linear)
       const nextFig = new Array(ns);
       for (let k = ns - 1, nx = figs.length; k >= 0; k--) { nextFig[k] = nx; if (shapes[k].fig >= 0) nx = shapes[k].fig; }
-      const figsOf = (k) => { const s0 = shapes[k].fig; if (s0 < 0 || s0 > figs.length) return []; const out = []; for (let j = s0; j < Math.min(nextFig[k], figs.length); j++) out.push(ring(j)); return out; };
+      // shapes may name the same figures more than once: what is cut out (emitted) is counted against the cap, not np,
+      // and each figure is used by one shape only, so the output can never be larger than the points the file holds
+      let emitted = 0;
+      const used = new Uint8Array(figs.length);
+      const figsOf = (k) => {
+        const s0 = shapes[k].fig; if (s0 < 0 || s0 > figs.length) return [];
+        const out = [];
+        for (let j = s0; j < Math.min(nextFig[k], figs.length); j++) {
+          if (used[j]) throw new RangeError('figure reused');
+          used[j] = 1;
+          const r = ring(j);
+          emitted += r.length;
+          if (emitted > maxPoints) throw OVER;
+          out.push(r);
+        }
+        return out;
+      };
       const polys = [], lines = [];
       for (let k = 0; k < ns; k++) { const sh = shapes[k]; if (sh.type === 3) polys.push(figsOf(k)); else if (sh.type === 2) for (const r of figsOf(k)) lines.push(r); }
       if (polys.length) return polys.length === 1 ? { type: 'Polygon', coordinates: polys[0], n: np } : { type: 'MultiPolygon', coordinates: polys, n: np };
       if (lines.length) return lines.length === 1 ? { type: 'LineString', coordinates: lines[0], n: np } : { type: 'MultiLineString', coordinates: lines, n: np };
       return null;
-    } catch { return null; }
+    } catch (err) { return err === OVER ? OVER : null; }
   }
 
   /* ---------------------------------------------------------------- charts and gauges */

@@ -112,6 +112,20 @@ describe('hostile files finish fast and say what they left out', () => {
     expect(W).toMatch(/more than 20,000 shapes/);
     expect(JSON.parse(all(r.definition).find(i => i.type === 'map').geojson).features.length).toBe(20_000);
   });
+  it('shapes that re-cover the same figure are refused, not copied once per shape (output bounded by the points held)', () => {
+    // 50,000 points in one figure; shapes alternate figure 0 and figure 1 (the end), so without the reuse check every
+    // second shape cuts out all 50,000 points again: 50,000 shapes would emit 1.25 billion coordinates
+    const np = 50_000, ns = 50_000;
+    const b = Buffer.alloc(6 + 4 + np * 16 + 4 + 5 + 4 + ns * 9); let o = 0;
+    b.writeInt32LE(4326, o); o += 4; b[o++] = 1; b[o++] = 4; b.writeUInt32LE(np, o); o += 4 + np * 16;
+    b.writeUInt32LE(1, o); o += 4; b[o] = 2; b.writeInt32LE(0, o + 1); o += 5;
+    b.writeUInt32LE(ns, o); o += 4; for (let i = 0; i < ns; i++) { b.writeInt32LE(-1, o); b.writeInt32LE(i % 2, o + 4); b[o + 8] = 3; o += 9; }
+    const t0 = Date.now();
+    const r = importRdl(mapWith(`<MapPolygon><VectorData>${b.toString('base64')}</VectorData></MapPolygon>`));
+    expect(Date.now() - t0).toBeLessThan(10_000);
+    expect(r.warnings.join('\n')).toMatch(/1 embedded shapes could not be read/);
+    expect(all(r.definition).find(i => i.type === 'map').geojson).toBe('');
+  });
   it('points are a running total over every map: two maps of 120,000 points each, the second is cut with a note', () => {
     const one = `<MapPolygon><VectorData>${geo(120_000)}</VectorData></MapPolygon>`;
     const src = mapWith(one);
