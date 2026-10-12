@@ -344,7 +344,7 @@ describe('rich text: PDF, SVG and HTML', async () => {
     expect(uris).toEqual(['https://example.com/x']);
   });
   it('HTML: the safe link is an <a href>', async () => {
-    const html = await exportHtml(await out(def), fontStore);
+    const html = await exportHtml(await out(def), { fonts: fontStore });
     expect(html).toContain('<a href="https://example.com/x"');
     expect(html).not.toContain('evil');
   });

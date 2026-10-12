@@ -132,7 +132,7 @@ describe('the new charts in the PDF and HTML', () => {
       expect(out.warnings, chartType).toEqual([]);
       const pdf = await exportPdf(out, fontStore);
       expect(pdf.byteLength, chartType).toBeGreaterThan(1000);
-      const html = await exportHtml(out, fontStore);
+      const html = await exportHtml(out, { fonts: fontStore });
       expect(String(html), chartType).toMatch(/<svg/);
     }
   });

@@ -60,7 +60,7 @@ describe('exporters', () => {
 
   it('writes self-contained HTML with subset-free fallback fonts and live URL links', async () => {
     const out = await render(def(), { exportData: true, fontStore });
-    const html = await exportHtml(out, fontStore, { title: 'T' });
+    const html = await exportHtml(out, { fonts: fontStore, title: 'T' });
     expect(html).toMatch(/^<!doctype html>/);
     expect(html).toContain('@font-face');
     expect(html).toContain('<svg');
@@ -156,7 +156,7 @@ describe('PDF outline', () => {
 
 describe('HTML export links', () => {
   const linked = (action, tooltip) => report([{ type: 'textbox', name: 'L', x: 0, y: 0, w: 200, h: 20, value: 'Open', action, ...(tooltip ? { tooltip } : {}) }]);
-  const html = async (def) => exportHtml(await render(def, { exportData: true, fontStore }), fontStore);
+  const html = async (def) => exportHtml(await render(def, { exportData: true, fontStore }), { fonts: fontStore });
   it('the href is the action URL, never the tooltip', async () => {
     const out = await html(linked({ type: 'url', url: 'https://ok.example/a?b=1&c=2' }, 'javascript:alert(1)'));
     expect(out).toContain('href="https://ok.example/a?b=1&amp;c=2"');
