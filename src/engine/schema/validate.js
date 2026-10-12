@@ -392,6 +392,27 @@ export function validate(def) {
   return { errors, warnings, exprErrors, checkOnly, renderSays };
 }
 
+/** validate() results by a signature of what it reads (content, never a name): safe across reports and tenants. */
+const validated = new Map();
+/** inline rows past the 200 fieldNames() reads do not change the result, so they stay out of the signature */
+const cap = (d) => (Array.isArray(d) ? d.slice(0, 200) : d && typeof d === 'object' ? Object.fromEntries(Object.entries(d).map(([k, v]) => [k, Array.isArray(v) ? v.slice(0, 200) : v])) : d);
+/**
+ * validate(def), cached by the def's JSON (inline data capped at 200 rows), so an edited def re-validates and an equal
+ * def rebuilt per request hits. The result is shared: read it, never change it.
+ * ponytail: 64 entries LRU, signatures over 1 MB not cached; a hit still costs a stringify. A def that cannot be
+ * stringified (a cycle) is validated every time.
+ * @param {any} def
+ */
+export function validateCached(def) {
+  if (!def || typeof def !== 'object') return validate(def);
+  let sig;
+  try { sig = JSON.stringify({ ...def, dataSources: Array.isArray(def.dataSources) ? def.dataSources.map((x) => (x?.type === 'json' ? { ...x, data: cap(x.data) } : x)) : def.dataSources }); } catch { return validate(def); }
+  const hit = validated.get(sig);
+  if (hit) { validated.delete(sig); validated.set(sig, hit); return hit; }
+  const v = validate(def);
+  if (sig.length <= 1048576) { validated.set(sig, v); if (validated.size > 64) validated.delete(validated.keys().next().value); }
+  return v;
+}
 /** Keys whose text may hold {expression} parts (a text template). */
 const TEMPLATE_KEYS = new Set(['value', 'text', 'label', 'tooltip', 'title', 'noRowsText']);
 /**
@@ -409,7 +430,7 @@ function inlineFields(def) {
 function fieldNames(def) {
   const names = new Set();
   // a top-level object is one row (a data set at $.meta); a list is rows
-  for (const x of Array.isArray(def.dataSources) ? def.dataSources : []) if (x?.type === 'json' && x.data && typeof x.data === 'object') for (const v of Object.values(x.data)) for (const r of (Array.isArray(v) ? v.slice(0, 200) : [v])) if (r && typeof r === 'object' && !Array.isArray(r)) for (const k of Object.keys(r)) names.add(k);
+  for (const x of Array.isArray(def.dataSources) ? def.dataSources : []) if (x?.type === 'json' && x.data && typeof x.data === 'object') for (const v of (Array.isArray(x.data) ? [x.data] : Object.values(x.data))) for (const r of (Array.isArray(v) ? v.slice(0, 200) : [v])) if (r && typeof r === 'object' && !Array.isArray(r)) for (const k of Object.keys(r)) names.add(k);
   for (const d of Array.isArray(def.dataSets) ? def.dataSets : []) for (const f of Array.isArray(d?.fields) ? d.fields : []) if (f?.name) names.add(f.name);
   return names;
 }

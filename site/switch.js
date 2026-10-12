@@ -157,9 +157,9 @@ $('#res-download').addEventListener('click', () => {
 /* ---------- 02 what does not carry over ---------- */
 const GAPS = [
   ['SSRS / Report Builder', 'API.md "SSRS import", FEATURES.md; 32 Microsoft samples import with no item dropped', [
-    'Maps and custom report items are left out, with a note.',
+    'Maps become map items; SQL spatial layers draw from the query (return the column or <code>STAsText()</code>); a shapefile layer is read only when its .shp and .dbf are imported with the report folder (<code>pw import &lt;folder&gt;</code>), otherwise noted. Custom report items are left out, with a note.',
     'RDL 2005 Table, Matrix and List are not read: upgrade the file in Report Builder first.',
-    'Custom code (<code>Code.</code> calls) is kept as text and never run; rewrite what you need as report functions.',
+    'Custom code: a Function that returns one expression (IIf, Format, Left, CStr, arithmetic…) becomes a report function; anything else is kept as text, never run, and noted by name.',
     'Gauges are approximated: a half-circle gauge with the first pointer\'s value and the scale\'s minimum and maximum.',
     'Shared data sets, XML, SharePoint and cube (MDX) sources come across with no rows.',
     '<code>InScope</code>, <code>User!</code> and <code>ReportItems!</code> of another region stay visible as text.',
@@ -175,14 +175,14 @@ const GAPS = [
   ]],
   ['JasperReports', 'API.md "JasperReports import"; 49 demo samples, 99.8% of 1,492 elements kept', [
     'Crosstabs, table components, generic elements and multi-axis charts are not converted (noted).',
-    'Markup (HTML, styled text) shows as plain text; rotated text is not rotated.',
+    'Markup (HTML, styled, RTF) becomes rich text (bold, italic, underline, font, size, colour, sup/sub, breaks); other tags keep their text with a note. Styled or RTF markup built by an expression shows as plain text.',
     'Rows from Java code (a data source) have no equivalent: point a JSON source at the data.',
     'Scriptlet-set variables, <code>PAGE_COUNT</code> and <code>COLUMN_*</code> variables show as text.',
     'Expressions with <code>instanceof</code>, <code>new SimpleDateFormat(…)</code>, Groovy <code>${}</code> strings and <code>$R{}</code> resource bundles stay as text with a note.',
     'Background, no-data and last-page-footer bands are noted, not kept. Relative image paths need a full URL or data URI.',
   ]],
   ['BIRT', 'API.md "BIRT import"; 29 samples, 99.5% of 649 items kept', [
-    'Charts, crosstabs, items from libraries and event scripts are not converted (noted).',
+    'Charts become ReportWright charts (bar, line, area, pie, scatter, bubble, stock, radar, meter); Gantt and difference charts are noted. Event scripts that only set a style (<code>this.getStyle().color = …</code>, also under an <code>if</code>) become style expressions; other scripts and items from libraries are not converted (noted).',
     'HTML values show as text.',
     'Several master pages: only the first is used.',
     'Joint and scripted data sets get a note; flat-file, XML and scripted sources need a JSON source pointed at the data.',

@@ -103,7 +103,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 
 ## 6a. Maps
 
-- Shapes from GeoJSON (Polygon, MultiPolygon) coloured by a joined value, line layers (LineString, MultiLineString), points sized by a value.
+- Shapes from GeoJSON (Polygon, MultiPolygon), or from a data set's spatial field (GeoJSON, WKT, SQL Server geography binary), coloured by a joined value, line layers (LineString, MultiLineString), points sized by a value.
 - Colour scale: continuous with a gradient (heat) legend, or 2–9 equal-width classes with a graduated legend.
 - A click on a region drills through, sets parameters or opens a URL (`regionAction`), in the region's scope; tooltips show the value.
 - Caps: 5,000 shapes, 200,000 coordinates, 10,000 points.
@@ -191,8 +191,8 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 ## 13. Migration
 
 - ActiveReportsJS importer (`.rdlx-json`): both layouts, FixedPage, tablix (incl. nested), banded lists, charts (incl. the Phase 5 types), expressions, recursive groups, row spans, sections. 40 real files imported, validated and rendered with no item dropped; what changed is listed as notes.
-- JasperReports importer (`.jrxml`, JR 3–6 and the 7.x format) and BIRT importer (`.rptdesign`), both through the home page's Import; ActiveReports master reports, report parts and layers map to ReportWright's master, parts and layers. See API.md, "JasperReports import" and "BIRT import". 49 Jasper demo samples: 99.8% of elements kept; 29 BIRT samples: 99.5%.
-- SSRS / Report Builder importer (`.rdl`, `.rdlc`; RDL 2008, 2010, 2016): data sources and sets (SQL with @parameters, "Enter Data" rows), parameters (cascading, multi-value, hidden), text runs and rich text, tablix as table / matrix / list / banded list, charts (combos, secondary axis, data bars, sparklines), gauges and indicators (approximated), images, subreports, actions, document map, Variables / ReportItems / Me.Value, VB expressions. A safe XML reader (no DTDs, size and depth caps, linear). Maps and custom code are not converted (noted; code kept as text). 32 Microsoft sample reports imported, validated and rendered, no item dropped. See API.md, "SSRS import".
+- JasperReports importer (`.jrxml`, JR 3–6 and the 7.x format) and BIRT importer (`.rptdesign`), both through the home page's Import; Jasper markup (HTML, styled, RTF) becomes rich text and rotated text stays rotated; crosstabs (Jasper and BIRT) become matrices; BIRT charts become ReportWright charts and style-only event scripts style expressions; ActiveReports master reports, report parts and layers map to ReportWright's master, parts and layers. See API.md, "JasperReports import" and "BIRT import". 49 Jasper demo samples: 99.8% of elements kept; 29 BIRT samples: 99.5%.
+- SSRS / Report Builder importer (`.rdl`, `.rdlc`; RDL 2008, 2010, 2016): data sources and sets (SQL with @parameters, "Enter Data" rows), parameters (cascading, multi-value, hidden), text runs and rich text, tablix as table / matrix / list / banded list, charts (combos, secondary axis, data bars, sparklines), gauges and indicators (approximated), images, subreports, actions, document map, Variables / ReportItems / Me.Value, VB expressions. A safe XML reader (no DTDs, size and depth caps, linear). Maps become map items (embedded shapes as GeoJSON, colour rule, legend, lines, drill-through; shapefiles read from the imported folder (`.shp` + `.dbf`, bounded reader); SQL spatial layers drawn from the query's geography binary or WKT (`STAsText()`) at render time). Custom code: single-Return functions become report functions; the rest is kept as text (noted). 32 Microsoft sample reports imported, validated and rendered, no item dropped. See API.md, "SSRS import".
 
 ## 14. Report library (`reports/`)
 

