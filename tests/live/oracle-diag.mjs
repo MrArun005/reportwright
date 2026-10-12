@@ -20,6 +20,10 @@ const variants = {
   I: { q: Q, opts: {}, readLob: true },                               // execute, then getData on the locator
   J: { q: 'select 1 as one from dual', opts: {} },                   // control
 };
+const spec = variants[v === 'N' ? 'A' : v === 'M' ? 'A' : v];
+if (!spec) { console.log('unknown variant', v); process.exit(2); }
+const t0 = Date.now();
+const log = (...a) => console.log(`[${v} +${Date.now() - t0}ms]`, ...a);
 // driver-shaped flows (K: as src/server/sql/oracle.js; L: K without getStatementInfo; N: A after a 30 s wait; M: count first)
 const flow = async (conn, sqlText, { info = true, resultSetOpts = { fetchArraySize: 100, prefetchRows: 100 } } = {}) => {
   if (info) { const i = await conn.getStatementInfo(sqlText); log('stmt type', i.statementType); }
@@ -39,10 +43,6 @@ const flow = async (conn, sqlText, { info = true, resultSetOpts = { fetchArraySi
 if (v === 'K' || v === 'L') { const c = await oracledb.getConnection(oracleConfig(process.env.PW_LIVE_ORACLE)); c.callTimeout = 5000; try { await flow(c, Q, { info: v === 'K' }); } catch (e) { log('ERROR', e.code, e.message.split('\n')[0]); } finally { await c.rollback().catch(() => {}); await c.close().catch(() => {}); log('closed'); } process.exit(0); }
 if (v === 'N') { await new Promise(r => setTimeout(r, 30000)); }
 if (v === 'M') { const c = await oracledb.getConnection(oracleConfig(process.env.PW_LIVE_ORACLE)); c.callTimeout = 5000; const r0 = await c.execute('select count(*) n from pwowner.types_t'); log('count', JSON.stringify(r0.rows)); await c.close().catch(() => {}); }
-const spec = variants[v === 'N' ? 'A' : v === 'M' ? 'A' : v];
-if (!spec) { console.log('unknown variant', v); process.exit(2); }
-const t0 = Date.now();
-const log = (...a) => console.log(`[${v} +${Date.now() - t0}ms]`, ...a);
 const conn = await oracledb.getConnection(oracleConfig(process.env.PW_LIVE_ORACLE));
 conn.callTimeout = 5000; // a hang becomes an error, not a stuck process
 try {
