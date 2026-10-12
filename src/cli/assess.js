@@ -449,11 +449,8 @@ export function summaryText(a) {
       lines.push(`    ${String(e.count).padStart(3)}  ${e.pattern}`);
   }
   if (a.dataSources.connections.length) {
-    lines.push(
-      '',
-      '  Configure on the server:',
-      ...a.dataSources.connections.map((c) => `    ${c.env}  (${c.reports} reports)`),
-    );
+    lines.push('', '  Configure on the server:');
+    for (const c of a.dataSources.connections) lines.push(`    ${c.env}  (${c.reports} reports)`);
   }
   if (a.refused.length) lines.push('', `  ${a.refused.length} files refused (see assessment.json)`);
   return lines.join('\n');
