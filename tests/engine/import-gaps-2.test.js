@@ -10,6 +10,11 @@ import { jasperMarkup, rtfMarkup, MARKUP_LIMITS } from '../../src/importers/mark
 import { validate } from '../../src/engine/schema/validate.js';
 import { render } from '../../src/engine/index.js';
 import { fontStore, texts } from '../helpers.js';
+import os from 'node:os';
+import { importRdl } from '../../src/importers/rdl.js';
+import { importFolder } from '../../src/cli/importBatch.js';
+import { readShapefile, readDbf } from '../../src/engine/geo.js';
+import { shp, dbf, statesShp, statesDbf } from '../helpers-shapefile.js';
 
 const FX = path.join(import.meta.dirname, '..', 'fixtures');
 const read = (f) => fs.readFileSync(path.join(FX, f), 'utf8');
@@ -97,5 +102,79 @@ describe('BIRT charts → ReportWright charts', () => {
     const lots = importBirt(src.replace(item, item.repeat(510)), { name: 'X' });
     expect(all(lots.definition).filter(i => i.type === 'chart').length).toBe(500);
     expect(lots.warnings.join('\n')).toMatch(/more than 500 charts/);
+  });
+});
+
+describe('SSRS shapefile maps: the .shp and .dbf next to the report → GeoJSON', () => {
+  const SRC = read('rdl/shapefile/map-shapefile.rdl');
+  const files = { shp: new Uint8Array(statesShp()), dbf: new Uint8Array(statesDbf()) };
+  const mapOf = (r) => all(r.definition).find(i => i.type === 'map');
+  it('reads polygons (with holes) and attributes when the caller resolves the shapefile', () => {
+    const asked = [];
+    const r = importRdl(SRC, { resolve: (kind, ref) => { asked.push([kind, ref]); return kind === 'shapefile' ? files : null; } });
+    expect(asked).toEqual([['shapefile', 'C:\\maps\\states.shp']]);
+    expect(validate(r.definition).errors).toEqual([]);
+    const gj = JSON.parse(mapOf(r).geojson);
+    expect(gj.features.map(f => f.properties.STATENAME)).toEqual(['Westland', 'Eastland']);
+    expect(gj.features[1].geometry.coordinates.length).toBe(2); // the outer ring and its hole
+    expect(r.warnings.join('\n')).not.toMatch(/shapefile/);
+  });
+  it('keeps the note when the shapefile is not provided', () => {
+    expect(importRdl(SRC).warnings.join('\n')).toMatch(/reads the ESRI shapefile C:\\maps\\states.shp, which is not in the import/);
+  });
+  it('renders the shapes coloured by the joined data', async () => {
+    const r = importRdl(SRC, { resolve: () => files });
+    const out = await render(r.definition, { fontStore, sources: sourcesFor(r.definition, [{ State: 'Westland', Amount: 5 }, { State: 'Eastland', Amount: 9 }]) });
+    expect(out.warnings.filter(w => /shape|GeoJSON|coordinates/.test(w))).toEqual([]);
+    expect(out.pages[0].items.some(i => i.t === 'path' || i.t === 'poly' || i.d)).toBe(true);
+    expect(words(out)).toContain('Sales by state');
+  });
+  it('pw import <folder> picks up the .shp and .dbf beside the report', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-shp-'));
+    try {
+      const IN = path.join(tmp, 'in'); fs.mkdirSync(IN);
+      fs.writeFileSync(path.join(IN, 'map.rdl'), SRC);
+      fs.writeFileSync(path.join(IN, 'states.shp'), statesShp()); fs.writeFileSync(path.join(IN, 'states.dbf'), statesDbf());
+      const res = await importFolder(IN, path.join(tmp, 'out'), { log: () => {} });
+      const rec = res.files.find(f => f.source === 'map.rdl');
+      expect(rec.references).toContainEqual({ kind: 'shapefile', ref: 'C:\\maps\\states.shp', resolved: 'states.shp' });
+      const def = JSON.parse(fs.readFileSync(path.join(tmp, 'out', rec.output), 'utf8'));
+      expect(JSON.parse(all(def).find(i => i.type === 'map').geojson).features.length).toBe(2);
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  });
+  it('hostile shapefiles: lying counts, overlapping parts, huge record lengths, projected data, caps on emitted output', () => {
+    const t0 = performance.now();
+    const caps = { maxShapes: 20_000, maxPoints: 200_000 };
+    const good = statesShp();
+    // a point count far past the record: refused before anything is allocated
+    const lying = Buffer.from(good); lying.writeInt32LE(0x7fffffff, 100 + 8 + 40);
+    expect(readShapefile(new Uint8Array(lying), null, caps)).toMatchObject({ bad: 1, features: [expect.anything()] });
+    // parts that go back (re-emitting points) are refused
+    const back = shp([{ type: 5, parts: [[[0, 0], [0, 1], [1, 1], [0, 0]], [[0, 0], [0, 1], [1, 1], [0, 0]]] }]);
+    back.writeInt32LE(0, 100 + 8 + 48);
+    expect(readShapefile(new Uint8Array(back), null, caps).bad).toBe(1);
+    // a record length past the file: stops there
+    const long = Buffer.from(good); long.writeInt32BE(0x3fffffff, 104);
+    expect(readShapefile(new Uint8Array(long), null, caps)).toMatchObject({ bad: 1, features: [] });
+    // not a shapefile
+    expect(readShapefile(new Uint8Array(200), null, caps).error).toMatch(/not a shapefile/);
+    // projected metres
+    expect(readShapefile(new Uint8Array(shp([{ type: 5, parts: [[[500000, 0], [500000, 10], [500010, 10], [500000, 0]]] }])), null, caps).notLonLat).toBe(true);
+    // emitted caps: 30,000 small shapes → 20,000 kept, the rest noted
+    const many = shp(Array.from({ length: 30_000 }, () => ({ type: 3, parts: [[[0, 0], [1, 1]]] })));
+    const r = importRdl(SRC, { resolve: () => ({ shp: new Uint8Array(many) }) });
+    expect(JSON.parse(mapOf(r).geojson).features.length).toBe(20_000);
+    expect(r.warnings.join('\n')).toMatch(/more than 20,000 shapes/);
+    expect(r.warnings.join('\n')).toMatch(/has no \.dbf next to it/);
+    // the points cap counts what is emitted: one 250,000-point line is refused whole
+    const big = shp([{ type: 3, parts: [Array.from({ length: 250_000 }, (_, i) => [i % 180, 0])] }]);
+    expect(readShapefile(new Uint8Array(big), null, caps)).toMatchObject({ over: true, features: [] });
+    // dBASE: fields longer than the record, too many fields, a record count past the file
+    const d = Buffer.from(statesDbf()); d.writeUInt16LE(3, 10);
+    expect(readDbf(new Uint8Array(d)).error).toMatch(/longer than its records/);
+    expect(readDbf(new Uint8Array(dbf(Array.from({ length: 200 }, (_, i) => ({ name: `F${i}`, type: 'C', size: 1 })), []))).error).toMatch(/more than 128 fields/);
+    const d2 = Buffer.from(statesDbf()); d2.writeUInt32LE(0xffffffff, 4);
+    expect(readDbf(new Uint8Array(d2)).rows.length).toBe(2);
+    expect(performance.now() - t0).toBeLessThan(5000);
   });
 });

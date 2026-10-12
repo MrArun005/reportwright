@@ -12,6 +12,7 @@
  * Pure JavaScript, no Node APIs and no DOM. It never throws: whatever it cannot map becomes a warning.
  */
 import { parseXml, XmlError } from './xml.js';
+import { sqlGeography, readShapefile, OVER } from '../engine/geo.js';
 import { importRdlx, toPt, ImportBudgetError, OUTPUT_LIMITS, rewordItems } from './rdlx.js';
 
 const RDL_NS = /^http:\/\/schemas\.microsoft\.com\/sqlserver\/reporting\/(\d{4})\/\d{2}\/reportdefinition$/i;
@@ -28,8 +29,9 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 /**
  * Convert an SSRS report.
  * @param {string} input the .rdl / .rdlc text
- * @param {{ name?: string, resolve?: (kind: 'datasource', ref: string) => string | null | undefined }} [opts] name: the report name (e.g. from the file name);
- *   resolve: the text of the shared data source (.rds) a DataSourceReference names, when the caller has it (pw import <folder>)
+ * @param {{ name?: string, resolve?: (kind: 'datasource' | 'shapefile', ref: string) => any }} [opts] name: the report name (e.g. from the file name);
+ *   resolve: the text of the shared data source (.rds) a DataSourceReference names, or for 'shapefile' { shp, dbf } (bytes) of
+ *   the shapefile a map layer names, when the caller has it (pw import <folder>)
  * @returns {{ definition: any, warnings: string[], stats: { items: number, mapped: number, approximated: number, dropped: number }, items: import('./rdlx.js').ImportedItem[], error?: string }}
  */
 export function importRdl(input, opts = {}) {
@@ -72,7 +74,7 @@ export function importRdl(input, opts = {}) {
 /**
  * The RDL XML tree → an RDLX-JSON object (what rdlx.js reads).
  * @param {import('./xml.js').XmlElement} root @param {string[]} notes @param {number} year the RDL version
- * @param {((kind: 'datasource', ref: string) => string | null | undefined)} [resolve]
+ * @param {((kind: 'datasource' | 'shapefile', ref: string) => any)} [resolve]
  */
 function toRdlx(root, notes, year, resolve) {
   const NS = root.ns;
@@ -493,12 +495,11 @@ function toRdlx(root, notes, year, resolve) {
   // an untrusted file: running totals over every map in the import, checked before each decode / append (a hit is noted)
   const MAP_MAX_SHAPES = 20_000, MAP_MAX_POINTS = 200_000, MAP_MAX_BYTES = 4e6;
   let mapShapes = 0, mapPoints = 0, mapBytes = 0;
-  const OVER = { over: true }; // sqlGeography: the shape would pass the points cap
 
   /**
    * An SSRS map → { Type: 'ssrsmap' } for rdlx.js: the first polygon layer colours its shapes by the analytical data (the
    * colour range rule), embedded shapes (the map gallery's) become GeoJSON, embedded lines are added to it, a point
-   * layer over a data set keeps its data set. Shapefiles and SQL spatial data cannot be read here: a note asks for GeoJSON.
+   * layer over a data set keeps its data set. A shapefile is read when the caller resolves it (the .shp and .dbf next to the report); SQL spatial data is read at render time (src/engine/geo.js).
    */
   function map(e) {
     const it = { ...common(e, 'ssrsmap') }; // not 'map': ActiveReports' own map type stays unsupported
@@ -524,13 +525,31 @@ function toRdlx(root, notes, year, resolve) {
     const source = (layer) => {
       const sd = kids(layer).find(x => /^MapSpatialData|^MapShapefile$/.test(x.name));
       if (!sd) return;
-      if (sd.name === 'MapShapefile') notes.push(`the layer "${layer.attrs.Name}" reads the ESRI shapefile ${raw(sd, 'Source') || ''}, which cannot be converted here: convert it to GeoJSON (e.g. with mapshaper or ogr2ogr) and paste it into the map's Shapes.`);
+      if (sd.name === 'MapShapefile') shapefile(layer, sd);
       else if (sd.name === 'MapSpatialDataSet') {
         const ds = raw(sd, 'DataSetName'), f = raw(sd, 'SpatialField');
         if (!it.ShapeDataSet) { it.ShapeDataSet = ds; it.Geometry = `=Fields!${f}.Value`; }
         notes.push(`the layer "${layer.attrs.Name}" reads SQL Server spatial data (${ds}.${f}): make that query return the shape as GeoJSON (e.g. ${f}.STAsText() converted to GeoJSON, or a GeoJSON column), or supply GeoJSON text.`);
       } else if (sd.name === 'MapSpatialDataRegion') notes.push(`the layer "${layer.attrs.Name}" reads its shapes from another data region; supply GeoJSON for it.`);
       return sd;
+    };
+    /** A shapefile layer: the .shp (and .dbf) next to the report, when the caller has them (pw import <folder>). */
+    const shapefile = (layer, sd) => {
+      const src = raw(sd, 'Source') || '';
+      let files = null;
+      if (src && !isExpr(src)) { try { files = resolve?.('shapefile', src) ?? null; } catch { files = null; } }
+      const ask = 'convert it to GeoJSON (e.g. with mapshaper or ogr2ogr) and paste it into the map\'s Shapes, or import the report folder with the .shp and .dbf next to it (pw import <folder>).';
+      if (!files?.shp) { notes.push(`the layer "${layer.attrs.Name}" reads the ESRI shapefile ${src}, which is not in the import: ${ask}`); return; }
+      if (mapShapes >= MAP_MAX_SHAPES || mapPoints >= MAP_MAX_POINTS) { over = true; return; }
+      const r = readShapefile(files.shp, files.dbf, { maxShapes: MAP_MAX_SHAPES - mapShapes, maxPoints: MAP_MAX_POINTS - mapPoints });
+      if (r.error) { notes.push(`the shapefile ${src} of the layer "${layer.attrs.Name}" could not be read (${r.error}): ${ask}`); return; }
+      if (r.notLonLat) { notes.push(`the shapefile ${src} of the layer "${layer.attrs.Name}" is not in longitude and latitude (it is projected): reproject it to WGS 84 (e.g. ogr2ogr -t_srs EPSG:4326) and import it again.`); return; }
+      if (!files.dbf) notes.push(`the shapefile ${src} has no .dbf next to it, so its shapes have no attributes to join the data on.`);
+      if (r.points) notes.push(`${r.points} point records of the shapefile ${src} are left out: ReportWright places points from a data set's latitude and longitude.`);
+      bad += r.bad;
+      if (r.over) over = true;
+      mapShapes += r.features.length; mapPoints += r.n;
+      for (const f of r.features) features.push(f);
     };
     let polygons = false;
     for (const layer of layers) {
@@ -579,69 +598,6 @@ function toRdlx(root, notes, year, resolve) {
     else if (!it.ShapeDataSet) notes.push('its shapes could not be read from the file: paste GeoJSON into the map\'s Shapes (Properties → Shapes: GeoJSON text).');
     if (!layers.length) notes.push('it has no layers.');
     return it;
-  }
-
-  /**
-   * SQL Server's geography serialization (MS-SSCLRT, versions 1 and 2), as the map gallery embeds it in VectorData,
-   * → a GeoJSON geometry; null when it is not that.
-   */
-  function sqlGeography(b64, maxPoints) {
-    let bin;
-    try { bin = atob(String(b64 || '').replace(/\s+/g, '')); } catch { return null; }
-    if (bin.length < 6) return null;
-    const buf = new ArrayBuffer(bin.length), u8 = new Uint8Array(buf);
-    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-    const dv = new DataView(buf);
-    let o = 4; // SRID
-    const ver = dv.getUint8(o++), flags = dv.getUint8(o++);
-    if (ver !== 1 && ver !== 2) return null;
-    const pts = [];
-    const need = (n) => { if (o + n > bin.length) throw new RangeError('short'); };
-    try {
-      const point = () => { need(16); const lat = dv.getFloat64(o, true), lon = dv.getFloat64(o + 8, true); o += 16; return [lon, lat]; };
-      if (flags & 8) return { type: 'Point', coordinates: point(), n: 1 };
-      if (flags & 16) return { type: 'LineString', coordinates: [point(), point()], n: 2 };
-      need(4); const np = dv.getUint32(o, true); o += 4;
-      if (np * 16 > bin.length) return null; // the count cannot exceed what the bytes hold
-      if (np > maxPoints) return OVER;
-      for (let i = 0; i < np; i++) pts.push(point());
-      if (flags & 1) o += 8 * np; // Z
-      if (flags & 2) o += 8 * np; // M
-      need(4); const nf = dv.getUint32(o, true); o += 4;
-      if (nf > np) return null;
-      const figs = [];
-      for (let i = 0; i < nf; i++) { need(5); figs.push(dv.getInt32(o + 1, true)); o += 5; }
-      need(4); const ns = dv.getUint32(o, true); o += 4;
-      if (ns > nf + 1e5) return null;
-      const shapes = [];
-      for (let i = 0; i < ns; i++) { need(9); shapes.push({ fig: dv.getInt32(o + 4, true), type: dv.getUint8(o + 8) }); o += 9; }
-      const ring = (f) => pts.slice(figs[f], f + 1 < figs.length ? figs[f + 1] : pts.length);
-      // the figures of shape k run to the next shape's first figure: found in one backward pass (linear)
-      const nextFig = new Array(ns);
-      for (let k = ns - 1, nx = figs.length; k >= 0; k--) { nextFig[k] = nx; if (shapes[k].fig >= 0) nx = shapes[k].fig; }
-      // shapes may name the same figures more than once: what is cut out (emitted) is counted against the cap, not np,
-      // and each figure is used by one shape only, so the output can never be larger than the points the file holds
-      let emitted = 0;
-      const used = new Uint8Array(figs.length);
-      const figsOf = (k) => {
-        const s0 = shapes[k].fig; if (s0 < 0 || s0 > figs.length) return [];
-        const out = [];
-        for (let j = s0; j < Math.min(nextFig[k], figs.length); j++) {
-          if (used[j]) throw new RangeError('figure reused');
-          used[j] = 1;
-          const r = ring(j);
-          emitted += r.length;
-          if (emitted > maxPoints) throw OVER;
-          out.push(r);
-        }
-        return out;
-      };
-      const polys = [], lines = [];
-      for (let k = 0; k < ns; k++) { const sh = shapes[k]; if (sh.type === 3) polys.push(figsOf(k)); else if (sh.type === 2) for (const r of figsOf(k)) lines.push(r); }
-      if (polys.length) return polys.length === 1 ? { type: 'Polygon', coordinates: polys[0], n: np } : { type: 'MultiPolygon', coordinates: polys, n: np };
-      if (lines.length) return lines.length === 1 ? { type: 'LineString', coordinates: lines[0], n: np } : { type: 'MultiLineString', coordinates: lines, n: np };
-      return null;
-    } catch (err) { return err === OVER ? OVER : null; }
   }
 
   /* ---------------------------------------------------------------- charts and gauges */
