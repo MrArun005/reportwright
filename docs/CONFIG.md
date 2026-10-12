@@ -136,6 +136,8 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 | `PW_STANDALONE` | internal |  | Build the Docker standalone server. |
 | `PW_CGROUP_DIR` | internal |  | Tests: where cgroup files are read. |
 | `PW_NEW_PASSWORD` | internal |  | scripts/user.mjs: the new password. |
+| `PW_DOMAIN` | deploy | (empty) | Domain for Caddy's automatic HTTPS (`deploy/compose`, `--profile https`). Empty: no HTTPS proxy. |
+| `PW_PUBLISH` | deploy | `127.0.0.1:3000` | Host address the app port is published on in `deploy/compose/docker-compose.yml`. |
 | `PW_BENCH` | internal |  | scripts/perf-pdf.mjs: the bench checkout. |
 | `PW_MONITOR_KEY` | internal |  | scripts/uptime-check.mjs: the service key that reads /api/v1/metrics (docs/OPS.md). |
 | `PW_MAX_5XX` | internal | 0.05 | scripts/uptime-check.mjs: the largest share of 5xx answers before it fails. |

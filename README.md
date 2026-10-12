@@ -61,6 +61,8 @@ Measured on GitHub Actions runners, every output checked; losses included.
 
 Start a new app with a sample report (Node, React, Vue, Svelte or Angular):
 
+_Not on npm yet: `npm create reportwright` returns 404 until the first release._
+
 ```bash
 npm create reportwright@latest my-app
 ```
@@ -68,9 +70,9 @@ npm create reportwright@latest my-app
 Or use the packages in your own app (no server needed):
 
 ```bash
-npm i @reportwright/engine @reportwright/fonts      # render and export in Node or the browser
-npm i @reportwright/viewer @reportwright/fonts      # the viewer and designer in a web page
-npm i -D @reportwright/cli @reportwright/fonts      # `pw` on the command line
+npm i @reportwright/engine@next @reportwright/fonts@next      # render and export in Node or the browser
+npm i @reportwright/viewer@next @reportwright/fonts@next      # the viewer and designer in a web page
+npm i -D @reportwright/cli@next @reportwright/fonts@next      # `pw` on the command line
 ```
 
 Or run the full self-hosted server (designer, report storage, users, schedules, API) from this repository: see [Run it](#run-it).
@@ -86,7 +88,7 @@ Or run the full self-hosted server (designer, report storage, users, schedules, 
 ## 30-second example
 
 ```bash
-npm i -D @reportwright/cli @reportwright/fonts
+npm i -D @reportwright/cli@next @reportwright/fonts@next
 npx pw render reports/charts-showcase.pw.json -o charts.pdf     # in a clone of this repository: any report in reports/ with inline data
 ```
 
@@ -357,7 +359,7 @@ On the home page, **Import ActiveReports file** takes an ActiveReportsJS `.rdlx-
 - **XML** (inline or by URL, through the same guarded fetch and proxy as REST): `{ type: 'xml', url, namespaces: { o: 'urn:orders' } }`. A data set's `path` is an XPath to the row elements: `/a/b`, `//b`, `.`, `..`, `*`, `o:name`, `@attr`, `text()`, `[n]`, `[last()]`, `[@x='v']`, `[name='v']`; `$` takes the most repeated element. Fields come from the row's attributes and child elements, or a `path` XPath relative to the row (`../@id`, `Address/City`). A name without a prefix matches any namespace. The document is read without DTDs (no XXE, no entity expansion), with caps of 16 M characters, 128 levels and 250,000 elements.
 - **SOAP**: `{ type: 'soap', url, soapAction, soapVersion: '1.1' | '1.2', envelope }`. `{Parameters.x}` in the envelope is XML-escaped; the first element in the response Body is the data (an XML source); a fault is an error with its message. Not through the proxy (it only reads).
 - **OData**: `{ type: 'odata', url: '<service root>', entitySet, select, filters: [{ field, op, value, type }], orderby: [{ field, dir }], top, skip, expand, maxPages, types }`. Names must be identifiers and values become OData literals, so a parameter cannot change the query; an empty value leaves its filter out, a list is an OR. `@odata.nextLink` (and v2 `__next`) is followed on the same origin only, up to `maxPages` (default 10, at most 100). In the Designer, "Read $metadata" lists the entity sets and their properties.
-- **SQL** (SQLite, PostgreSQL, MySQL, SQL Server, Oracle, Snowflake, BigQuery; see [docs/DATA-SQL.md](docs/DATA-SQL.md)): `{ type: 'sql', connection: 'main', query: 'select … where id = @accountId and region in (@regions)' }`. The connection comes from `PW_DB_MAIN`; a report never holds a host or a password. `@name` binds the report parameter `name` through the driver, so a value is never pasted into the SQL. A multi-value parameter becomes a list (`in (@regions)`); an empty list matches nothing (it becomes `NULL`, so `not in (@regions)` matches nothing too). Only one `SELECT` (or `WITH … SELECT`) statement runs, in a read-only transaction (SQLite: the file opened read-only), for at most 30 s and 100,000 rows. Server renders query the database directly. In the browser the viewer sends only the report id, the source name and the parameters to `/api/data/sql`, and the server runs **the query saved in that report**. A query sent with the request (a preview of unsaved work) runs only for a designer: one with accounts on, anyone behind `PW_BASIC_AUTH` or `PW_AUTH=proxy`, anyone in development; never on a production server where nobody signs in. The saved query runs only as a designer saved it (see [Run it](#run-it)). SQLite queries run on the server's main thread, so the 30 s limit does not stop them: keep SQLite for small local files.
+- **SQL** (SQLite and MySQL released; PostgreSQL, SQL Server, Oracle, Snowflake and BigQuery built, not released; see [docs/DATA-SQL.md](docs/DATA-SQL.md)): `{ type: 'sql', connection: 'main', query: 'select … where id = @accountId and region in (@regions)' }`. The connection comes from `PW_DB_MAIN`; a report never holds a host or a password. `@name` binds the report parameter `name` through the driver, so a value is never pasted into the SQL. A multi-value parameter becomes a list (`in (@regions)`); an empty list matches nothing (it becomes `NULL`, so `not in (@regions)` matches nothing too). Only one `SELECT` (or `WITH … SELECT`) statement runs, in a read-only transaction (SQLite: the file opened read-only), for at most 30 s and 100,000 rows. Server renders query the database directly. In the browser the viewer sends only the report id, the source name and the parameters to `/api/data/sql`, and the server runs **the query saved in that report**. A query sent with the request (a preview of unsaved work) runs only for a designer: one with accounts on, anyone behind `PW_BASIC_AUTH` or `PW_AUTH=proxy`, anyone in development; never on a production server where nobody signs in. The saved query runs only as a designer saved it (see [Run it](#run-it)). SQLite queries run on the server's main thread, so the 30 s limit does not stop them: keep SQLite for small local files.
 - **Pushed data**: the render API and batches can send the data in the request. It replaces the source with the same name.
 
 The sample endpoints `/api/sample/loans`, `/api/sample/loans/<account>` and `/api/sample/sales/<year>` serve fictional data.
@@ -385,7 +387,7 @@ ActiveReportsJS did not finish the 50,000-row reports within 10 minutes; ReportW
 
 **In progress on `main`:** server stability (SQLite isolation, login throttling, safe default report permissions, memory-aware render pool, logging and health checks), 21 silent wrong-result fixes against SSRS semantics, Designer and viewer accessibility and usability, a conditional formatting wizard, a visual SQL query builder and native Excel charts.
 
-**Not released:** SQL Server, PostgreSQL, Oracle, Snowflake and BigQuery data sources and stored procedures (see `docs/DATA-SQL.md`); the audit log's hash chain is beta. **Deferred:** running SSRS custom VB `Code`, and page-at-a-time streaming layout for millions of rows.
+**Not released:** SQL Server, PostgreSQL, Oracle, Snowflake and BigQuery data sources and stored procedures (Oracle, Snowflake and BigQuery are also not live-tested; see `docs/DATA-SQL.md`); the audit log's hash chain is beta. **Deferred:** running SSRS custom VB `Code`, and page-at-a-time streaming layout for millions of rows.
 
 **Breaking change:** `render()` keeps table data for Excel, CSV, Word, interactive HTML and accessible PDF only with `render(def, { exportData: true })`; the built-in server, CLI and viewer pass it. After upgrading, re-save SQL reports once in the Designer.
 
