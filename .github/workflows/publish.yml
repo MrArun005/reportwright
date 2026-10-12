@@ -44,6 +44,8 @@ env:
   PACKAGES: fonts fonts-cjk engine cli viewer react vue svelte angular create-reportwright # all @reportwright/<p> except create-reportwright (unscoped)
 jobs:
   publish:
+    # only a version release (tag v1.2.3 or v1.2.3-rc.4) publishes; other releases (a docs zip) never do
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -97,7 +99,8 @@ jobs:
     steps:
       - id: v
         run: |
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version" >&2; exit 1; }
+          # a release (1.2.3) or a prerelease (1.2.3-rc.4): both are verified; only a release moves latest (below)
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]] || { echo "bad version" >&2; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2 # only for scripts/smoke-published.mjs and its sample; the packages come from the registry
         with:
@@ -130,6 +133,7 @@ jobs:
 
   latest:
     needs: verify # a failed verify skips this job: latest is untouched
+    if: ${{ !contains(needs.verify.outputs.version, '-') }} # a prerelease stays on next; latest only moves for a release
     runs-on: ubuntu-latest
     permissions: {}
     env:

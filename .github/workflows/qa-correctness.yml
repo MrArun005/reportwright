@@ -1,0 +1,167 @@
+# QA suite: correctness (docs/QA.md). Unit tests, report snapshots, typecheck, the full writer parity gate (poppler
+# pinned by scripts/parity-tolerance.json) and every repository report exported to every format and validated.
+name: qa-correctness
+on:
+  workflow_call:
+    inputs:
+      ref: { type: string, default: '' }
+      tier: { type: string, default: quick }
+  workflow_dispatch:
+    inputs:
+      ref: { type: string, default: '' }
+      tier: { type: string, default: quick }
+  push:
+    branches: [qa/core]
+
+env:
+  TZ: Asia/Kolkata
+  QA_SUITE: correctness
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      QA_SHARD: unit
+      PW_TEST_PG: postgres://postgres:pw-test@127.0.0.1:5432/postgres
+      PW_TEST_MYSQL: mysql://root:pw-test@127.0.0.1:3306/pwtest
+      PW_TEST_MSSQL: mssql://sa:Pw-test-1234@127.0.0.1:1433/master?encrypt=false
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: pw-test }
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+      mysql:
+        image: mysql:8.4
+        env: { MYSQL_ROOT_PASSWORD: pw-test, MYSQL_DATABASE: pwtest }
+        ports: ['3306:3306']
+        options: --health-cmd "mysqladmin ping -h 127.0.0.1 -ppw-test" --health-interval 5s --health-timeout 5s --health-retries 30
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env: { ACCEPT_EULA: 'Y', MSSQL_SA_PASSWORD: Pw-test-1234 }
+        ports: ['1433:1433']
+        options: --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P Pw-test-1234 -Q 'SELECT 1' || exit 1" --health-interval 10s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      # the two vitest invocations of ci.yml (the shared-database suites one file at a time)
+      - run: node scripts/qa.mjs check correctness "unit tests (parallel)" "all vitest files pass" "npx vitest run --exclude tests/engine/storage.test.js --exclude tests/engine/perms.test.js --exclude tests/engine/audit.test.js"
+      - run: node scripts/qa.mjs check correctness "unit tests (shared DB, serial)" "storage, perms, audit pass on pg/mysql/mssql" "npx vitest run --no-file-parallelism tests/engine/storage.test.js tests/engine/perms.test.js tests/engine/audit.test.js"
+      - if: failure()
+        run: node scripts/qa.mjs fail correctness "job ${{ github.job }} $QA_SHARD set-up" "a step outside the checks failed (see the job log)"
+      - if: always()
+        run: node scripts/qa.mjs summarize correctness
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: qa-correctness-part-unit, path: qa-out/*.jsonl, if-no-files-found: ignore }
+
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [snapshots, typecheck, exports]
+    env:
+      QA_SHARD: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      - if: matrix.shard == 'snapshots'
+        run: node scripts/qa.mjs check correctness "report snapshots" "no page or total changed" "node bin/pw.mjs test reports"
+      - if: matrix.shard == 'typecheck'
+        run: node scripts/qa.mjs check correctness "typecheck" "no server errors; engine errors not above baseline" "npm run typecheck"
+      - if: matrix.shard == 'exports'
+        name: every repository report to pdf/xlsx/docx/pptx/html/csv, validated
+        run: |
+          sudo apt-get update && sudo apt-get install -y qpdf
+          node scripts/qa.mjs sample-server 3999 & # the /api/sample/* data the reports read
+          sleep 2
+          mkdir -p out
+          for r in reports/*.pw.json examples/report.pw.json; do
+            id=$(basename "$r" .pw.json)
+            for f in pdf xlsx docx pptx html csv; do
+              case $f in
+                pdf) v="qpdf --check out/$id.$f >/dev/null"; e="qpdf --check clean";;
+                xlsx|docx|pptx) v="unzip -tq out/$id.$f"; e="zip intact (unzip -t)";;
+                html) v="grep -qi '<html' out/$id.$f"; e="an HTML document";;
+                csv) v="test -s out/$id.$f"; e="a non-empty CSV";;
+              esac
+              node scripts/qa.mjs check correctness "export $id.$f" "renders; $e" "node bin/pw.mjs render $r -f $f -o out/$id.$f --base http://127.0.0.1:3999 --allow-internal && $v"
+            done
+          done
+      - if: failure()
+        run: node scripts/qa.mjs fail correctness "job ${{ github.job }} $QA_SHARD set-up" "a step outside the checks failed (see the job log)"
+      - if: always()
+        run: node scripts/qa.mjs summarize correctness
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: 'qa-correctness-part-${{ matrix.shard }}', path: qa-out/*.jsonl, if-no-files-found: ignore }
+
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      QA_SHARD: parity
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      # conda-forge has no poppler 26.04 (26.02, 26.05, ...), so the pinned version is built from source once and cached
+      - id: pin
+        run: echo "v=$(node -p "require('./scripts/parity-tolerance.json').rendererVersion")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: poppler
+        with: { path: ~/poppler, key: 'poppler-${{ steps.pin.outputs.v }}-${{ runner.os }}-v2' }
+      - run: sudo apt-get update && sudo apt-get install -y qpdf cmake ninja-build libfreetype-dev libfontconfig-dev libjpeg-dev libopenjp2-7-dev libpng-dev liblcms2-dev zlib1g-dev libnss3-dev
+      - if: steps.poppler.outputs.cache-hit != 'true'
+        name: build poppler ${{ steps.pin.outputs.v }}
+        env: { V: '${{ steps.pin.outputs.v }}' }
+        run: |
+          curl -sSfL "https://poppler.freedesktop.org/poppler-$V.tar.xz" | tar xJ -C "$RUNNER_TEMP"
+          cmake -S "$RUNNER_TEMP/poppler-$V" -B "$RUNNER_TEMP/pb" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/poppler" \
+            -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_GLIB=OFF -DENABLE_CPP=OFF -DENABLE_BOOST=OFF -DENABLE_NSS3=ON -DENABLE_GPGME=OFF \
+            -DENABLE_LIBCURL=OFF -DENABLE_LIBTIFF=OFF -DENABLE_GOBJECT_INTROSPECTION=OFF -DBUILD_GTK_TESTS=OFF -DBUILD_QT5_TESTS=OFF -DBUILD_QT6_TESTS=OFF \
+            -DBUILD_CPP_TESTS=OFF -DBUILD_MANUAL_TESTS=OFF -DENABLE_UTILS=ON
+          cmake --build "$RUNNER_TEMP/pb" && cmake --install "$RUNNER_TEMP/pb"
+      - if: steps.poppler.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with: { path: ~/poppler, key: 'poppler-${{ steps.pin.outputs.v }}-${{ runner.os }}-v2' }
+      - run: |
+          echo "$HOME/poppler/bin" >> "$GITHUB_PATH"
+          echo "LD_LIBRARY_PATH=$HOME/poppler/lib:$HOME/poppler/lib64" >> "$GITHUB_ENV"
+      - run: |
+          V=$(node -p "require('./scripts/parity-tolerance.json').rendererVersion")
+          node scripts/qa.mjs check correctness "pdftoppm pinned version" "pdftoppm $V" "pdftoppm -v 2>&1 | head -1 | grep -F 'version $V'"
+      - run: node scripts/qa.mjs check correctness "writer parity gate (full corpus)" "every case PASS on tiers 1-5" "node scripts/writer-parity.mjs --baseline pdflib --corpus scripts/parity-corpus.mjs"
+      - if: failure()
+        run: node scripts/qa.mjs fail correctness "job ${{ github.job }} $QA_SHARD set-up" "a step outside the checks failed (see the job log)"
+      - if: always()
+        run: node scripts/qa.mjs summarize correctness
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: qa-correctness-part-parity, path: qa-out/*.jsonl, if-no-files-found: ignore }
+
+  results:
+    needs: [unit, checks, parity]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}', sparse-checkout: scripts }
+      - uses: actions/download-artifact@v4
+        with: { pattern: qa-correctness-part-*, path: parts, merge-multiple: true }
+      - run: node scripts/qa.mjs summarize correctness parts
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: qa-correctness-results, path: "qa-out/results.json\nqa-out/summary.md" }
