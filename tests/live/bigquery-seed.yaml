@@ -1,0 +1,37 @@
+# Seed for the goccy/bigquery-emulator CI job (.github/workflows/db-live.yml): project pwtest, dataset pwds, table types.
+projects:
+  - id: pwtest
+    datasets:
+      - id: pwds
+        tables:
+          - id: types
+            columns:
+              - name: id
+                type: INTEGER
+              - name: amount
+                type: NUMERIC
+              - name: ratio
+                type: FLOAT
+              - name: label
+                type: STRING
+              - name: born
+                type: DATE
+              - name: seen
+                type: TIMESTAMP
+              - name: flag
+                type: BOOLEAN
+            data:
+              - id: 1
+                amount: 1234.5
+                ratio: 1.5
+                label: "Ünïcødé — ₹ 日本語 🚀"
+                born: "2024-01-02"
+                seen: "2024-01-02T03:04:05Z"
+                flag: true
+              - id: 2
+                amount: null
+                ratio: null
+                label: null
+                born: null
+                seen: null
+                flag: null

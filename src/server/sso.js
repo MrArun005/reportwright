@@ -41,15 +41,18 @@ import { store, withLock } from './storage/index.js';
 import { clientAddress } from './limits.js';
 import { logWarn } from './errors.js';
 import { BUILTIN_GROUPS, RENAMED_GROUP } from './perms.js';
+import { devMode } from './config.js';
 
 const fail = (msg, status = 400, code = 'sso') => Object.assign(new Error(msg), { status, code });
 const b64u = (buf) => Buffer.from(buf).toString('base64url');
 const rand = (n = 32) => b64u(crypto.randomBytes(n));
 const same = (a, b) => typeof a === 'string' && typeof b === 'string' && crypto.timingSafeEqual(crypto.createHash('sha256').update(a).digest(), crypto.createHash('sha256').update(b).digest());
 
-export const oidcOn = () => !!(process.env.PW_OIDC_ISSUER && process.env.PW_OIDC_CLIENT_ID);
+// outside development SSO needs PW_BASE_URL: its audience, Recipient, Destination and redirect checks compare against it
+const baseOk = () => !!process.env.PW_BASE_URL || devMode();
+export const oidcOn = () => baseOk() && !!(process.env.PW_OIDC_ISSUER && process.env.PW_OIDC_CLIENT_ID);
 // the IdP's entity id is required: an account is bound to (issuer, NameID), and the issuer must be pinned
-export const samlOn = () => !!(process.env.PW_SAML_ENTRY_POINT && (process.env.PW_SAML_IDP_CERT || process.env.PW_SAML_IDP_CERT_FILE) && process.env.PW_SAML_IDP_ISSUER);
+export const samlOn = () => baseOk() && !!(process.env.PW_SAML_ENTRY_POINT && (process.env.PW_SAML_IDP_CERT || process.env.PW_SAML_IDP_CERT_FILE) && process.env.PW_SAML_IDP_ISSUER);
 export const ssoOn = () => oidcOn() || samlOn();
 /** Password sign-in is off only when SSO is set up (an admin cannot lock everyone out by a typo). */
 export const passwordLoginOn = () => !(process.env.PW_PASSWORD_LOGIN === 'off' && ssoOn());
