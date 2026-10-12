@@ -44,18 +44,13 @@ describe.skipIf(!process.env.PW_LIVE_ORACLE)('Oracle (live, gvenzl/oracle-free)'
     expect(n).toEqual({ ID: 2, AMOUNT: null, RATIO: null, LABEL: null, BORN: null, SEEN: null, NOTES: null });
   });
 
-  it('DIAG raw driver count after types', async () => {
-    const { default: od } = await import('oracledb');
-    const { oracleConfig } = await import('../../src/server/sql/oracle.js');
-    const c = await od.getConnection(oracleConfig(process.env.PW_LIVE_ORACLE));
-    const t = Date.now();
-    const r = await c.execute('select count(*) as n from pwowner.types_t');
-    console.log('DIAG raw count', Date.now() - t, 'ms', JSON.stringify(r.rows));
-    const t2 = Date.now();
-    const w = await c.execute("select sid, blocking_session, event, wait_class from v$session where username='PWOWNER' or blocking_session is not null");
-    console.log('DIAG sessions', Date.now() - t2, 'ms', JSON.stringify(w.rows));
-    await c.close();
-  }, 60000);
+  it('DIAG driver: count, then CLOB read, then count', async () => {
+    const t = async (label, q) => { const t0 = Date.now(); try { const r = await runSql(src(q)); console.log('DIAG', label, Date.now() - t0, 'ms', String(JSON.stringify(r)).slice(0, 60)); } catch (e) { console.log('DIAG', label, 'ERR', Date.now() - t0, 'ms', e.message); } };
+    await t('count1', 'select count(*) as n from pwowner.types_t');
+    await t('clob', 'select notes from pwowner.types_t where id = 1');
+    await t('count2', 'select count(*) as n from pwowner.types_t');
+    await t('count3', 'select count(*) as n from pwowner.types_t');
+  }, 120000);
 
   it('only one read: a write, a lock, or a second statement is refused before the database runs it', async () => {
     await expect(runSql(src('delete from pwowner.types_t'))).rejects.toThrow(/SELECT/);
