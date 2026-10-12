@@ -18,7 +18,8 @@ fs.rmSync(dist, { recursive: true, force: true });
 fs.mkdirSync(dist, { recursive: true });
 
 const node = { bundle: true, platform: 'node', format: 'cjs', target: 'node20', logLevel: 'warning', logOverride: quietDynamic };
-await esbuild.build({ ...node, entryPoints: [path.join(here, 'src/extension.ts')], external: ['vscode'], outfile: path.join(dist, 'extension.js') });
+// mainFields: jsonc-parser's UMD build requires './impl/format' dynamically, which a bundle cannot follow; its ESM build can
+await esbuild.build({ ...node, mainFields: ['module', 'main'], entryPoints: [path.join(here, 'src/extension.ts')], external: ['vscode'], outfile: path.join(dist, 'extension.js') });
 await esbuild.build({ ...node, entryPoints: [path.join(here, 'src/engine.ts')], outfile: path.join(dist, 'engine.js') });
 
 // the viewer: scripts/embed-options.mjs is the same option set the embeddable viewer ships with
