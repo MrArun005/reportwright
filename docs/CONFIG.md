@@ -70,6 +70,7 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 | `PW_DB_<NAME>_PROCS` | list |  | Stored procedures that connection may call. |
 | `PW_DB_POOL_MAX` | int | 5 | Connections per SQL pool per server thread. |
 | `PW_DB_ACQUIRE_MS` | ms |  | A lower cap on how long a PostgreSQL or MySQL query waits for a free pooled connection before a 503 with Retry-After (unset: up to the query deadline). |
+
 | `PW_SQL_TIMEOUT_MS` | ms | 30000 | A SQL query. |
 | `PW_SQL_MAX_ROWS` | int | 100000 | Rows a query may return. |
 | `PW_SQL_MAX_MB` | int | 64 | Megabytes a query may return. |
@@ -142,3 +143,7 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 | `PW_SITE_ORIGIN` | internal |  | scripts/build-site.mjs. |
 | `PW_NO_COMPILE_CACHE` | bool | (off) | pw: do not use Node's compile cache (a private 0700 folder under the user cache folder). |
 | `PW_NO_LIFTOFF` | bool | (off) | Leave V8's flags alone when the font subsetter loads (it briefly sets --liftoff-only; cold renders are slower without it). |
+
+## Live database tests (CI only)
+
+`tests/live/` runs against real servers in `.github/workflows/db-live.yml`: Oracle (`gvenzl/oracle-free:23-slim`), BigQuery (`goccy/bigquery-emulator`, an emulator, not Google BigQuery). Snowflake has no free local server, so its job runs only when the repository secret **`PW_LIVE_SNOWFLAKE_URL`** exists: create a Snowflake trial account, make a read-only role, and add the secret `snowflake://USER:PASS@ACCOUNT/DB/SCHEMA?warehouse=WH&role=READER` under Settings > Secrets and variables > Actions. Without the secret the job is skipped with a notice, not failed.

@@ -184,12 +184,26 @@ describe.each(backends)('storage on %s', (kind, setup) => {
 
   it('a lock outlives its lease while the holder works: the lease is renewed, nobody else gets in', async () => {
     const { withLock } = await import('../../src/server/storage/index.js');
-    let other = null;
-    await withLock('t-renew', async () => {
-      await new Promise(r => setTimeout(r, 900)); // three leases long
-      other = await store().lease('lock:t-renew', 'someone-else', 300);
-      await store().put('reports', 'fenced-ok', JSON.stringify({ name: 'ok' }));
-    }, { ttl: 300 });
+    // a fake clock (Date and the renewal interval): time moves on only after each renewal has landed, so a slow machine
+    // cannot let the lease run out. The holder's work waits on a gate the test opens, not on a timer.
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    const lease = vi.spyOn(store(), 'lease');
+    const landed = async () => { let n = -1; while (n !== lease.mock.results.length) { n = lease.mock.results.length; await Promise.all(lease.mock.results.map(r => r.value)); } };
+    let other = null, started, go;
+    const running = new Promise(r => { started = r; });
+    const gate = new Promise(r => { go = r; });
+    try {
+      const held = withLock('t-renew', async () => {
+        started();
+        await gate; // three leases long
+        other = await store().lease('lock:t-renew', 'someone-else', 300);
+        await store().put('reports', 'fenced-ok', JSON.stringify({ name: 'ok' }));
+      }, { ttl: 300 });
+      await running; // the lease is held and the renewal interval is set
+      for (let t = 0; t < 900; t += 100) { await vi.advanceTimersByTimeAsync(100); await landed(); }
+      go();
+      await held;
+    } finally { lease.mockRestore(); vi.useRealTimers(); }
     expect(other).toBe(false);
     expect(await store().get('reports', 'fenced-ok')).toBeTruthy();
     await store().remove('reports', 'fenced-ok');
