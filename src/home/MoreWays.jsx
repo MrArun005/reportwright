@@ -91,7 +91,7 @@ export default function MoreWays({ name, lang, folder = null }) {
         </div>
       )}
       <button type="button" className="btn" onClick={() => assessFiles.current?.click()} disabled={!!busy} title="Scan the files first: what converts, what needs work, the effort. Nothing is imported.">{busy === 'assess' ? 'Assessing…' : 'Assess first'}</button>
-      <input ref={assessFiles} type="file" multiple accept=".rdlx-json,.rdl,.rdlc,.jrxml,.rptdesign,.zip" hidden onChange={assessPicked} aria-label="Files to assess" />
+      <input ref={assessFiles} type="file" multiple hidden onChange={assessPicked} aria-label="Files to assess" />
       {err && <span className="err" role="alert">{err}</span>}
       {assessment && (
         <div role="status" style={{ width: '100%', border: '1px solid var(--line, #dfe2e6)', borderRadius: 6, padding: '8px 12px' }}>
