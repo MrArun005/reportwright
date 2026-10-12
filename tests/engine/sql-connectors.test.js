@@ -141,6 +141,9 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
     expect(log.filter(x => x[0] !== 'probe').map(x => x[0])).toEqual(['info', 'execute', 'execute', 'close', 'rollback', 'release']);
     // the grant check is a positive list over the user, its roles and PUBLIC; READ on a DIRECTORY counts
     expect(log.find(x => x[0] === 'probe' && /all_tab_privs/.test(x[1]) && /'PUBLIC' FROM dual/.test(x[1]))?.[1]).toMatch(/DIRECTORY/);
+    // PUBLIC's grants on Oracle's own objects are the install default, of any privilege (SYS grants PUBLIC DELETE on some
+    // dictionary tables); PUBLIC on a user's own object is still refused. Live proof: tests/live/oracle.live.test.js
+    expect(log.find(x => x[0] === 'probe' && /all_tab_privs/.test(x[1]))?.[1]).toMatch(/grantee = 'PUBLIC' AND NVL\(type, 'PACKAGE'\) <> 'DIRECTORY'\s+AND table_schema IN \(SELECT username FROM all_users WHERE oracle_maintained = 'Y'\)/);
     const main = log.filter(x => x[0] !== 'probe');
     expect(main[1][1]).toBe('SET TRANSACTION READ ONLY');
     expect(main[2].slice(1)).toEqual(['select a from t where b = :1', [3]]);
@@ -310,7 +313,7 @@ describe('BigQuery (mocked @google-cloud/bigquery, not live-tested)', () => {
   it('a dry run first: SELECT only, and the bytes it would scan within maxBytes; the job is capped too', async () => {
     let log = bigqueryMock({ rows: [{ a: 1, d: { value: '2024-01-02' } }] });
     expect(await runSql({ connection: env('bq', 'bigquery://proj?maxBytes=5000'), query: 'select a, d from t where b = @b and c = @c' }, { b: 1, c: null })).toEqual([{ a: 1, d: '2024-01-02' }]);
-    expect(log.jobs[0]).toMatchObject({ dryRun: true, useLegacySql: false, params: [1, null], types: ['INT64', 'STRING'] });
+    expect(log.jobs[0]).toMatchObject({ dryRun: true, useLegacySql: false, params: ['1', null], types: ['INT64', 'STRING'] });
     expect(log.jobs[1]).toMatchObject({ maximumBytesBilled: '5000' });
     expect(log.jobs[1].jobTimeoutMs).toBeGreaterThan(0);
     for (const t of ['SCRIPT', 'INSERT', 'CREATE_TABLE_AS_SELECT', 'CALL', null]) {

@@ -46,7 +46,7 @@ describe.skipIf(!process.env.PW_LIVE_ORACLE)('Oracle (live, gvenzl/oracle-free)'
 
   it('only one read: a write, a lock, or a second statement is refused before the database runs it', async () => {
     await expect(runSql(src('delete from pwowner.types_t'))).rejects.toThrow(/SELECT/);
-    await expect(runSql(src('select id from pwowner.types_t for update'))).rejects.toThrow(/FOR UPDATE|lock/);
+    await expect(runSql(src('select id from pwowner.types_t for update'))).rejects.toThrow(/one SELECT|FOR UPDATE/);
     await expect(runSql(src('select 1 from dual; select 2 from dual'))).rejects.toThrow(/one/);
     expect(await runSql(src('select count(*) as n from pwowner.types_t'))).toEqual([{ N: 2 }]);
   });

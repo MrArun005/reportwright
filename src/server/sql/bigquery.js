@@ -43,7 +43,10 @@ export async function bigquery(url, text, values, ctx) {
   const bq = pools.get(key);
   // null has no type BigQuery can guess
   const types = values.map(v => (v == null ? 'STRING' : typeof v === 'number' ? (Number.isInteger(v) ? 'INT64' : 'FLOAT64') : typeof v === 'boolean' ? 'BOOL' : 'STRING'));
-  const base = { query: text, params: values, types, useLegacySql: false, location: cfg.location };
+  // the REST API takes every parameter value as a string (QueryParameterValue.value); the client sends a JS number as a
+  // JSON number, which the emulator rejects (and the API is not obliged to accept): so the text goes, the type says what it is
+  const wire = values.map(v => (v == null ? null : String(v)));
+  const base = { query: text, params: wire, types, useLegacySql: false, location: cfg.location };
   const clk = clock(Number(limits.ms));
   let job;
   try {

@@ -41,8 +41,10 @@ export async function probeOracle(conn, oracledb) {
     WHERE grantee IN (SELECT role FROM session_roles UNION ALL SELECT USER FROM dual UNION ALL SELECT 'PUBLIC' FROM dual)
       AND (grantable = 'YES' OR NOT (
         (privilege IN ('SELECT', 'READ') AND NVL(type, 'TABLE') <> 'DIRECTORY')
-        -- PUBLIC's EXECUTE (and SELECT/READ) on Oracle's own objects is the install default; nothing else of PUBLIC's is
-        OR (grantee = 'PUBLIC' AND privilege IN ('EXECUTE', 'SELECT', 'READ') AND NVL(type, 'PACKAGE') <> 'DIRECTORY'
+        -- what PUBLIC holds on Oracle's own objects is the install default (EXECUTE on packages, and some dictionary
+        -- tables grant PUBLIC DELETE/INSERT, e.g. SYS.MV_CAPABILITIES_TABLE$); a plain CREATE SESSION login must pass.
+        -- The risky packages are checked below; PUBLIC on a user's own object or a DIRECTORY is still refused
+        OR (grantee = 'PUBLIC' AND NVL(type, 'PACKAGE') <> 'DIRECTORY'
           AND table_schema IN (SELECT username FROM all_users WHERE oracle_maintained = 'Y'))
         -- 12c+ grants INHERIT PRIVILEGES on each new user to PUBLIC: it lets others' invoker-rights code use this user's rights
         OR (privilege = 'INHERIT PRIVILEGES' AND table_name = USER)))
