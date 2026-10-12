@@ -18,7 +18,7 @@ import { loadBarcodes } from './items/barcode.js';
 import { placeItems, shiftItems } from './items/paint.js';
 import { paginate } from './paginate/index.js';
 import { layoutItems } from './layout.js';
-import { validate, bareSorts } from './schema/validate.js';
+import { validate, validateCached, bareSorts } from './schema/validate.js';
 import { makeLoader, resolveReuse, resolveTheme, flattenNamed, REUSE_LIMITS, isSubreportId } from './reuse.js';
 import { layerFilter } from './layout.js';
 
@@ -120,12 +120,12 @@ export async function render(def0, opts = {}) {
     // one item budget for report parts across this render and its subreports (opts is passed on to them)
     ({ def, parts } = await resolveReuse(def0, getReport, (m) => { if (!reuseWarnings.includes(m)) reuseWarnings.push(m); }, opts.reportId ? [opts.reportId] : [], opts.reuseBudget || (opts.reuseBudget = { items: 0 })));
   }
-  const v = validate(def);
+  const v = validateCached(def);
   def = bareSorts(def); // a sort by "region" sorts by Fields.region (validate() warned)
   // an expression that does not parse stops only its own item or cell (#Error there, a warning here)
   const cellErrors = new Set(v.exprErrors);
   const fatal = v.errors.filter(e => !cellErrors.has(e));
-  if (fatal.length) throw new ReportError(fatal[0], { errors: v.errors });
+  if (fatal.length) throw new ReportError(fatal[0], { errors: [...v.errors] });
   const checkOnly = new Set(v.checkOnly); // the render says these itself where it meets them
   /** @type {string[]} */
   const warnings = [...new Set([...v.warnings.filter(w => !v.renderSays.includes(w)), ...[...cellErrors].filter(e => !checkOnly.has(e)).slice(0, 100), ...reuseWarnings])].slice(0, 200); // once each (validate and the render can say the same); warn() keeps it at 200

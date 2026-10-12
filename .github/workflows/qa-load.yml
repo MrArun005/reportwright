@@ -10,6 +10,8 @@ on:
       tier: { type: choice, options: [quick, full], default: 'quick' }
   push:
     branches: [qa/load]
+permissions:
+  contents: read
 jobs:
   shard:
     # one server per shard (its own runner): the scenarios' numbers never share a machine or a queue
@@ -25,18 +27,18 @@ jobs:
       QA_TIER: ${{ inputs.tier || 'quick' }}
       QA_DIR: ${{ github.workspace }}/qa-out
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ inputs.ref }}' }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 22, cache: npm }
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .next/cache
           key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
           restore-keys: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
       - run: npm ci --no-audit --no-fund
       - run: npm run build
-      - uses: grafana/setup-k6-action@v1
+      - uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1
       - name: Start the server (PW_AUTH=users, first admin) and sign in
         run: qa/load/server.sh 3700
       - name: Scenario ${{ matrix.shard }}
@@ -46,7 +48,7 @@ jobs:
       - if: always()
         run: tail -60 /tmp/next-qa.log
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: qa-load-part-${{ matrix.shard }}
           path: |
@@ -60,13 +62,13 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ inputs.ref }}', sparse-checkout: qa }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with: { pattern: 'qa-load-part-*', path: qa-out }
       - run: node qa/stress/summarize.mjs qa-out load --fail-on-fail
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: qa-load-results
           path: |

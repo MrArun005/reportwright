@@ -122,9 +122,9 @@ const serverStub = { name: 'server-stub', setup: (b) => {
 } };
 await bundle({ entryPoints: [path.join(root, 'bin/pw.mjs')], bundle: true, format: 'esm', platform: 'node', target: 'node22', minify: false, sourcemap: 'linked', sourcesContent: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, C, 'dist/cli.mjs'), external: [...external, '@reportwright/fonts'], plugins: [serverStub], logLevel: 'warning' });
 // pw.mjs turns on Node's compile cache before it loads the bundle, so a second run skips compiling it (about 10 ms of
-// a cold start): in a folder only this user can read (scripts/compile-cache-dir.mjs), never the shared temp folder
+// a cold start): in a folder only this user can read (packages/engine/pool/compile-cache.js), never the shared temp folder
 {
-  const dirFn = fs.readFileSync(path.join(root, 'scripts/compile-cache-dir.mjs'), 'utf8').replace(/^export function/m, 'function');
+  const dirFn = fs.readFileSync(path.join(root, 'packages/engine/pool/compile-cache.js'), 'utf8').replace(/^export function/m, 'function');
   write(`${C}/dist/pw.mjs`, `#!/usr/bin/env node\n// pw: the ReportWright CLI (cli.mjs), with Node's compile cache in a private folder\nimport module from 'node:module';\n${dirFn.replace(/^\/\/.*\n/gm, '')}\ntry { const dir = compileCacheDir(); if (dir) module.enableCompileCache?.(dir); } catch { /* no cache */ }\nawait import('./cli.mjs');\n`);
 }
 fs.chmodSync(path.join(root, C, 'dist/pw.mjs'), 0o755);

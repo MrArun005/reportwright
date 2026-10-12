@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Written for ReportWright's SSRS importer tests: custom code (<Code>) with simple functions that become report
+     functions, and ones that do not (a loop, a Sub). -->
+<Report xmlns="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition" xmlns:rd="http://schemas.microsoft.com/SQLServer/reporting/reportdesigner">
+  <DataSources><DataSource Name="Db"><ConnectionProperties><DataProvider>SQL</DataProvider><ConnectString>Data Source=db</ConnectString></ConnectionProperties></DataSource></DataSources>
+  <DataSets><DataSet Name="Scores"><Query><DataSourceName>Db</DataSourceName><CommandText>SELECT Name, Score FROM Scores</CommandText></Query>
+    <Fields><Field Name="Name"><DataField>Name</DataField><rd:TypeName>System.String</rd:TypeName></Field><Field Name="Score"><DataField>Score</DataField><rd:TypeName>System.Double</rd:TypeName></Field></Fields></DataSet></DataSets>
+  <Code>Public Function Grade(ByVal score As Double) As String
+  Return IIf(score &gt;= 90, "A", IIf(score &gt;= 75, "B", "C")) ' letter grade
+End Function
+
+Public Shared Function Label(ByVal name As String, ByVal score As Double) As String
+  Label = UCase(Left(name, 3)) &amp; ": " &amp; FormatNumber(score, 1) _
+    &amp; " (" &amp; Grade(score) &amp; ")"
+End Function
+
+Public Function Total(ByVal n As Integer) As Integer
+  Dim t As Integer = 0
+  For i As Integer = 1 To n : t = t + i : Next
+  Return t
+End Function</Code>
+  <ReportSections><ReportSection><Body><Height>2in</Height><ReportItems>
+    <Tablix Name="T">
+      <TablixBody><TablixColumns><TablixColumn><Width>4in</Width></TablixColumn></TablixColumns>
+        <TablixRows><TablixRow><Height>0.3in</Height><TablixCells><TablixCell><CellContents><Textbox Name="Line"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Name.Value &amp; " " &amp; Code.Grade(Fields!Score.Value)</Value></TextRun></TextRuns></Paragraph></Paragraphs><Top>0in</Top><Left>0in</Left><Height>0.3in</Height><Width>4in</Width></Textbox></CellContents></TablixCell></TablixCells></TablixRow></TablixRows></TablixBody>
+      <TablixColumnHierarchy><TablixMembers><TablixMember/></TablixMembers></TablixColumnHierarchy>
+      <TablixRowHierarchy><TablixMembers><TablixMember><Group Name="Details"/></TablixMember></TablixMembers></TablixRowHierarchy>
+      <DataSetName>Scores</DataSetName><Top>0in</Top><Left>0in</Left><Height>0.3in</Height><Width>4in</Width>
+    </Tablix>
+    <Textbox Name="Sum"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Code.Total(3)</Value></TextRun></TextRuns></Paragraph></Paragraphs><Top>1in</Top><Left>0in</Left><Height>0.3in</Height><Width>4in</Width></Textbox>
+  </ReportItems></Body><Width>6.5in</Width><Page><PageHeight>11in</PageHeight><PageWidth>8.5in</PageWidth></Page></ReportSection></ReportSections>
+</Report>
