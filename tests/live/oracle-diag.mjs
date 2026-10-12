@@ -4,6 +4,7 @@ import oracledb from 'oracledb';
 import { oracleConfig } from '../../src/server/sql/oracle.js';
 import { runSql } from '../../src/server/sql.js';
 
+process.env.PW_DB_X = process.env.PW_LIVE_ORACLE;
 const v = process.argv[2];
 const Q = 'select notes from pwowner.types_t where id = 1';
 const t0 = Date.now();
