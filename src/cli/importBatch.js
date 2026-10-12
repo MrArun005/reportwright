@@ -41,7 +41,7 @@ const join = (dir, f) => (dir ? `${dir}/${f}` : f);
 function walk(root, o) {
   /** @type {{ rel: string, abs: string, size: number }[]} */ const files = [];
   /** @type {{ path: string, reason: string }[]} */ const refused = [];
-  let capped = false;
+  let capped = false, total = 0;
   const visit = (dir, rel) => {
     for (const ent of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
       if (capped) return;
@@ -58,6 +58,8 @@ function walk(root, o) {
       if (st.isDirectory()) { if (o.recursive && real !== o.skip) visit(abs, r); continue; }
       if (!st.isFile() || !(REPORT.test(r) || IMAGE.test(r) || RESOURCE.test(r))) continue;
       if (files.length >= o.maxFiles) { capped = true; refused.push({ path: r, reason: `more than ${o.maxFiles} files: this one and the rest are not imported (--max-files)` }); return; }
+      if (total + st.size > (o.maxTotal ?? Infinity)) { refused.push({ path: r, reason: `the folder's files add up to more than ${o.maxTotal} bytes: this one is not read` }); continue; }
+      total += st.size;
       files.push({ rel: r, abs: real, size: st.size });
     }
   };
@@ -88,18 +90,20 @@ function* objects(o, depth = 0) {
  * Import a folder.
  * @param {string} input the input folder
  * @param {string} output the output folder (created)
- * @param {{ recursive?: boolean, force?: boolean, maxFiles?: number, maxBytes?: number,
+ * @param {{ recursive?: boolean, force?: boolean, maxFiles?: number, maxBytes?: number, maxTotal?: number, dryRun?: boolean,
  *   verify?: (r: { file: string, definition: any, baseline: any }) => Promise<any>, log?: (msg: string) => void }} [opts]
  *   verify: called for each imported report (pw import --verify renders it); its result goes into the report
+ *   dryRun: convert everything but write nothing (pw assess); the output folder is not created or read
+ *   maxTotal: a cap on the files' total size, in bytes (the files past it are refused)
  */
 export async function importFolder(input, output, opts = {}) {
   const maxFiles = opts.maxFiles ?? BATCH_LIMITS.maxFiles, maxBytes = opts.maxBytes ?? BATCH_LIMITS.maxBytes;
   const log = opts.log || (() => {});
   const inRoot = fs.realpathSync(input);
   if (!fs.statSync(inRoot).isDirectory()) throw new Error(`${input} is not a folder`);
-  fs.mkdirSync(output, { recursive: true });
-  const outRoot = fs.realpathSync(output);
-  const { files, refused } = walk(inRoot, { recursive: opts.recursive, maxFiles, skip: outRoot });
+  if (!opts.dryRun) fs.mkdirSync(output, { recursive: true });
+  const outRoot = opts.dryRun ? path.resolve(output || '.') : fs.realpathSync(output);
+  const { files, refused } = walk(inRoot, { recursive: opts.recursive, maxFiles, maxTotal: opts.maxTotal, skip: opts.dryRun ? undefined : outRoot });
 
   let old = {};
   try { const m = JSON.parse(fs.readFileSync(path.join(outRoot, MANIFEST), 'utf8')); if (m && typeof m.files === 'object') old = m.files; } catch { /* none yet, or not ours */ }
@@ -113,6 +117,7 @@ export async function importFolder(input, output, opts = {}) {
   function writeTarget(rel, bytes) {
     const abs = path.resolve(outRoot, ...rel.split('/'));
     if (!inside(outRoot, abs) || abs === outRoot) throw new Error(`the output path ${rel} is outside the output folder`);
+    if (opts.dryRun) { manifest[rel] = sha(bytes); return { write: 'written' }; }
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     if (!inside(outRoot, fs.realpathSync(path.dirname(abs)))) throw new Error(`the output folder of ${rel} is a link to outside the output folder`);
     const h = sha(bytes);
@@ -192,6 +197,7 @@ export async function importFolder(input, output, opts = {}) {
       if (r.error) throw new Error(r.error);
       const def = r.definition;
       rec.stats = r.stats;
+      rec.sources = (def.dataSources || []).map(s => ({ name: s.name, type: s.type, ...(s.connection ? { connection: s.connection } : {}) }));
       const itemLines = new Set();
       for (const it of r.items || []) {
         const p = at(it.pos);
@@ -256,12 +262,12 @@ export async function importFolder(input, output, opts = {}) {
       log(`${f.rel}: FAILED: ${rec.error}`);
     }
   }
-  fs.writeFileSync(path.join(outRoot, MANIFEST), JSON.stringify({ version: 1, note: 'pw import: the hash of each file as written; a file whose hash differs was edited and is not overwritten without --force', files: manifest }, null, 2) + '\n');
+  if (!opts.dryRun) fs.writeFileSync(path.join(outRoot, MANIFEST), JSON.stringify({ version: 1, note: 'pw import: the hash of each file as written; a file whose hash differs was edited and is not overwritten without --force', files: manifest }, null, 2) + '\n');
 
   const n = (s) => results.filter(r => r.status === s).length;
   return {
     tool: 'pw import', schema: 1, created: new Date().toISOString(), input: inRoot, output: outRoot,
-    options: { recursive: !!opts.recursive, force: !!opts.force, verify: !!opts.verify, maxFiles, maxBytes },
+    options: { recursive: !!opts.recursive, force: !!opts.force, verify: !!opts.verify, maxFiles, maxBytes, ...(opts.dryRun ? { dryRun: true } : {}) },
     summary: { reports: results.length, imported: n('imported'), failed: n('failed'), refused: refused.length, images: images.size,
       skippedEdited: results.filter(r => r.write === 'skipped-edited').length, unresolved: results.reduce((k, r) => k + r.references.filter(x => !x.resolved).length, 0) },
     files: results, refused,

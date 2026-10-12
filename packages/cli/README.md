@@ -93,6 +93,7 @@ npx pw diff orders.pw.json orders-v2.pw.json -d orders=orders.json
 |---|---|
 | `pw render <report.pw.json>` | `-p name=value` (repeat), `-d source=data.json` (repeat), `-f` format (default `pdf`), `-o file\|-`, `--base URL` (where relative data URLs go), `--allow-internal`, `--pdfa`, `--ua`, `--values` (Excel totals as values), `--html tables\|static` (the HTML file; unset: the report's `export.html`, then `PW_HTML_EXPORT`; interactive needs the viewer), `--drill-links inline\|new-tab\|off` (drill-through needs a public `--base`), `--static` (alias of `--html static`), `--layout` (CSV of the printed layout), `--password`, `--owner-password`, `--deny print\|modify\|copy\|annotate\|fillForms\|accessibility\|assemble\|printHighQuality` |
 | `pw import <file>` | `-o out.pw.json` |
+| `pw assess <folder>` | `-o dir`, `--recursive`, `--usage file`, `--retire-days N` (180), `--hours simple=…,medium=…,complex=…`, `--fail-under pct`, `--max-files N` (500), `--max-bytes N` (8 MB) |
 | `pw import <folder>` | `-o outDir`, `--recursive`, `--force`, `--verify`, `--report path`, `--max-files N` (2000), `--max-bytes N` (16 MB) |
 | `pw test [folder]` | `--update`, `--layout` |
 | `pw diff <old> <new>` | `-p`, `-d`, `--base` |
@@ -127,6 +128,31 @@ Exit codes: 0 ok; 1 a test failed, the pages differ or `pw compare` found a diff
 `streamed`), so a large report's memory stays flat; other reports, `--password` and `-o -` render the whole model first.
 It writes to a temporary file beside the target and renames it when the export succeeded: a failed run leaves no
 damaged PDF, and an older file at the path stays as it was.
+
+## Assess a folder first
+
+`pw assess <folder>` answers "should we migrate, and how much work is it?" without writing a single converted report.
+It runs the bulk importer in dry-run mode and writes only `assessment.html` and `assessment.json` (to `-o`, default `.`).
+
+```sh
+npx pw assess legacy -o assessment --usage runs.csv --retire-days 180 --hours simple=0.25,medium=2,complex=8 --fail-under 60
+```
+
+- The summary leads with "X reports can be retired, Y migrate automatically, Z need work", then the status counts,
+  readiness, the effort estimate, the top blockers (grouped, with the reports each affects), the untranslated expressions
+  by function, and the server settings to configure (`PW_DB_<NAME>`).
+- **Status:** `full` converts as it is; `small` has approximated items, report notes or missing files; `manual` has dropped
+  items or untranslated expressions; `failed` does not parse. Configuring data sources and fonts is not a fix.
+- **Tiers:** Retire (only with `--usage`: no run in `--retire-days`, default 180); Simple (effort Low); Medium; Complex
+  (effort High, or failed). Effort: Low up to 3 issues in a small report, Medium above that; High for manual work with more than 3.
+- **Hours:** per report, Simple 0.25 h, Medium 2 h, Complex 8 h, Retire 0 h. Override with `--hours simple=…,medium=…,complex=…`.
+  These are planning numbers, not measurements.
+- **Usage:** a CSV or JSON table. The SSRS execution log (one row per run) is exported from the report server database with:
+  `SELECT ItemPath, TimeStart, UserName, Format, Status FROM ExecutionLog3 WHERE ItemType = 'Report' AND TimeStart >= DATEADD(day, -365, GETDATE())`.
+  A generic table has a report name (`name`, `report` or `reportpath`), `runs` and `lastrun` (or `last run date`). Rows
+  join to reports by file name without the extension. A report with no row has no runs.
+- **Exit codes:** 0 always, or 1 when the readiness is below `--fail-under <pct>`; 2 bad usage.
+- Limits: 500 files, 8 MB per file, 256 MB in all (`--max-files`, `--max-bytes`).
 
 ## Bulk import
 

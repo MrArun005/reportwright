@@ -34,6 +34,10 @@ pw import <folder> -o <outDir> [--recursive] [--force] [--verify] [--report path
                                    bulk import (.rdl, .rdlc, .rds, .jrxml, .jrtx, .rptdesign, .rdlx-json and images) into
                                    outDir with import-report.json and .html; never overwrites an output edited since the
                                    last import (--force does); exit 0 all imported, 2 some failed, 1 none (see the CLI README)
+pw assess <folder> [-o dir] [--recursive] [--usage runs.csv|.json] [--retire-days N] [--hours simple=0.25,medium=2,complex=8]
+          [--fail-under pct] [--max-files N] [--max-bytes N]
+                                   migration assessment: what converts, what needs work, what blocks it; writes nothing
+                                   but assessment.html and assessment.json (see docs/migration-assessment.md)
 pw --version, pw -v                the CLI and engine versions
 pw test [folder] [--update] [--layout]
                                    render every <folder>/__tests__/*.test.json case and compare it with its snapshot
@@ -386,6 +390,33 @@ async function verifyImported({ file, definition, baseline }) {
   return { status: changed ? 'changed' : 'ok', pages: model.pages.length, warnings: model.warnings.length, note: changed ? 'renders differently from the output it replaced' : 'renders the same as the output it replaced', diff };
 }
 
+/** pw assess <folder>: see src/cli/assess.js. Exit 0, or 1 when the readiness is below --fail-under. */
+async function cmdAssess(args) {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { o: { type: 'string' }, recursive: { type: 'boolean' }, usage: { type: 'string' }, 'retire-days': { type: 'string' }, hours: { type: 'string' }, 'fail-under': { type: 'string' }, 'max-files': { type: 'string' }, 'max-bytes': { type: 'string' } } });
+  if (positionals.length !== 1) usage('give a folder of reports');
+  const num = (k) => { const v = values[k]; if (v == null) return undefined; if (!/^\d+(\.\d+)?$/.test(v) || !(Number(v) > 0)) usage(`--${k} is a positive number`); return Number(v); };
+  const failUnder = values['fail-under'] == null ? undefined : Number(values['fail-under']);
+  if (failUnder !== undefined && !(failUnder >= 0 && failUnder <= 100)) usage('--fail-under is a percentage, 0 to 100');
+  const { assessFolder, parseUsage, parseHours, summaryText, assessmentHtml, ASSESS_LIMITS } = await import('../src/cli/assess.js');
+  let usageData, hours;
+  try { hours = parseHours(values.hours); } catch (e) { usage(e.message); }
+  if (values.usage) {
+    const st = fs.statSync(values.usage, { throwIfNoEntry: false });
+    if (!st?.isFile()) fail(`${values.usage} is not a file`);
+    if (st.size > 16 * 1024 * 1024) fail(`${values.usage} is larger than 16 MB`);
+    try { usageData = parseUsage(fs.readFileSync(values.usage, 'utf8'), values.usage); } catch (e) { fail(`${values.usage}: ${e.message}`); }
+  }
+  const a = await assessFolder(positionals[0], { recursive: !!values.recursive, maxFiles: num('max-files'), maxBytes: num('max-bytes'), usage: usageData, hours,
+    retireDays: num('retire-days') ?? 180 });
+  const out = values.o || '.';
+  fs.mkdirSync(out, { recursive: true });
+  fs.writeFileSync(path.join(out, 'assessment.json'), JSON.stringify(a, null, 2) + '\n');
+  fs.writeFileSync(path.join(out, 'assessment.html'), assessmentHtml(a));
+  console.log(summaryText(a));
+  console.log(`\n  Wrote ${path.join(out, 'assessment.html')} and assessment.json (limits: ${ASSESS_LIMITS.maxFiles} files, ${ASSESS_LIMITS.maxBytes} bytes per file).`);
+  if (failUnder !== undefined && a.summary.readiness < failUnder) { console.error(`pw: readiness ${a.summary.readiness}% is below --fail-under ${failUnder}`); process.exitCode = 1; }
+}
+
 /** pw compare <original.pdf> <converted.pdf | report.pw.json>: see src/compare/index.js and docs/migration-compare.md. */
 async function cmdCompare(args) {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { p: { type: 'string', multiple: true }, d: { type: 'string', multiple: true }, base: { type: 'string' }, 'allow-internal': { type: 'boolean' }, o: { type: 'string' }, tolerance: { type: 'string' }, threshold: { type: 'string' }, dpi: { type: 'string' }, 'no-visual': { type: 'boolean' }, 'no-positions': { type: 'boolean' }, 'numbers-only': { type: 'boolean' } } });
@@ -413,7 +444,7 @@ async function cmdCompare(args) {
   if (!r.pass) process.exit(1);
 }
 
-const commands = { compare: cmdCompare, render: cmdRender, import: cmdImport, test: cmdTest, diff: cmdDiff, audit: cmdAudit, 'migrate-storage': cmdMigrateStorage };
+const commands = { assess: cmdAssess, compare: cmdCompare, render: cmdRender, import: cmdImport, test: cmdTest, diff: cmdDiff, audit: cmdAudit, 'migrate-storage': cmdMigrateStorage };
 if (cmd === '--version' || cmd === '-v') {
   // the CLI's package.json (the repository's, or @reportwright/cli's next to dist/), and the engine bundled with it
   const cli = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
