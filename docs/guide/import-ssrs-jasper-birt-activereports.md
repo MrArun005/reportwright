@@ -65,8 +65,9 @@ Response: `201` with `{ id, warnings, stats }`. A file that is not a report answ
 - `stats` counts each item as mapped, approximated (a note says what changed) or dropped.
 - Connection strings are not imported. Set `PW_DB_<NAME>` on the server (see [data-sources](data-sources.md)).
 - Subreports and drill-through targets point at the report id that the target's file name gives. Import the target file too.
-- Custom code (VB or Java) is kept as text and never run.
-- The SSRS importer reads RDL 2008, 2010 and 2016. Maps and custom report items are not converted.
+- Custom code is never run. Simple SSRS VB functions (one `Return` expression) become report functions; any other code is kept as text, with a note.
+- The SSRS importer reads RDL 2008, 2010 and 2016. Maps become map items (embedded shapes, shapefiles from the imported folder, SQL spatial layers). Custom report items and RDL 2005 Table/Matrix/List are not converted.
+- Jasper and BIRT crosstabs become matrices.
 - JasperReports 3 to 6 and the 7.x format both import.
 - The importer reads untrusted files safely: no DTDs, no entity expansion, size and depth caps.
 - Folder imports never overwrite an output you edited, unless you pass `--force`.
