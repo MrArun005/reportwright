@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { importJrxml } from '../../src/importers/jrxml.js';
+import { importBirt } from '../../src/importers/birt.js';
 import { jasperMarkup, rtfMarkup, MARKUP_LIMITS } from '../../src/importers/markup.js';
 import { validate } from '../../src/engine/schema/validate.js';
 import { render } from '../../src/engine/index.js';
@@ -61,5 +62,40 @@ describe('JasperReports markup → rich text, rotation → rotate', () => {
     expect(performance.now() - t0).toBeLessThan(3000);
     const r2 = importJrxml(read('jrxml/markup-rotation.jrxml').replace('Hello', '<b>'.repeat(50) + 'Hello'), { name: 'X' });
     expect(r2.warnings.join('\n')).toMatch(/nested more than 32 deep; the rest is left out/);
+  });
+});
+
+describe('BIRT charts → ReportWright charts', () => {
+  const r = importBirt(read('birt/charts.rptdesign'), { name: 'Charts' });
+  const charts = all(r.definition).filter(i => i.type === 'chart');
+  it('maps type, series, category, series grouping, titles, legend and axes', () => {
+    expect(r.error).toBeUndefined();
+    expect(validate(r.definition).errors).toEqual([]);
+    expect(charts[0]).toMatchObject({ name: 'SalesBar', chartType: 'column', stacked: true, dataSet: 'Sales', title: 'Sales by region', legend: 'bottom',
+      category: '=Fields.REGION', seriesGroup: '=Fields.YEAR', series: [{ name: 'Amount', value: '=Sum(Fields.AMOUNT)' }], axes: { x: { title: 'Region' }, y: { title: 'Amount' } } });
+    expect(charts[1]).toMatchObject({ name: 'SharePie', chartType: 'pie', category: '=Fields.REGION', series: [{ name: 'Count', value: '=Count(Fields.AMOUNT)' }] });
+  });
+  it('notes an unsupported chart type and drops nothing silently', () => {
+    expect(charts.length).toBe(2);
+    expect(r.warnings.join('\n')).toMatch(/Gantt Chart chart has no ReportWright equivalent/);
+  });
+  it('renders the charts', async () => {
+    const data = [{ REGION: 'North', YEAR: 2023, AMOUNT: 10 }, { REGION: 'South', YEAR: 2024, AMOUNT: 5 }];
+    const out = await render(r.definition, { fontStore, sources: sourcesFor(r.definition, data) });
+    const t = words(out);
+    for (const w of ['Sales by region', 'Share', 'North', 'South']) expect(t).toContain(w);
+  });
+  it('hostile: unreadable models, too many series and charts are capped and noted', () => {
+    const src = read('birt/charts.rptdesign');
+    const bad = importBirt(src.replace('<model:ChartWithoutAxes', '<model:ChartWithoutAxes <<'), { name: 'X' });
+    expect(bad.warnings.join('\n')).toMatch(/chart model could not be read/);
+    const one = /<Series xsi:type="type:BarSeries">.*?<\/Series>/s.exec(src)[0];
+    const many = importBirt(src.replace(one, one.repeat(100)), { name: 'X' });
+    expect(all(many.definition).find(i => i.name === 'SalesBar').series.length).toBe(32);
+    expect(many.warnings.join('\n')).toMatch(/more than 32 series; 68 are left out/);
+    const item = /<extended-item extensionName="Chart" name="SharePie".*?<\/extended-item>/s.exec(src)[0];
+    const lots = importBirt(src.replace(item, item.repeat(510)), { name: 'X' });
+    expect(all(lots.definition).filter(i => i.type === 'chart').length).toBe(500);
+    expect(lots.warnings.join('\n')).toMatch(/more than 500 charts/);
   });
 });

@@ -1005,7 +1005,7 @@ function toRdlx(root, notes, charts, reportName, resolve) {
 }
 
 /** The chart placeholders (containers named pwchart§n) → the ReportWright charts, at their place and size. */
-function placeCharts(def, charts) {
+export function placeCharts(def, charts) {
   if (!charts.size) return;
   const names = new Set();
   const all = (list, fn) => { for (const it of list || []) { if (!it || typeof it !== 'object') continue; fn(it); all(it.items, fn); for (const r of [...(it.header || []), ...(it.detail || []), ...(it.footer || [])]) for (const cl of r?.cells || []) if (cl?.item) all([cl.item], fn); } };

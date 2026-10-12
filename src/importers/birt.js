@@ -8,14 +8,15 @@
  * tables (columns, header, groups, detail, footer, bound columns and their aggregates, sorts, filters, highlight
  * rules), grids, lists, labels, data, text (with <value-of>), dynamic text, auto text, images, the master page's
  * header and footer, parameters (static and data set lists), data sources and data sets (JDBC SQL with its ?
- * parameters, computed columns, filters). Charts, crosstabs and scripts are noted. BIRT expressions are JavaScript:
+ * parameters, computed columns, filters). Charts become ReportWright charts, crosstabs matrices; scripts are noted. BIRT expressions are JavaScript:
  * row["X"], dataSetRow["X"], params["P"].value, Total.sum(…), BirtStr/BirtMath/BirtDateTime/BirtComp, and the usual
  * string methods become VB (java.js, with BIRT's hooks).
  *
  * Pure JavaScript, no Node APIs and no DOM. It never throws: whatever it cannot map becomes a warning.
  */
 import { parseXml, XmlError } from './xml.js';
-import { importRdlx, crosstabTablix, ImportBudgetError, OUTPUT_LIMITS, toPt, rewordItems } from './rdlx.js';
+import { importRdlx, crosstabTablix, ImportBudgetError, OUTPUT_LIMITS, toPt, rewordItems, translateExpression } from './rdlx.js';
+import { placeCharts } from './jrxml.js';
 import { javaToVb, javaPattern, Untranslatable } from './java.js';
 
 const BIRT_NS = /^http:\/\/www\.eclipse\.org\/birt\/2005\/design$/;
@@ -43,7 +44,9 @@ export function importBirt(input, opts = {}) {
   const notes = [];
   let ar;
   PAGE_BREAKS.clear();
-  try { ar = toRdlx(root, notes, name); } catch (e) {
+  /** @type {Map<string, any>} chart placeholders → ReportWright charts */
+  const charts = new Map();
+  try { ar = toRdlx(root, notes, name, charts); } catch (e) {
     if (e instanceof ImportBudgetError) {
       const error = `The report is too large to import: ${e.message}`;
       return { ...importRdlx({}, { name }), warnings: [`${error}.`], error };
@@ -53,7 +56,9 @@ export function importBirt(input, opts = {}) {
   }
   const r = importRdlx(ar, { name });
   if (r.error) return r;
-  const warnings = [...notes, ...r.warnings].map(w => w.replace(/ActiveReports/g, 'BIRT'));
+  placeCharts(r.definition, charts);
+  const reword = (w) => w.replace(/ActiveReports/g, 'BIRT').replace(/pwchart§\d+/g, k => charts.get(k)?.name ?? k);
+  const warnings = [...notes, ...r.warnings].map(reword);
   const walk = (items) => { for (const i of items || []) { if (i.type === 'table' && PAGE_BREAKS.get(i.name) > 0) i.pageBreakEvery = PAGE_BREAKS.get(i.name); walk(i.items); } };
   for (const sec of [r.definition.sections?.body].flat()) walk(sec?.items);
   PAGE_BREAKS.clear();
@@ -61,7 +66,7 @@ export function importBirt(input, opts = {}) {
   r.definition.nullOrder = 'low'; // a null sorts first ascending, as Java comparators and BIRT do
   r.definition.arithmetic = 'double'; // JavaScript and Java compute with IEEE doubles
   r.definition.bandRows = 'first-last'; // headers are evaluated on their first row, footers on their last
-  return { definition: r.definition, warnings: [...new Set(warnings)], stats: r.stats, items: rewordItems(r.items, w => w.replace(/ActiveReports/g, 'BIRT')) };
+  return { definition: r.definition, warnings: [...new Set(warnings)], stats: r.stats, items: rewordItems(r.items, reword) };
 }
 
 /* ================================================================ properties */
@@ -84,7 +89,7 @@ const PAGE_TYPES = { 'us-letter': [612, 792], 'us-legal': [612, 1008], a4: [595.
 /** @param {import('./xml.js').XmlElement} root @param {string[]} notes @param {string} reportName */
 /** table name → BIRT pageBreakInterval, for the definition (rdlx.js has no such setting) */
 const PAGE_BREAKS = new Map();
-function toRdlx(root, notes, reportName) {
+function toRdlx(root, notes, reportName, charts) {
   const kid = (e, n) => e?.children.find(c => c.name === n);
   const kids = (e, n) => (e ? e.children.filter(c => n == null || c.name === n) : []);
   const note = (m) => { if (!notes.includes(m)) notes.push(m); };
@@ -559,8 +564,8 @@ function toRdlx(root, notes, reportName) {
         it.Type = ext.toLowerCase();
         it.Height = pt(given || 144);
         if (ext === 'Crosstab') return crosstab(e, it, w, st, c, depth);
-        it.__drop = ext === 'Chart' ? 'a BIRT chart is not converted; add a ReportWright chart (its data set and series are in the design).'
-          : `the BIRT item "${ext}" has no ReportWright equivalent, so it was left out.`;
+        if (ext === 'Chart') { chart(e, it, c); return { it, h: given || 144 }; }
+        it.__drop = `the BIRT item "${ext}" has no ReportWright equivalent, so it was left out.`;
         return { it, h: given || 144 };
       }
     }
@@ -568,6 +573,103 @@ function toRdlx(root, notes, reportName) {
     it.Height = '0pt';
     it.__drop = `the BIRT item "${e.name}" is not supported, so it was left out.`;
     return { it, h: 0 };
+  }
+
+  /* ---------------------------------------------------------------- charts */
+
+  // the chart model is XML inside the design (bounded by the same reader); these cap what one file can emit
+  const MAX_CHARTS = 500, MAX_SERIES = 32;
+  const CHART_TYPE = { 'Bar Chart': 'column', 'Tube Chart': 'column', 'Cone Chart': 'column', 'Pyramid Chart': 'column', 'Line Chart': 'line',
+    'Area Chart': 'area', 'Pie Chart': 'pie', 'Scatter Chart': 'scatter', 'Bubble Chart': 'bubble', 'Stock Chart': 'candlestick', 'Radar Chart': 'radar', 'Meter Chart': 'gauge' };
+  const SERIES_TYPE = { BarSeries: 'column', LineSeries: 'line', AreaSeries: 'area', ScatterSeries: 'scatter' };
+  const CHART_AGG = { sum: 'Sum', count: 'Count', distinctcount: 'CountDistinct', average: 'Avg', ave: 'Avg', mean: 'Avg', min: 'Min', max: 'Max', first: 'First', last: 'Last' };
+  /**
+   * A BIRT chart (extended item "Chart": its chart model in xmlRepresentation) → a ReportWright chart, placed by
+   * placeCharts (jrxml.js) like a Jasper chart. Category: the base axis series; values: the orthogonal series, each
+   * aggregated as its grouping says (Sum by default); a non-empty series query groups the series by it.
+   */
+  function chart(e, it, c) {
+    it.Type = 'rectangle'; it.ReportItems = [];
+    const notes = (it.__notes ||= []);
+    if (charts.size >= MAX_CHARTS) { it.__drop = `the report has more than ${MAX_CHARTS} charts; the rest are left out.`; return; }
+    const xmlText = e.children.find(x => x.name === 'xml-property' && x.attrs.name === 'xmlRepresentation')?.text;
+    let m;
+    try { m = parseXml(String(xmlText ?? '')); } catch (er) { it.__drop = `its chart model could not be read (${er instanceof Error ? er.message : er}), so it was left out.`; return; }
+    const ctype = (kid(m, 'Type')?.text || '').trim(), sub = (kid(m, 'SubType')?.text || '').trim();
+    const pwType = CHART_TYPE[ctype];
+    if (!pwType) { it.__drop = `a BIRT ${ctype || 'unknown'} chart has no ReportWright equivalent, so it was left out.`; return; }
+    const txt = (x) => (x?.text ?? '').trim();
+    const shown = (x) => x && txt(kid(x, 'Visible')) !== 'false';
+    const caption = (t) => (shown(t) ? txt(kid(kid(t, 'Caption'), 'Value')) : '');
+    const blocks = kids(kid(m, 'Block'), 'Children');
+    const titleBlock = blocks.find(b => b.attrs.type === 'layout:TitleBlock'), legend = blocks.find(b => b.attrs.type === 'layout:Legend');
+    const own = bindingsOf(e);
+    const cc = { bindings: own.size ? own : c.bindings, dataSet: prop(e, 'dataSet') || c.dataSet };
+    const key = `pwchart§${charts.size + 1}`;
+    const chartName = it.Name;
+    it.Name = key;
+    const conv = (src, what) => {
+      try { const r = translateExpression(`=${vb(src, cc)}`, {}); if (!r.ok) throw new Untranslatable(what); return r.value; } catch (er) {
+        if (!(er instanceof Untranslatable)) throw er;
+        notes.push(`the chart's ${what} uses ${er.message}, so it is left out.`);
+        return undefined;
+      }
+    };
+    /** @type {Record<string, any>} */
+    const out = { type: 'chart', name: chartName, chartType: pwType, series: [], legend: shown(legend) ? 'bottom' : 'none' };
+    if (cc.dataSet) out.dataSet = cc.dataSet; else notes.push('the chart has no data set in BIRT.');
+    if (titleBlock && shown(titleBlock)) { const t = txt(kid(kid(kid(titleBlock, 'Label'), 'Caption'), 'Value')); if (t) out.title = t; }
+    if (/stacked/i.test(sub)) out.stacked = true;
+    if (/percent/i.test(sub)) notes.push('it is a percent-stacked chart in BIRT; here the stacks show the values.');
+    if (txt(kid(m, 'Transposed')) === 'true' && pwType === 'column') out.chartType = 'bar';
+    if (txt(kid(m, 'Dimension')) && txt(kid(m, 'Dimension')) !== 'Two_Dimensional') notes.push('it is a 3D chart in BIRT; ReportWright draws it flat.');
+    if (/Tube|Cone|Pyramid/.test(ctype)) notes.push(`its ${ctype.toLowerCase()} risers are drawn as columns.`);
+    // the base series definitions (category) and, inside them or on the value axes, the orthogonal ones (values)
+    const baseAxis = kid(m, 'Axes');
+    const baseDefs = baseAxis ? kids(baseAxis, 'SeriesDefinitions') : kids(m, 'SeriesDefinitions');
+    const valueDefs = baseAxis ? kids(baseAxis, 'AssociatedAxes').flatMap(a => kids(a, 'SeriesDefinitions')) : baseDefs.flatMap(d => kids(d, 'SeriesDefinitions'));
+    const defOf = (sr) => txt(kid(kid(sr, 'DataDefinition'), 'Definition'));
+    const catSrc = baseDefs.map(d => defOf(kid(d, 'Series'))).find(Boolean);
+    if (catSrc) {
+      const cat = conv(catSrc, 'category');
+      if (cat !== undefined) { if (pwType === 'scatter' || pwType === 'bubble') out.xValue = cat; else out.category = cat; }
+    } else notes.push('it has no category expression.');
+    if (baseDefs[0] && txt(kid(kid(baseDefs[0], 'Grouping'), 'Enabled')) === 'false' && pwType !== 'scatter' && pwType !== 'bubble') notes.push('each row is a point in BIRT (category grouping off); here rows with the same category are aggregated.');
+    if (baseAxis) {
+      const xt = caption(kid(baseAxis, 'Title'));
+      const yt = kids(baseAxis, 'AssociatedAxes').map(a => caption(kid(a, 'Title'))).find(Boolean);
+      if (xt || yt) out.axes = { ...(xt ? { x: { title: xt } } : {}), ...(yt ? { y: { title: yt } } : {}) };
+    }
+    const types = new Set();
+    let skipped = 0;
+    for (const d of valueDefs) {
+      const q = txt(kid(kid(d, 'Query'), 'Definition'));
+      if (q && out.seriesGroup === undefined) out.seriesGroup = conv(q, 'series grouping');
+      const agg = txt(kid(kid(d, 'Grouping'), 'AggregateExpression')).toLowerCase();
+      for (const sr of kids(d, 'Series')) {
+        if (out.series.length >= MAX_SERIES) { skipped++; continue; }
+        const src = defOf(sr);
+        if (!src) continue;
+        const a = txt(kid(kid(kid(sr, 'DataDefinition'), 'Grouping'), 'AggregateExpression')).toLowerCase() || agg || 'sum';
+        const fn = CHART_AGG[a];
+        if (!fn) notes.push(`a series aggregates with ${a}, which is read as Sum.`);
+        let v;
+        try { const raw = vb(src, cc); const r = translateExpression(`=${/\b(Sum|Count|CountDistinct|Avg|Min|Max|First|Last)\(/.test(raw) ? raw : `${fn || 'Sum'}(${raw})`}`, {}); v = r.ok ? r.value : undefined; if (!r.ok) notes.push('a series value could not be translated, so that series is left out.'); }
+        catch (er) { if (!(er instanceof Untranslatable)) throw er; notes.push(`a series value uses ${er.message}, so that series is left out.`); }
+        if (v === undefined) continue;
+        const st = SERIES_TYPE[String(sr.attrs.type || '').replace(/^type:/, '')];
+        if (st) types.add(st);
+        const name = txt(kid(sr, 'SeriesIdentifier')) || `Series${out.series.length + 1}`;
+        out.series.push({ name, value: v, ...(st && st !== pwType ? { type: st } : {}) });
+      }
+    }
+    if (skipped) notes.push(`it has more than ${MAX_SERIES} series; ${skipped} are left out.`);
+    if (types.size > 1) notes.push('it combines series types; each series keeps its own type.');
+    if (out.seriesGroup !== undefined && out.series.length !== 1) { delete out.seriesGroup; notes.push('its series are grouped by a query and it has more than one value series; the grouping is left out.'); }
+    if (!out.series.length) notes.push('no series of the chart could be converted, so it is empty.');
+    if (pwType === 'candlestick') notes.push('its stock values are read as one series; check the chart.');
+    if (pwType === 'gauge') notes.push('its dial is drawn as a half-circle gauge from the first value.');
+    charts.set(key, out);
   }
 
   /* ---------------------------------------------------------------- crosstabs */
