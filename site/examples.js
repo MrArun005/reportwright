@@ -4,7 +4,7 @@ const BASE = new URL('.', document.baseURI).href.replace(/\/$/, '');
 const $ = (s) => document.querySelector(s);
 const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids); return n; };
 const SYM = { '✅': 'converted, nothing dropped', '⚠️': 'approximated, dropped or not imported', '❌': 'no example' };
-const RENDER = { rendered: 'Renders from its sample data', 'needs your database': 'Needs your database: design and notes only', failed: 'Did not render', 'not imported': 'Not imported' };
+const RENDER = { rendered: 'Renders from its sample data', 'needs your database': 'Needs your database: design and notes only', 'needs a parameter value': 'Needs a parameter value: design and notes only', failed: 'Did not render', 'not imported': 'Not imported' };
 
 let index = null;
 const state = { tool: 'all', cat: 'all' };

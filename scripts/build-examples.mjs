@@ -79,7 +79,7 @@ function* nodes(o, depth = 0) {
  * multi-language = a locale/translation key; lists/labels/letters = a list or table item, or a label/letter name;
  * invoices & forms = a name of an invoice, form, statement, order, receipt or letter.
  */
-export function categoriesOf(def, name) {
+export function categoriesOf(def, name, source = '') {
   const types = new Set(), keys = new Set();
   let text = '';
   for (const o of nodes(def)) {
@@ -96,11 +96,11 @@ export function categoriesOf(def, name) {
   if (has(/chart|gauge|sparkline|bullet/, types) || /chart/.test(n)) cats.add('charts');
   if (has(/map/, types)) cats.add('maps');
   if (types.has('subreport') || has(/subreport/, keys)) cats.add('subreports');
-  if (has(/^group/i, keys)) cats.add('grouped');
+  if (has(/^group/i, keys) && hasGroup(def)) cats.add('grouped');
   if (/drill|navigat/.test(text)) cats.add('drill');
   if (Array.isArray(def.parameters) && def.parameters.length) cats.add('parameters');
-  if (has(/^(locale|language|lang|i18n|translation|translations)$/i, keys)) cats.add('multilingual');
-  if (has(/^(list|table)$/, types) || /label|letter|mailing|envelope/.test(n)) cats.add('lists');
+  if (/\$R\{|resourcebundle|i18n|translat|localiz/i.test(source)) cats.add('multilingual'); // the source's resource bundles or translation keys
+  if (types.has('list') || /label|letter|mailing|envelope|list|tabular/.test(n)) cats.add('lists');
   if (/invoice|form|statement|order|receipt|letter|transcript|certificate|business/.test(n)) cats.add('forms');
   return [...cats];
 }
@@ -112,6 +112,9 @@ export const CATEGORIES = [
 ];
 // "drill" is a derived tag without its own column in the coverage table: it shows on the cards and in the filter.
 const CAT_LABEL = Object.fromEntries([...CATEGORIES, ['drill', 'Drill-through']]);
+
+/** A group that the report really has: a non-empty group list, or a group expression. */
+const hasGroup = (def) => [...nodes(def)].some(o => (Array.isArray(o.groups) && o.groups.length) || (typeof o.groupBy === 'string' && o.groupBy.trim()));
 
 /** The data a report reads: embedded in the file, or none needed. */
 const embedded = (s) => (s.type === 'json' && s.data != null) || ((s.type === 'csv' || s.type === 'xml') && !!s.data);
@@ -163,7 +166,7 @@ for (const c of CORPORA) {
       const file = path.join(outDir, rec.output);
       defJson = JSON.parse(fs.readFileSync(file, 'utf8'));
       fs.copyFileSync(file, path.join(dir, 'definition.pw.json'));
-      cats = categoriesOf(defJson, name);
+      cats = categoriesOf(defJson, name, fs.readFileSync(path.join(input, rec.source), 'utf8'));
       if (needsDatabase(defJson)) {
         notes.render = { status: 'needs your database', reason: 'The report reads data from a database or a source with no sample data in the file. Only the design and the import notes are shown.' };
       } else {
@@ -174,7 +177,11 @@ for (const c of CORPORA) {
           const thumb = thumbOf(pdfFile, path.join(dir, 'thumb.png'));
           notes.render = { status: 'rendered', pages, thumb };
         } catch (e) {
-          notes.render = { status: 'failed', reason: e instanceof Error ? e.message : String(e) };
+          const reason = e instanceof Error ? e.message : String(e);
+          // a required parameter with no value: the report asks for it, so it is not a failure of the import
+          notes.render = /^Enter a value for/.test(reason)
+            ? { status: 'needs a parameter value', reason: `${reason}. The report asks for it at run time.` }
+            : { status: 'failed', reason };
         }
       }
     }
@@ -187,14 +194,14 @@ for (const c of CORPORA) {
   }
 }
 
-// coverage: category x tool. ✅ every example in the cell imported with nothing dropped; ⚠️ some were approximated or dropped
-// something, or did not import; ❌ no example in the cell.
+// coverage: category x tool. ✅ every example in the cell imported with nothing approximated or dropped; ⚠️ some were
+// approximated or dropped, or did not import; ❌ no example in the cell.
 const coverage = {};
 for (const [id] of [...CATEGORIES]) {
   coverage[id] = {};
   for (const s of sources) {
     const cell = examples.filter(e => e.slug === s.slug && e.categories.some(c => c.id === id));
-    const bad = cell.filter(e => e.status !== 'imported' || e.stats.dropped > 0).length;
+    const bad = cell.filter(e => e.status !== 'imported' || e.stats.dropped > 0 || e.stats.approximated > 0).length;
     coverage[id][s.slug] = { n: cell.length, bad, symbol: cell.length === 0 ? '❌' : bad ? '⚠️' : '✅' };
   }
 }
