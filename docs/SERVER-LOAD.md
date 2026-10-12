@@ -85,3 +85,22 @@ Reading it:
   1,700 to 1,900 req/s for this one-page PDF were measured on the same machine when it was quieter; closing that gap
   needs cheaper rendering of small documents (or the snapshot cache, when a TTL is acceptable), not more processes.
 - The 429s at 200 users are the one API key's fair share per process (`PW_RENDER_QUEUE_PER_PRINCIPAL`), as before.
+
+## Admission from arrival (2026-10-11, GitHub Actions, 4-core runner, qa-load quick tier)
+
+Requests are now counted from the moment they arrive, before sign-in and before the body is read, so overload is
+refused quickly (429 per caller, 503 overall, both with `Retry-After`) instead of queueing in front of the render pool.
+API keys that passed the check in the last 30 s skip its storage write. The load harness waits out `Retry-After`.
+Run: https://github.com/MrArun005/reportwright/actions/runs/38161733350 (artifact `qa-load-results`).
+
+| Scenario | Requests | OK p50 / p95 / p99 | Refused (429/503) | Errors |
+|---|---|---|---|---|
+| Steady, 20 users, invoice | 5,962 (99/s) | p95 under 800 ms (pass) | 0 | 0 |
+| Ramp 1 → 50 users, mixed | 9,856 (62/s) | p95 under 3 s (pass) | 5 | 0 |
+| Spike to 200 users, one key | 5,735 (82/s) | 2,176 / 2,774 / 3,089 ms | 2 | 0 |
+| Key B beside a 100-user flood of key A | 70 | 1,123 / 1,491 / 1,513 ms | 0 | 0 |
+| Flooding key A | — | 1,147 / 1,702 / 2,525 ms | some | 0 |
+| Soak, 3 × 60 s at 10 users | ~3,800 per minute-third | p95 222 → 230 ms (×1.04) | 0 | 0 |
+
+Soak memory: 659 MB → 727 MB (×1.10, limit ×1.25). The server answered `livez` after every scenario. This run barely
+needed to refuse (the server kept up); the fast-refusal path itself is covered by `tests/engine/admission-arrival.test.js`.
