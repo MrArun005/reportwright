@@ -40,7 +40,8 @@ await build({ entryPoints: [path.join(root, E, 'entry.js')], bundle: true, forma
 // the streaming PDF's paint worker (exportPdfStream with parallel): its own file next to dist/index.js, which starts it;
 // it imports the engine from that bundle (one copy of the engine in the package)
 {
-  const w = fs.readFileSync(path.join(root, 'src/exporters/pdfstreamworker.js'), 'utf8')
+  // LF only: a Windows checkout (core.autocrlf) has CRLF line ends, and the replacements below match LF lines
+  const w = fs.readFileSync(path.join(root, 'src/exporters/pdfstreamworker.js'), 'utf8').replace(/\r\n/g, '\n')
     .replace("import { render, FontStore } from '../engine/index.js';", "import { render, FontStore, __streamPaint } from './index.js';")
     .replace("import { reband, CAPPED } from '../engine/paged.js';\n", '')
     .replace("import { createPdfStream, paintPage, paintEnv } from './pdfstream.js';", 'const { createPdfStream, paintPage, paintEnv, latin1, reband, CAPPED } = __streamPaint;')

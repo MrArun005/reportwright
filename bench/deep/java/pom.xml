@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Java contestants of the deep benchmark (bench/deep/README.md): PDFBox, OpenPDF, iText. Exact versions.
+     JasperReports is built separately (jasper/pom.xml): it needs OpenPDF 1.3, which would clash with OpenPDF 2 here.
+     mvn -q -B package; run: java -cp target/classes:target/lib/* bench.Libs <lib> <job> <size> <outdir> -->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>bench</groupId>
+  <artifactId>deep-java</artifactId>
+  <version>1</version>
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <itext.version>9.8.0</itext.version>
+  </properties>
+  <dependencies>
+    <dependency><groupId>org.apache.pdfbox</groupId><artifactId>pdfbox</artifactId><version>3.0.8</version></dependency>
+    <dependency><groupId>com.github.librepdf</groupId><artifactId>openpdf</artifactId><version>2.2.2</version></dependency>
+    <dependency><groupId>com.itextpdf</groupId><artifactId>kernel</artifactId><version>${itext.version}</version></dependency>
+    <dependency><groupId>com.itextpdf</groupId><artifactId>forms</artifactId><version>${itext.version}</version></dependency>
+    <dependency><groupId>com.itextpdf</groupId><artifactId>sign</artifactId><version>${itext.version}</version></dependency>
+    <dependency><groupId>com.itextpdf</groupId><artifactId>bouncy-castle-adapter</artifactId><version>${itext.version}</version></dependency>
+  </dependencies>
+  <build>
+    <sourceDirectory>libs</sourceDirectory>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId><version>3.6.0</version>
+        <executions><execution><id>frame</id><phase>generate-sources</phase><goals><goal>add-source</goal></goals>
+          <configuration><sources><source>frame</source></sources></configuration></execution></executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId><artifactId>maven-dependency-plugin</artifactId><version>3.8.1</version>
+        <executions><execution><id>lib</id><phase>package</phase><goals><goal>copy-dependencies</goal></goals>
+          <configuration><outputDirectory>${project.build.directory}/lib</outputDirectory></configuration></execution></executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

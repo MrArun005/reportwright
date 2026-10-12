@@ -24,6 +24,10 @@ const eq = (a, b) => crypto.timingSafeEqual(digest(a), digest(b));
 /** A short, non-secret name for a key in the audit log: the first 8 hex of its SHA-256. */
 export const keyId = (k) => digest(k).toString('hex').slice(0, 8);
 
+const KEY_OK_MS = 30000;
+/** Right keys seen in the last KEY_OK_MS, by SHA-256: { env: the PW_API_KEYS they were checked against, map } */
+const okKeys = { env: '', map: /** @type {Map<string, { hit: any, at: number }>} */ (new Map()) };
+
 const denied = (error) => Response.json({ error }, { status: 401 });
 
 /**
@@ -52,8 +56,18 @@ export async function apiPrincipal(req, { quiet = false } = {}) {
   // every key compared (no early exit), through the one credential check (limits.checkCredential)
   const find = () => { let h = null; for (const k of list) if (eq(k.key, given) && !h) h = k; return h; };
   let hit = null;
-  try { hit = given ? await (await import('./limits.js')).checkCredential({ kind: 'apikey', req }, find) : null; }
-  catch (e) { if (/** @type {any} */ (e).status === 429) return { res: Response.json({ error: /** @type {any} */ (e).message }, { status: 429, headers: { 'retry-after': String(/** @type {any} */ (e).retryAfter) } }) }; throw e; }
+  // a key found right a moment ago skips the credential check's storage leases (the hot path of a render flood); the
+  // cache only holds right keys, empties when PW_API_KEYS changes (a revoked or rotated key is out at once), else TTL
+  const env = process.env.PW_API_KEYS || '';
+  if (env !== okKeys.env) { okKeys.map.clear(); okKeys.env = env; }
+  const ck = given ? digest(given).toString('hex') : '';
+  const c = ck ? okKeys.map.get(ck) : null;
+  if (c && Date.now() - c.at < KEY_OK_MS) hit = c.hit;
+  else {
+    try { hit = given ? await (await import('./limits.js')).checkCredential({ kind: 'apikey', req }, find) : null; }
+    catch (e) { if (/** @type {any} */ (e).status === 429) return { res: Response.json({ error: /** @type {any} */ (e).message }, { status: 429, headers: { 'retry-after': String(/** @type {any} */ (e).retryAfter) } }) }; throw e; }
+    if (hit) { if (okKeys.map.size >= 1000) okKeys.map.clear(); okKeys.map.set(ck, { hit, at: Date.now() }); } // ponytail: only right keys get in, so the bound is the key list
+  }
   const where = { method: req.method, path: new URL(req.url).pathname };
   if (!hit) {
     await audit('api.call', { req, status: 'denied', detail: { ...where, reason: given ? 'unknown key' : 'no key' } });
