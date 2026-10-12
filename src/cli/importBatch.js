@@ -24,7 +24,7 @@ export const BATCH_LIMITS = { maxFiles: 2000, maxBytes: 16 * 1024 * 1024 };
 export const MANIFEST = '.pw-import.json';
 const REPORT = /\.(rdlc?|jrxml|rptdesign|rdlx-json)$/i;
 const IMAGE = /\.(png|jpe?g|gif|svg|bmp|webp)$/i;
-const RESOURCE = /\.(rds|jrtx|rptlibrary)$/i;
+const RESOURCE = /\.(rds|jrtx|rptlibrary|shp|dbf)$/i;
 const FORMAT = { rdl: 'SSRS', rdlc: 'SSRS', jrxml: 'JasperReports', rptdesign: 'BIRT', 'rdlx-json': 'ActiveReports' };
 
 const sha = (/** @type {string | Uint8Array} */ b) => crypto.createHash('sha256').update(b).digest('hex');
@@ -175,6 +175,14 @@ export async function importFolder(input, output, opts = {}) {
       const text = readText(f);
       const at = positions(text);
       const resolve = (kind, ref) => {
+        if (kind === 'shapefile') {
+          // the .shp a map layer names and the .dbf beside it (same stem), as bytes
+          const shp = find(/\.shp$/i, ref, o.dir);
+          const dbf = shp && files.find(x => /\.dbf$/i.test(x.rel) && dirOf(x.rel) === dirOf(shp.rel) && stemOf(x.rel).toLowerCase() === stemOf(shp.rel).toLowerCase());
+          rec.references.push({ kind: 'shapefile', ref, resolved: shp ? shp.rel : null, ...(shp && !dbf ? { note: 'no .dbf beside it: the shapes have no attributes' } : {}) });
+          const bytes = (f) => { if (f.size > maxBytes) throw new Error(`${f.rel} is larger than ${maxBytes} bytes`); return new Uint8Array(fs.readFileSync(f.abs)); };
+          return shp ? { shp: bytes(shp), dbf: dbf ? bytes(dbf) : null } : null;
+        }
         const hit = find(kind === 'datasource' ? /\.rds$/i : /\.jrtx$/i, ref, o.dir);
         rec.references.push({ kind: kind === 'datasource' ? 'shared data source' : 'style template', ref, resolved: hit ? hit.rel : null });
         return hit ? readText(hit) : null;

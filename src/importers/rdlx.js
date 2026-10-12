@@ -294,7 +294,7 @@ function emit(n, o, res) {
     case 'neg': return { s: '-' + wrap(em(n.arg, o), 8), p: 8 };
     case 'not': return { s: 'not ' + wrap(em(n.arg, o), 4), p: 3 };
     case 'bin': return emBin(n, o);
-    case 'id': return emId(n);
+    case 'id': return emId(n, o);
     case 'dot': case 'bang': return emMember(n, o);
     case 'call': return emCall(n, o, res);
   }
@@ -343,8 +343,9 @@ function emBin(n, o) {
 }
 
 const VB_DAYS = ['vbusesystemdayofweek', 'vbsunday', 'vbmonday', 'vbtuesday', 'vbwednesday', 'vbthursday', 'vbfriday', 'vbsaturday'];
-function emId(n) {
+function emId(n, o) {
   const w = n.name.toLowerCase();
+  if (o?.params?.has(w)) return atom(n.name); // a report function's parameter (SSRS custom code, rdl.js)
   if (w === 'vbcrlf' || w === 'vbnewline' || w === 'vbcr' || w === 'vblf') return atom(q('\n'));
   if (w === 'vbtab') return atom(q('\t'));
   if (w === 'now') return atom('Now()');
@@ -419,7 +420,8 @@ function emCall(n, o, res) {
   if (f.k === 'dot') {
     const root = ROOT(f.obj), m = f.name.toLowerCase();
     if ((root === 'fields' || root === 'parameters') && m === 'item') return byName(root, args, o);
-    if (root === 'code') return no(`custom code (Code.${f.name})`);
+    // Code.F(…): a report function when the importer converted F (SSRS custom code, rdl.js), else untranslatable
+    if (root === 'code') return CODE_FNS?.has(f.name.toLowerCase()) ? fn(`Code.${f.name}`, args.map(a => em(a, o))) : no(`custom code (Code.${f.name})`);
     const sysMath = f.obj.k === 'dot' && ROOT(f.obj.obj) === 'system' && f.obj.name.toLowerCase() === 'math';
     if (root === 'math' || sysMath) {
       if (m === 'round') return emRound(args, o);
@@ -593,7 +595,7 @@ export function translateExpression(src, opt = {}) {
     const v = escText(src);
     return { value: !opt.text && lit ? lit(v) : v, ok: true, notes };
   }
-  const o = { notes, fields: opt.fields, region: opt.region, scopes: opt.scopes, runScopes: opt.runScopes, lit };
+  const o = { notes, fields: opt.fields, region: opt.region, scopes: opt.scopes, runScopes: opt.runScopes, lit, params: opt.params };
   try {
     const ast = vbParse(src.trimStart().slice(1));
     let value = opt.text ? asTemplate(ast, o) : undefined;
@@ -2826,12 +2828,21 @@ function convertReport(ar, cx, opts) {
 /**
  * Convert an ActiveReportsJS report (.rdlx-json: an object, or its text, with or without a BOM).
  * @param {any} input
- * @param {{ name?: string }} [opts] name: the report name (e.g. from the file name); default: the report's Name
+ * @param {{ name?: string, codeFunctions?: Set<string> }} [opts] name: the report name (e.g. from the file name); default: the report's Name;
+ *   codeFunctions: custom-code functions converted to report functions (lower case): Code.F(…) calls them
  * @returns {{ definition: any, warnings: string[], stats: { items: number, mapped: number, approximated: number, dropped: number }, items: ImportedItem[] }}
  *   items: each item with a note, or approximated or dropped: its notes (each also in warnings, as "Name: message"),
  *   the expressions that could not be translated, and pos, where its element starts in an XML source (a character offset)
  */
 export function importRdlx(input, opts = {}) {
+  CODE_FNS = opts.codeFunctions instanceof Set ? opts.codeFunctions : null;
+  try { return importRdlx0(input, opts); } finally { CODE_FNS = null; }
+}
+/** Names (lower case) of the custom-code functions the front end converted to report functions, during one import. */
+/** @type {Set<string> | null} */
+let CODE_FNS = null;
+/** @param {any} input @param {{ name?: string }} opts */
+function importRdlx0(input, opts) {
   const cx = newContext();
   let ar = input;
   if (typeof ar === 'string') {
