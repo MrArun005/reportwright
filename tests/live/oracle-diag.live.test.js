@@ -43,6 +43,14 @@ const scenarios = {
   P3: async () => { await drv('clob1', Q); await drv('clob2', Q); },
   P4: async () => { await drv('count', CNT); await drv('clob', Q); },
 };
+const TYPES1 = 'select id, amount, ratio, label, born, seen, notes from pwowner.types_t where id = 1';
+const TYPES2 = 'select id, amount, ratio, label, born, seen, notes from pwowner.types_t where id = 2';
+Object.assign(scenarios, {
+  P5: async () => { await drv('types1', TYPES1); await drv('clob', Q); },
+  P6: async () => { await drv('types1', TYPES1); await drv('types2', TYPES2); await drv('clob', Q); },
+  P7: async () => { await drv('types2', TYPES2); await drv('clob', Q); },
+  P8: async () => { await drv('types1-clob-only-col', 'select amount, label, born from pwowner.types_t where id = 1'); await drv('clob', Q); },
+});
 const name = process.env.DIAG_SCENARIO;
 it.skipIf(!name)(`diagnostic ${name}`, async () => {
   const s = scenarios[name];
