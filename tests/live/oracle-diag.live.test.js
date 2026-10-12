@@ -51,6 +51,13 @@ Object.assign(scenarios, {
   P7: async () => { await drv('types2', TYPES2); await drv('clob', Q); },
   P8: async () => { await drv('types1-clob-only-col', 'select amount, label, born from pwowner.types_t where id = 1'); await drv('clob', Q); },
 });
+const LBL = 'Ünïcødé — ₹ 日本語 🚀';
+const bind = async (label, q, params) => { const t = Date.now(); try { const r = await runSql({ connection: 'x', query: q }, params); log(label, 'ok', Date.now() - t, 'ms', JSON.stringify(r).slice(0, 40)); } catch (e) { log(label, 'ERR', Date.now() - t, 'ms', e.status, e.message); } };
+Object.assign(scenarios, {
+  P9: async () => { await bind('bind-id', 'select id from pwowner.types_t where id = @id', { id: 1 }); await bind('bind-inj', 'select id from pwowner.types_t where label = @l', { l: "x' OR '1'='1" }); await bind('bind-uni', 'select id from pwowner.types_t where label = @l', { l: LBL }); await drv('clob', Q); },
+  P10: async () => { await bind('bind-uni', 'select id from pwowner.types_t where label = @l', { l: LBL }); await drv('clob', Q); },
+  P11: async () => { await bind('bind-id', 'select id from pwowner.types_t where id = @id', { id: 1 }); await drv('types1', TYPES1); await drv('types2', TYPES2); await drv('clob', Q); },
+});
 const name = process.env.DIAG_SCENARIO;
 it.skipIf(!name)(`diagnostic ${name}`, async () => {
   const s = scenarios[name];
