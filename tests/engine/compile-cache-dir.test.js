@@ -34,3 +34,14 @@ describe('CLI compile cache folder', () => {
     if (fs.existsSync(built)) { const b = fs.readFileSync(built, 'utf8'); expect(b).toMatch(/enableCompileCache\?\.\(dir\)/); expect(b).not.toMatch(/enableCompileCache\?\.\(\)/); }
   });
 });
+
+describe('pool worker compile cache (#7a)', () => {
+  it('turns the private compile cache on before it imports the engine', () => {
+    const src = fs.readFileSync(path.join(import.meta.dirname, '../../packages/engine/pool/worker.js'), 'utf8');
+    const on = src.indexOf('enableCompileCache?.(dir)'), eng = src.indexOf("import('@reportwright/engine')");
+    expect(on).toBeGreaterThan(0);
+    expect(eng).toBeGreaterThan(on);
+    expect(src).not.toMatch(/^import .* from '@reportwright\/engine'/m); // a static import compiles before any code runs
+    expect(src).toMatch(/compileCacheDir\(\)/); // the private folder, which honours PW_NO_COMPILE_CACHE
+  });
+});

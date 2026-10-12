@@ -124,10 +124,14 @@ export function toSfnt(b) {
 function fromWoff(b) {
   const n = u16(b, 12);
   const tables = [];
+  if (44 + n * 20 > b.length) throw bad('This WOFF file is damaged.');
+  let total = 0;
   for (let i = 0; i < n; i++) {
     const e = 44 + i * 20;
     const off = u32(b, e + 4), comp = u32(b, e + 8), orig = u32(b, e + 12);
     if (off + comp > b.length || orig > MAX_SFNT_BYTES) throw bad('This WOFF file is damaged.');
+    total += orig;
+    if (total > MAX_SFNT_BYTES) throw bad('This WOFF file is too large once unpacked.', 413);
     const raw = b.subarray(off, off + comp);
     const data = comp < orig ? new Uint8Array(zlib.inflateSync(raw, { maxOutputLength: orig })) : raw;
     if (data.length !== orig) throw bad('This WOFF file is damaged.');
