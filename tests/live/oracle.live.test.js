@@ -44,14 +44,6 @@ describe.skipIf(!process.env.PW_LIVE_ORACLE)('Oracle (live, gvenzl/oracle-free)'
     expect(n).toEqual({ ID: 2, AMOUNT: null, RATIO: null, LABEL: null, BORN: null, SEEN: null, NOTES: null });
   });
 
-  it('DIAG driver: count, then CLOB read, then count', async () => {
-    const t = async (label, q) => { const t0 = Date.now(); try { const r = await runSql(src(q)); console.log('DIAG', label, Date.now() - t0, 'ms', String(JSON.stringify(r)).slice(0, 60)); } catch (e) { console.log('DIAG', label, 'ERR', Date.now() - t0, 'ms', e.message); } };
-    await t('count1', 'select count(*) as n from pwowner.types_t');
-    await t('clob', 'select notes from pwowner.types_t where id = 1');
-    await t('count2', 'select count(*) as n from pwowner.types_t');
-    await t('count3', 'select count(*) as n from pwowner.types_t');
-  }, 120000);
-
   it('only one read: a write, a lock, or a second statement is refused before the database runs it', async () => {
     await expect(runSql(src('delete from pwowner.types_t'))).rejects.toThrow(/SELECT/);
     await expect(runSql(src('select id from pwowner.types_t for update'))).rejects.toThrow(/one SELECT|FOR UPDATE/);

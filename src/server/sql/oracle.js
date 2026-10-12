@@ -129,7 +129,7 @@ export async function oracle(url, text, values, ctx) {
                 if (v && typeof v === 'object' && typeof v.getData === 'function') {
                   // a LOB: its length (characters for CLOB, bytes for BLOB) is checked before a byte of it is read
                   take.reserve(Number(v.length) * (v.type === oracledb.DB_TYPE_BLOB ? 1 : 4));
-                  lobRead = true; // a connection that read a LOB is not pooled: the next call on it hung (see tests/live/oracle.live.test.js)
+                  lobRead = true; // ponytail: a LOB read in CI left the pooled connection hung (a CLOB-only query hung even on a fresh one; root cause not isolated)
                   row[k] = await v.getData();
                   if (typeof v.close === 'function') await v.close().catch(() => {});
                 }
