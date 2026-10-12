@@ -258,6 +258,20 @@ Tested on 49 JasperReports demo samples (`tests/fixtures/jrxml/corpus`, LGPL-3.0
 
 Tested on 29 BIRT sample reports (`tests/fixtures/birt/corpus`, EPL-2.0): all import, validate and render; 649 items: 615 mapped, 31 approximated, 3 dropped (99.5% kept). Most frequent notes: SQL connection to set (22), fonts not bundled (12), HTML values shown as text (10), event scripts (7), table rows with more than text (7).
 
+### Compare with the original PDF
+
+`POST /api/reports/compare` (multipart/form-data, the files `original` and `converted`, at most 5 MB each, the import limit): the
+`pw compare` result (see [migration-compare.md](migration-compare.md)) as JSON with the self-contained page as `html`;
+`?format=html` returns the page alone (served with a CSP that allows nothing but inline styles and `data:` images).
+Query: `tolerance` (pt, 2), `threshold` (%, 0), `dpi` (72–100), `numbersOnly=1`. Same access as import: designers,
+admins and service keys (401 not signed in, 403 viewers); 413 too large, 422 a PDF the reader refuses (malformed, over
+budget, timed out), 429 when the server is busy (the render admission) or two comparisons are already running. Audited as `report.compare`.
+
+```bash
+curl -F original=@sales-ssrs.pdf -F converted=@sales-rw.pdf -H "Authorization: Bearer $KEY" \
+  "https://reports.example.com/api/reports/compare?format=html" > compare.html
+```
+
 ### ActiveReports masters, parts and layers
 
 `Layers` become report `layers` (`TargetDevice` Screen/Paper/Export/None → `screen`/`print`/`export`/`design`, `Visible: false` → hidden) and each item's `LayerName` its `layer`. A library's `ReportParts` become `parts` (`ReportItemName` → `item`, `Properties` → `properties` with their defaults); `reportpart` items become part items (`Library` → the report id that file gets when imported, `ReportPart`, `Properties` as values); `PartProperties!x.Value` reads them. `MasterReport` becomes `master` (the report id of that file); `ContentPlaceHolder` items in a master become placeholders. The notes say which id to import each library and master under.

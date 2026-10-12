@@ -96,9 +96,10 @@ npx pw diff orders.pw.json orders-v2.pw.json -d orders=orders.json
 | `pw import <folder>` | `-o outDir`, `--recursive`, `--force`, `--verify`, `--report path`, `--max-files N` (2000), `--max-bytes N` (16 MB) |
 | `pw test [folder]` | `--update`, `--layout` |
 | `pw diff <old> <new>` | `-p`, `-d`, `--base` |
+| `pw compare <original.pdf> <converted.pdf\|report.pw.json>` | `-o dir` (default `.`), `-d`, `-p`, `--base`, `--tolerance PT` (2), `--threshold PCT` (0), `--dpi 72-100` (72), `--numbers-only`, `--no-visual`, `--no-positions` |
 | `pw --version` | prints the CLI and engine versions |
 
-Exit codes: 0 ok; 1 a test failed or the pages differ; 2 bad usage (`pw import <folder>`: 2 some failed, 1 none imported).
+Exit codes: 0 ok; 1 a test failed, the pages differ or `pw compare` found a difference over its gate; 2 bad usage (`pw import <folder>`: 2 some failed, 1 none imported).
 
 ## Supported formats
 
@@ -174,6 +175,35 @@ e.g. `Sales Report.rdl` → `sales-report.pw.json`), because `pw render` and the
   functions), never executed. A map's shapefile (`.shp` + `.dbf`) is read only from inside the folder, with the same caps.
 
 `pw --version` (or `-v`) prints the CLI's version and the version of the engine it carries.
+
+## Prove a migrated report matches: `pw compare`
+
+```bash
+npx pw compare sales-ssrs.pdf sales.pw.json -d sales=sales.json -o compare/
+npx pw compare sales-ssrs.pdf sales-rw.pdf --threshold 0.5     # two PDFs
+npx pw compare sales-ssrs.pdf sales.pw.json -d sales=sales.json --numbers-only   # CI: only the numbers
+```
+
+Writes `compare.html` (self-contained) and `compare.json`, prints a summary. A `.pw.json` second argument is rendered
+first, with `-d`/`-p` as in `pw render`. What it checks:
+
+- **Numbers first (Reconciliation).** Every number on both sides, with its page, position and label (the words before it
+  on its line). Equal values count as equal however they are formatted (`1,234.50` = `1234.5` = `1.234,50` =
+  `$1,234.50`; `(12.00)` = `-12`); a rounding difference (`1,234.504` → `1,234.50`) is flagged as `rounding`; anything
+  else is `mismatched` with the delta and % delta. **Totals** (labels with total, sum, grand, subtotal, Gesamt, Summe,
+  totale, somme, suma, 合計…) are reconciled separately.
+- **Text.** Words aligned page by page: missing, extra, changed; moved more than `--tolerance` points (positions
+  normalised for a different page size). Positions need `pdftotext` (poppler-utils); without it the words are compared
+  in reading order, from `@reportwright/pdf`'s reader, and moves are not reported.
+- **Pixels** (when `pdftoppm` is installed): both pages at `--dpi`, a red-on-faded overlay and the % of pixels that
+  differ per page.
+
+Verdict: **Matches**, **Minor differences** (only moves or pixels) or **Differences found**. Exit 1 when any number or
+total differs (rounding included), the page counts differ, or the % of differing words or pixels passes `--threshold`;
+`--numbers-only` gates on the numbers alone. Inputs are untrusted: each PDF is read under the reader's budget (at most
+50 MB, 300 pages, 20,000 words a page, 50 pages rendered, 4 megapixels a page, tools stopped after 15 s). The
+viewer and designer have no compare button yet: use the CLI or `POST /api/reports/compare`. See
+[docs/migration-compare.md](https://github.com/MrArun005/reportwright/blob/main/docs/migration-compare.md).
 
 ## Snapshot tests: `pw test`
 
