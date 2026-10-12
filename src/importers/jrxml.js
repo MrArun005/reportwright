@@ -10,13 +10,13 @@
  *   page footer: the page footer.
  * Java and Groovy expressions become VB (java.js); variables are inlined as aggregates with their reset scope (a sum
  * that resets per group is Sum(…, "Group"); in the detail band it is the running value Jasper prints there).
- * Charts become ReportWright charts directly (their datasets have no RDLX shape). Crosstabs, tables and other
+ * Charts become ReportWright charts directly (their datasets have no RDLX shape); crosstabs become matrices. Tables and other
  * components are noted and left out; lists and barcodes are kept.
  *
  * Pure JavaScript, no Node APIs and no DOM. It never throws: whatever it cannot map becomes a warning.
  */
 import { parseXml, XmlError } from './xml.js';
-import { importRdlx, translateExpression, ImportBudgetError, OUTPUT_LIMITS, reportId, safeName, rewordItems } from './rdlx.js';
+import { importRdlx, crosstabTablix, translateExpression, ImportBudgetError, OUTPUT_LIMITS, reportId, safeName, rewordItems } from './rdlx.js';
 import { javaToVb, javaPattern, halfEvenDigits, kindOf, integral, Untranslatable } from './java.js';
 
 const MAX_EXPR = 20_000;
@@ -175,10 +175,13 @@ function toRdlx(root, notes, charts, reportName, resolve) {
     else if (c.evalTime === 'Auto') end = reset;
     return `JasperValue("${MAIN}", "${calc}", ${inner}, "${at}", ${reset}, ${end}${keys.map(k => `, ${k}`).join('')})`;
   }
+  /** @type {Map<string, any> | null} the bucket and measure variables of the crosstab being converted */
+  let xtab = null;
   const depthOf = (gname) => { const k = groups.findIndex(g => g.attrs.name === gname); return k >= 0 ? k + 1 : null; };
   /** $V{name} as VB: built-ins, then the report's variables (inlined) */
   function varRef(n, c, depth) {
     if (depth > 16) throw new Untranslatable('variables that use each other more than 16 deep');
+    if (xtab?.has(n)) return xtab.get(n); // a crosstab's bucket or measure, read in its cells
     // evaluated at report end, PAGE_NUMBER is the last page (the total); at Page, Column or Auto it is the current page
     if (n === 'PAGE_NUMBER' || n === 'MASTER_CURRENT_PAGE') {
       if (c.evalTime === 'Group') note('A page number evaluated at the end of a group ($V{PAGE_NUMBER}, evaluationTime="Group") shows the page it is printed on.');
@@ -555,10 +558,7 @@ function toRdlx(root, notes, charts, reportName, resolve) {
         if (a.type === 'Column') { it.Type = 'rectangle'; it.__drop = 'a column break: ReportWright prints one column, so it was left out.'; return it; }
         return { ...base, Type: 'rectangle', Width: '0pt', Height: '0pt', PageBreakAtStart: true, ReportItems: [] };
       case 'chart': return chart(n, it, c);
-      case 'crosstab':
-        it.Type = 'crosstab';
-        it.__drop = 'a crosstab is not converted; rebuild it as a matrix (row and column groups).';
-        return it;
+      case 'crosstab': return crosstab(n, it, c);
       case 'componentElement': case 'component': return component(n, it, c);
       case 'list': case 'table': return component(n, it, c);
       case 'genericElement':
@@ -592,6 +592,86 @@ function toRdlx(root, notes, charts, reportName, resolve) {
     if (tip) it.ToolTip = value(tip, it, c);
     if (name) it.Bookmark = value(name, it, c);
     if (e.attrs.bookmarkLevel && name) it.Label = it.Bookmark;
+  }
+
+  /* ---------------------------------------------------------------- crosstabs */
+
+  /**
+   * A crosstab becomes a tablix with column groups, which rdlx.js maps to a ReportWright matrix: each row and column
+   * group a dynamic member (its total, when it has one, a static member beside it), each value field of the base cell
+   * a value. Inside the crosstab $V{group} is the bucket value and $V{measure} (and $V{measure_group_ALL}) the aggregate.
+   */
+  function crosstab(n, it, c) {
+    const e = n.el, notes = (it.__notes ||= []);
+    const run = kid(kid(kid(e, 'crosstabDataset'), 'dataset') || kid(e, 'dataset'), 'datasetRun');
+    const ds = run?.attrs.subDataset || MAIN;
+    if (run && kids(run, 'datasetParameter').length) notes.push('the crosstab passes parameters to its data set; ReportWright reads that data set as it is.');
+    if (kids(e, 'crosstabParameter').length || kids(e, 'parameter').length) notes.push('its crosstab parameters are read as report parameters.');
+    // an untrusted file: only what the matrix can show is expanded (8 group levels a side, 16 measures): the measure × group
+    // totals below stay small whatever the file holds
+    const allRows = kids(e, 'rowGroup'), allCols = kids(e, 'columnGroup'), allMs = kids(e, 'measure');
+    const rowGs = allRows.slice(0, 8), colGs = allCols.slice(0, 8), measures = allMs.slice(0, 16);
+    if (allRows.length > 8 || allCols.length > 8) notes.push('it has more than 8 levels of groups on a side; the deeper levels are left out.');
+    if (allMs.length > 16) notes.push(`it has ${allMs.length} measures; the first 16 are kept.`);
+    const contentsOf = (x) => kid(x, 'cellContents') || kid(x, 'contents') || x;
+    const cells = kids(e, 'crosstabCell').concat(kids(e, 'cell'));
+    const saved = xtab;
+    xtab = new Map();
+    const cc = { ...c, inDetail: false, chart: true, depth: (c.depth || 0) + 1 };
+    try {
+      for (const g of [...rowGs, ...colGs]) {
+        const b = exprOf(kid(g, 'bucket'), 'bucketExpression', 'expression');
+        if (b) { try { xtab.set(g.attrs.name, sub(b, cc, 0)); } catch (er) { if (!(er instanceof Untranslatable)) throw er; notes.push(`the group "${g.attrs.name}" uses ${er.message}, so its rows are not split by it (one bucket).`); } }
+      }
+      for (const m of measures) {
+        const calc = m.attrs.calculation || 'Nothing', agg = CALC[calc] || (calc === 'Nothing' ? 'First' : null);
+        if (!agg) { notes.push(`the measure "${m.attrs.name}" uses the ${calc} calculation, which ReportWright has not; it shows the sum.`); }
+        if (m.attrs.percentageOf || m.attrs.percentageType === 'GrandTotal') notes.push(`the measure "${m.attrs.name}" is a percentage of the total in JasperReports; here it shows the value.`);
+        const src = exprOf(m, 'measureExpression', 'expression');
+        if (!src) continue;
+        let v;
+        try { v = { s: `${agg || 'Sum'}(${sub(src, cc, 0).s})`, t: 'num', p: 9, i: agg === 'Count' || agg === 'CountDistinct' }; } catch (er) { if (!(er instanceof Untranslatable)) throw er; notes.push(`the measure "${m.attrs.name}" uses ${er.message}, so it is left out.`); continue; }
+        xtab.set(m.attrs.name, v);
+        for (const g of [...rowGs, ...colGs]) xtab.set(`${m.attrs.name}_${g.attrs.name}_ALL`, v); // a total: the same formula over the total's rows
+      }
+      let extra = 0;
+      /** the text items of a cell's contents (the rest are counted as not shown), its background on each */
+      const texts = (x) => {
+        if (!x) return [];
+        const ct = contentsOf(x);
+        const all = items(ct, cc);
+        const t = all.filter(i => i.Type === 'textbox');
+        extra += all.length - t.length;
+        const bg = ct.attrs.mode === 'Opaque' && ct.attrs.backcolor;
+        if (bg) for (const i of t) { i.Style ||= {}; if (!i.Style.BackgroundColor || i.Style.BackgroundColor === 'Transparent') i.Style.BackgroundColor = bg; }
+        return t;
+      };
+      const cellOf = (rg, cg) => cells.find(x => (x.attrs.rowTotalGroup || null) === rg && (x.attrs.columnTotalGroup || null) === cg);
+      const base = cellOf(null, null);
+      const values = texts(base);
+      if (!values.length) { it.Type = 'crosstab'; it.__drop = 'the crosstab has no value cell, so it was left out.'; return it; }
+      const header = (g, which) => texts(kid(g, which === 'row' ? 'crosstabRowHeader' : 'crosstabColumnHeader') || kid(g, 'header'))[0];
+      const totalHeader = (g, which) => texts(kid(g, which === 'row' ? 'crosstabTotalRowHeader' : 'crosstabTotalColumnHeader') || kid(g, 'totalHeader'))[0];
+      const group = (g, which) => {
+        const key = xtab.get(g.attrs.name), tp = g.attrs.totalPosition;
+        return { name: g.attrs.name, key: key && '=' + key.s, desc: kid(g, 'bucket')?.attrs.order === 'Descending', size: pt(Number(which === 'row' ? g.attrs.width : g.attrs.height) || (which === 'row' ? 80 : 20)),
+          header: header(g, which), total: tp === 'Start' ? 'before' : tp === 'End' ? 'after' : null, totalHeader: tp && tp !== 'None' ? totalHeader(g, which) : undefined };
+      };
+      const cache = new Map();
+      const cellTexts = (rg, cg) => { const key = `${rg}|${cg}`; if (!cache.has(key)) { const x = cellOf(rg, cg); cache.set(key, x ? texts(x) : values); } return cache.get(key); };
+      const tx = crosstabTablix({
+        dataSet: ds, repeatHeaders: !(e.attrs.isRepeatColumnHeaders === 'false' || e.attrs.repeatColumnHeaders === 'false'),
+        rowHeight: pt(Number(base.attrs.height) || 16), columnWidth: pt(Number(base.attrs.width) || 60),
+        rows: rowGs.map(g => group(g, 'row')), columns: colGs.map(g => group(g, 'column')),
+        values: values.map((v, k) => ({ label: measures[k]?.attrs.name || `Value ${k + 1}` })),
+        cell: (r, cl, k) => { const t = cellTexts(r, cl); return t[k] || t[0] || values[k]; },
+        corner: texts(kid(e, 'crosstabHeaderCell') || kid(e, 'headerCell'))[0],
+      });
+      if (extra) notes.push(`${extra} shapes or other elements in its cells are not shown: a ReportWright matrix shows group headers, values and totals.`);
+      Object.assign(it, tx, { Name: it.Name, __notes: [...notes, ...tx.__notes] });
+      if (ds !== MAIN && !kids(root, 'subDataset').some(s => s.attrs.name === ds)) notes.push(`its data set "${ds}" is not in the file.`);
+      return it;
+    } finally { xtab = saved; }
   }
 
   /* ---------------------------------------------------------------- charts */
