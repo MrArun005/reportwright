@@ -105,7 +105,7 @@ Exit codes: 0 ok; 1 a test failed or the pages differ; 2 bad usage (`pw import <
 | Direction | Formats |
 |---|---|
 | Output (`-f`) | `pdf` (also `--pdfa`, `--ua`, encrypted), `xlsx`, `docx`, `pptx`, `html`, `csv`, `json`, `txt` |
-| Import | SSRS `.rdl` / `.rdlc` (+ shared data sources `.rds`), JasperReports `.jrxml` (+ style templates `.jrtx`), BIRT `.rptdesign`, ActiveReports `.rdlx-json`, referenced images. Jasper and BIRT crosstabs carry over as matrices (groups, measures, totals, styles); Jasper and BIRT charts as charts; Jasper markup as rich text; SSRS maps as map items (embedded shapes as GeoJSON; a shapefile layer's `.shp` + `.dbf` are read when they are in the imported folder; SQL spatial layers are drawn from the query's geography binary or `STAsText()` WKT) |
+| Import | SSRS `.rdl` / `.rdlc` (+ shared data sources `.rds`), JasperReports `.jrxml` (+ style templates `.jrtx`), BIRT `.rptdesign`, ActiveReports `.rdlx-json`, referenced images. Jasper and BIRT crosstabs carry over as matrices (groups, measures, totals, styles); Jasper and BIRT charts as charts; Jasper markup as rich text; SSRS custom code's simple functions as report functions; SSRS maps as map items (embedded shapes as GeoJSON; a shapefile layer's `.shp` + `.dbf` are read when they are in the imported folder; SQL spatial layers are drawn from the query's geography binary or `STAsText()` WKT) |
 
 ## Requirements and limits
 
@@ -170,7 +170,8 @@ e.g. `Sales Report.rdl` → `sales-report.pw.json`), because `pw render` and the
   folder are read, so `../` and absolute paths cannot reach outside it. Symbolic links that point out of the folder,
   or to folders, are refused and listed. Every output path is checked to stay in `<outDir>`, and nothing is written
   through a link. `--max-files` and `--max-bytes` cap the file count and each file's size. Nothing in an imported file
-  is run: custom code and scriptlets stay text.
+  is run: scriptlets stay text, and SSRS custom code is translated (simple single-Return functions become report
+  functions), never executed. A map's shapefile (`.shp` + `.dbf`) is read only from inside the folder, with the same caps.
 
 `pw --version` (or `-v`) prints the CLI's version and the version of the engine it carries.
 

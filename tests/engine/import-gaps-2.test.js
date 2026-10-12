@@ -11,7 +11,7 @@ import { validate } from '../../src/engine/schema/validate.js';
 import { render } from '../../src/engine/index.js';
 import { fontStore, texts } from '../helpers.js';
 import os from 'node:os';
-import { importRdl } from '../../src/importers/rdl.js';
+import { importRdl, customCode } from '../../src/importers/rdl.js';
 import { importFolder } from '../../src/cli/importBatch.js';
 import { readShapefile, readDbf } from '../../src/engine/geo.js';
 import { shp, dbf, statesShp, statesDbf } from '../helpers-shapefile.js';
@@ -224,5 +224,40 @@ describe('SSRS SQL spatial maps: the spatial field is decoded at render time', (
     expect(out.warnings.join('\n')).toMatch(/shape "L" has no Polygon/);
     expect(out.warnings.join('\n')).toMatch(/more than 200,000 coordinates; the shape "M"/);
     expect(performance.now() - t0).toBeLessThan(8000);
+  });
+});
+
+describe('SSRS custom code → report functions', () => {
+  const r = importRdl(read('rdl/custom-code.rdl'));
+  it('converts single-Return functions; calls become Code.F(…)', () => {
+    expect(validate(r.definition).errors).toEqual([]);
+    expect(r.definition.functions).toEqual([
+      { name: 'Grade', params: ['score'], body: '=IIF(score >= 90, "A", IIF(score >= 75, "B", "C"))' },
+    ]);
+    expect(JSON.stringify(r.definition.sections)).toMatch(/Code\.Grade\(Fields\.Score\)/);
+    expect(r.definition.customCode).toMatch(/Function Total/);
+  });
+  it('notes what it does not convert (a loop; a function calling an unqualified one)', () => {
+    const W = r.warnings.join('\n');
+    expect(W).toMatch(/1 of its 3 functions became report functions \(Grade\); 2 are not converted \(Label, Total\)/);
+    expect(W).toMatch(/Code\.Total/);
+  });
+  it('renders the converted function', async () => {
+    const out = await render(r.definition, { fontStore, sources: sourcesFor(r.definition, [{ Name: 'Ann', Score: 92 }, { Name: 'Bo', Score: 80 }, { Name: 'Cy', Score: 10 }]) });
+    const t = words(out);
+    for (const w of ['Ann A', 'Bo B', 'Cy C']) expect(t).toContain(w);
+  });
+  it('hostile code: size, function count, long lines, long expressions are bounded and noted', () => {
+    const t0 = performance.now();
+    expect(customCode('x'.repeat(100_001)).note).toMatch(/longer than 100,000 characters, so none of it is converted/);
+    const many = Array.from({ length: 3000 }, (_, i) => `Function F${i}(a)\nReturn a + ${i}\nEnd Function`).join('\n').slice(0, 99_000);
+    const c = customCode(many);
+    expect(c.functions.length).toBe(200);
+    expect(c.note).toMatch(/are not converted/);
+    expect(customCode('Public '.repeat(14_000) + 'X').functions).toEqual([]);
+    expect(customCode(`Function A(x)\nReturn ${'('.repeat(30_000)}x${')'.repeat(30_000)}\nEnd Function`).functions).toEqual([]);
+    expect(customCode('Function A(x)\n' + 'Return x\n'.repeat(10_000) + 'End Function').functions).toEqual([]);
+    expect(customCode(`Function A(Optional x = 1)\nReturn x\nEnd Function`).note).toMatch(/not converted \(A\)/);
+    expect(performance.now() - t0).toBeLessThan(3000);
   });
 });

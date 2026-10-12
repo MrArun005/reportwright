@@ -13,7 +13,8 @@
  */
 import { parseXml, XmlError } from './xml.js';
 import { sqlGeography, readShapefile, OVER } from '../engine/geo.js';
-import { importRdlx, toPt, ImportBudgetError, OUTPUT_LIMITS, rewordItems } from './rdlx.js';
+import { importRdlx, toPt, ImportBudgetError, OUTPUT_LIMITS, rewordItems, translateExpression } from './rdlx.js';
+import { checkFunctions } from '../engine/expr/evaluate.js';
 
 const RDL_NS = /^http:\/\/schemas\.microsoft\.com\/sqlserver\/reporting\/(\d{4})\/\d{2}\/reportdefinition$/i;
 const MAX_EXPR = 20_000; // longer expressions are left out (the translation is linear, but its output feeds the engine)
@@ -59,9 +60,12 @@ export function importRdl(input, opts = {}) {
     notes.push(`The import stopped early (${e instanceof Error ? e.message : e}), so parts of the report are missing.`);
     ar = {};
   }
-  const r = importRdlx(ar, { name });
+  const code = ar.__code ? customCode(ar.__code) : null;
+  if (code?.note) notes.push(code.note);
+  const r = importRdlx(ar, { name, codeFunctions: code ? new Set(code.functions.map(f => f.name.toLowerCase())) : undefined });
   if (r.error) return r;
   const def = r.definition;
+  if (code?.functions.length) def.functions = code.functions;
   for (const p of def.parameters || []) if (ar.__hidden?.has(p.name)) p.hidden = true;
   if (ar.__code) def.customCode = ar.__code;
   const hiddenNote = /is hidden in ActiveReports; ReportWright shows it/;
@@ -69,6 +73,69 @@ export function importRdl(input, opts = {}) {
     .map(w => w.replace(/ActiveReports/g, 'SSRS'));
   const items = rewordItems(r.items.map(i => ({ ...i, notes: i.notes.filter(n => !hiddenNote.test(n.message)) })), w => w.replace(/ActiveReports/g, 'SSRS'));
   return { definition: def, warnings: [...new Set(warnings)], stats: r.stats, items };
+}
+
+/** Custom code longer than this is not translated (it is kept as text, noted). */
+export const MAX_CODE = 100_000;
+const MAX_CODE_FUNCTIONS = 200; // the engine's cap on report functions
+const MODS = '(?:(?:Public|Private|Friend|Shared|Protected|Overloads|Overrides|Static)\\s+)*';
+/**
+ * SSRS custom code (<Code>, Visual Basic) → report functions, for the simple pattern: a Function whose body is one
+ * Return of an expression (or "Name = expression") the expression translator handles (IIf, Format, FormatNumber,
+ * Left, Mid, CStr, arithmetic, comparisons…), with plain ByVal parameters. Everything else stays in customCode as
+ * text, noted. Bounded: the code's length, the functions converted and each expression's length; one pass per line.
+ * @param {string} code @returns {{ functions: { name: string, params: string[], body: string }[], note: string }}
+ */
+export function customCode(code) {
+  const src = String(code);
+  const lines = src.split(/\r?\n/).length;
+  const keep = 'It is kept in "customCode" as text and not run: expressions that call the rest show as text; rewrite them as report functions.';
+  if (src.length > MAX_CODE) return { functions: [], note: `The report has custom code (Visual Basic, ${lines} lines) longer than ${MAX_CODE.toLocaleString('en-US')} characters, so none of it is converted. ${keep}` };
+  // logical lines: " _" continues a line; comments (') outside strings are dropped
+  const logical = [];
+  let cur = '';
+  for (const raw of src.split(/\r?\n/)) {
+    let l = '', inStr = false;
+    for (let i = 0; i < raw.length; i++) { const ch = raw[i]; if (ch === '"') inStr = !inStr; else if (ch === "'" && !inStr) break; l += ch; }
+    if (/\s_\s*$/.test(l)) { cur += l.replace(/\s_\s*$/, ' '); continue; }
+    logical.push((cur + l).trim()); cur = '';
+  }
+  if (cur) logical.push(cur.trim());
+  const START = new RegExp(`^${MODS}(Function|Sub)\\s+([A-Za-z_]\\w{0,63})`, 'i');
+  const HEAD = new RegExp(`^${MODS}Function\\s+([A-Za-z_]\\w{0,63})\\s*\\(([^()]*)\\)\\s*(?:As\\s+[\\w.]+(?:\\(\\))?)?$`, 'i');
+  const functions = [], left = [];
+  let total = 0;
+  for (let i = 0; i < logical.length; i++) {
+    const h = START.exec(logical[i]);
+    if (!h) continue;
+    total++;
+    const m = HEAD.exec(logical[i]);
+    const body = [];
+    let j = i + 1;
+    for (; j < logical.length && !/^End\s+(Function|Sub)\b/i.test(logical[j]); j++) if (logical[j] && body.length < 2) body.push(logical[j]);
+    i = j;
+    const name = h[2];
+    if (!m || functions.length >= MAX_CODE_FUNCTIONS || body.length !== 1) { left.push(name); continue; }
+    const params = [];
+    let ok = true;
+    for (const p of m[2].split(',').map(s => s.trim()).filter(Boolean)) {
+      const pm = /^(?:ByVal\s+)?([A-Za-z_]\w{0,63})(?:\s+As\s+[\w.]+)?$/i.exec(p);
+      if (!pm) { ok = false; break; }
+      params.push(pm[1]);
+    }
+    const lower = body[0].toLowerCase();
+    const expr = lower.startsWith('return ') ? body[0].slice(7) : lower.startsWith(name.toLowerCase()) && /^\s*=/.test(body[0].slice(name.length)) ? body[0].slice(name.length).replace(/^\s*=/, '') : null;
+    if (!ok || expr == null || expr.length > MAX_EXPR) { left.push(name); continue; }
+    const r = translateExpression(`=${expr}`, { params: new Set(params.map(p => p.toLowerCase())) });
+    const fn = { name, params, body: typeof r.value === 'string' ? r.value : '' };
+    if (!r.ok || !fn.body.startsWith('=') || checkFunctions([fn]).length) { left.push(name); continue; }
+    functions.push(fn);
+  }
+  const conv = functions.length ? `${functions.length} of its ${total} functions became report functions (${functions.slice(0, 10).map(f => f.name).join(', ')}${functions.length > 10 ? ', …' : ''}); ` : '';
+  const note = left.length || !functions.length
+    ? `The report has custom code (Visual Basic, ${lines} lines). ${conv}${left.length ? `${left.length} ${left.length === 1 ? 'is' : 'are'} not converted (${left.slice(0, 10).join(', ')}${left.length > 10 ? ', …' : ''}): only a Function that returns one expression is. ` : ''}${keep}`
+    : '';
+  return { functions, note };
 }
 
 /**
@@ -933,7 +1000,6 @@ function toRdlx(root, notes, year, resolve) {
   });
   const EmbeddedImages = list(root, 'EmbeddedImages', 'EmbeddedImage').map(i => ({ Name: i.attrs.Name, MIMEType: raw(i, 'MIMEType'), ImageData: raw(i, 'ImageData') }));
   const code = raw(root, 'Code');
-  if (code && code.trim()) notes.push(`The report has custom code (Visual Basic, ${code.trim().split('\n').length} lines). It is not run: expressions that call Code.… are shown as text. The code is kept in "customCode"; rewrite what you need as report functions.`);
   if (year < 2008) notes.push(`This is an RDL ${year} report: its Table, Matrix, List and Chart items use the old layout and are left out. Open and save it in Report Builder or Visual Studio to upgrade it to RDL 2008 or later, then import it again.`);
 
   const band = (b) => b && { Height: raw(b, 'Height'), PrintOnFirstPage: raw(b, 'PrintOnFirstPage'), PrintOnLastPage: raw(b, 'PrintOnLastPage'), Style: styleOf(b), ReportItems: items(kid(b, 'ReportItems')) };
