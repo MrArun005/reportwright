@@ -366,7 +366,7 @@ describe('kitchen sink (RDL 2016)', () => {
     expect(validate(def).errors).toEqual([]);
     expect(def).toMatchObject({ $schema: 'reportwright/report@1', name: 'Kitchen sink', locale: 'en-GB', currency: 'GBP' });
     expect(stats.items).toBe(stats.mapped + stats.approximated + stats.dropped);
-    expect(stats.dropped).toBe(1); // the map
+    expect(stats.dropped).toBe(0); // the map is kept (its shapes need GeoJSON)
   });
   it('maps the page, header and footer', () => {
     expect(def.page).toEqual({ size: 'Letter', orientation: 'portrait', margins: [36, 36, 36, 36] });
@@ -450,15 +450,15 @@ describe('kitchen sink (RDL 2016)', () => {
     expect(byName(def, 'ShareChart')).toMatchObject({ chartType: 'donut', category: '=Fields.Region', palette: ['#1f77b4', '#ff7f0e'], showValues: true,
       labelTemplate: '=Format(Sum(Fields.Amount) / Sum(Fields.Amount, "Orders"), "P0")' });
   });
-  it('approximates gauges and state indicators; maps images and subreports; leaves out the map with a note', () => {
+  it('approximates gauges and state indicators; maps images and subreports; keeps the map with a note to supply its shapes', () => {
     expect(byName(def, 'Speed')).toMatchObject({ type: 'chart', chartType: 'gauge', series: [{ value: '=Sum(Fields.Amount)' }], axes: { y: { min: 0, max: 1000 } } });
     expect(W).toMatch(/Speed: its ranges, ticks, extra pointers and frame are left out/);
     expect(byName(def, 'Status')).toMatchObject({ type: 'iconset', value: '=Sum(Fields.Amount)', iconSet: 'arrows', lower: '=100', upper: '=500' });
     expect(byName(def, 'Photo')).toMatchObject({ type: 'image', src: 'https://example.com/photo.png', fit: 'contain' });
     expect(byName(def, 'Stored').src).toBe('data:image/jpeg;base64,{First(Fields.Product, "Orders")}');
     expect(byName(def, 'Detail')).toMatchObject({ type: 'subreport', report: 'order-detail', params: { Region: '=Parameters.Region' } });
-    expect(byName(def, 'SalesMap')).toBeUndefined();
-    expect(W).toMatch(/SalesMap: the item type "Map" is not supported/);
+    expect(byName(def, 'SalesMap')).toMatchObject({ type: 'map', geojson: '' });
+    expect(W).toMatch(/SalesMap: its shapes could not be read from the file: paste GeoJSON/);
   });
   it('keeps the custom code text', () => {
     expect(def.customCode).toMatch(/^Public Function Pct/);

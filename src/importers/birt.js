@@ -15,7 +15,7 @@
  * Pure JavaScript, no Node APIs and no DOM. It never throws: whatever it cannot map becomes a warning.
  */
 import { parseXml, XmlError } from './xml.js';
-import { importRdlx, ImportBudgetError, OUTPUT_LIMITS, toPt, rewordItems } from './rdlx.js';
+import { importRdlx, crosstabTablix, ImportBudgetError, OUTPUT_LIMITS, toPt, rewordItems } from './rdlx.js';
 import { javaToVb, javaPattern, Untranslatable } from './java.js';
 
 const BIRT_NS = /^http:\/\/www\.eclipse\.org\/birt\/2005\/design$/;
@@ -157,6 +157,8 @@ function toRdlx(root, notes, reportName) {
           return fieldRef(key);
         }
         if (o.k === 'id' && o.name === 'params') return paramRef(String(n.key));
+        if (o.k === 'id' && o.name === 'measure' && c.cube) return c.cube.measure(String(n.key));
+        if (o.k === 'index' && o.obj.k === 'id' && o.obj.name === 'dimension' && c.cube) return c.cube.level(String(o.key), String(n.key));
         if (o.k === 'id' && (o.name === 'vars' || o.name === 'reportContext')) throw new Untranslatable(`${o.name}["${n.key}"]`);
         return undefined;
       },
@@ -239,7 +241,9 @@ function toRdlx(root, notes, reportName) {
   }
   /** a bound column as VB: its expression, or its aggregate (aggregateFunction + arguments, aggregateOn) */
   function binding(b, c, depth) {
-    const fn = (prop(b, 'aggregateFunction') || '').toLowerCase();
+    // in a crosstab a total cell's aggregate is the measure over the total's rows: the cell formula (the matrix totals it)
+    const fn = c.cube ? '' : (prop(b, 'aggregateFunction') || '').toLowerCase();
+    if (c.cube && prop(b, 'expression') == null) return vb(listProp(b, 'arguments').map(x => prop(x, 'value')).find(x => x != null) ?? '""', c, depth);
     const on = prop(b, 'aggregateOn') ?? simpleList(b, 'aggregateOn')[0]?.text;
     const gc = { ...c, group: on && on !== 'All' ? on : undefined };
     if (fn) {
@@ -554,9 +558,9 @@ function toRdlx(root, notes, reportName) {
         const ext = e.attrs.extensionName || '?';
         it.Type = ext.toLowerCase();
         it.Height = pt(given || 144);
+        if (ext === 'Crosstab') return crosstab(e, it, w, st, c, depth);
         it.__drop = ext === 'Chart' ? 'a BIRT chart is not converted; add a ReportWright chart (its data set and series are in the design).'
-          : /Crosstab/.test(ext) ? 'a BIRT crosstab is not converted; rebuild it as a matrix (row and column groups).'
-            : `the BIRT item "${ext}" has no ReportWright equivalent, so it was left out.`;
+          : `the BIRT item "${ext}" has no ReportWright equivalent, so it was left out.`;
         return { it, h: given || 144 };
       }
     }
@@ -564,6 +568,96 @@ function toRdlx(root, notes, reportName) {
     it.Height = '0pt';
     it.__drop = `the BIRT item "${e.name}" is not supported, so it was left out.`;
     return { it, h: 0 };
+  }
+
+  /* ---------------------------------------------------------------- crosstabs */
+
+  const cubes = new Map();
+  walkAll(root, (e) => { if (e.name === 'tabular-cube' && e.attrs.name) cubes.set(e.attrs.name, e); });
+  /** a <property name="…"> that holds elements (the crosstab's slots), and the extended items in it */
+  const slot = (e, name) => e?.children.find(x => x.name === 'property' && x.attrs.name === name);
+  const ext = (e, name, kind) => kids(slot(e, name), 'extended-item').filter(x => !kind || x.attrs.extensionName === kind);
+  const DATE_LEVEL = { year: (f) => `Year(${f})`, quarter: (f) => `Floor((Month(${f}) + 2) / 3)`, month: (f) => `Month(${f})`, 'day-of-month': (f) => `Day(${f})` };
+  /**
+   * A BIRT crosstab becomes a tablix with column groups (rdlx.js: a ReportWright matrix). The cube's levels are the
+   * groups (a date level is its part of the date), its measures the values; in the cells dimension["D"]["L"] is the
+   * level's value and measure["m"] the measure's aggregate.
+   */
+  function crosstab(e, it, W, st, c, depth) {
+    const notes = (it.__notes ||= []);
+    const cubeName = prop(e, 'cube'), cube = cubes.get(cubeName);
+    if (!cube) { it.Type = 'crosstab'; it.Height = pt(len(prop(e, 'height'), 0, 0)); it.__drop = `its cube "${cubeName}" is not in the file, so the crosstab was left out.`; return { it, h: 0 }; }
+    const ds = prop(cube, 'dataSet') || c.dataSet;
+    const levels = new Map(), measures = new Map();
+    walkAll(cube, (x) => {
+      if (x.name === 'tabular-measure') measures.set(x.attrs.name, x);
+      if (x.name === 'tabular-dimension') walkAll(x, (l) => { if (l.name === 'tabular-level') levels.set(`${x.attrs.name}/${l.attrs.name}`, l); });
+    });
+    const levelVb = (key) => {
+      const l = levels.get(key);
+      if (!l) throw new Untranslatable(`the level ${key}, which is not in the cube`);
+      const col = prop(l, 'columnName');
+      const f = col ? fieldRef(col).s : vb(prop(l, 'expression') ?? '', { inSet: true });
+      const dt = prop(l, 'dateTimeLevelType');
+      if (dt && !DATE_LEVEL[dt]) throw new Untranslatable(`the ${dt} date level`);
+      return dt ? DATE_LEVEL[dt](f) : f;
+    };
+    const measureVb = (name) => {
+      const m = measures.get(name);
+      if (!m) throw new Untranslatable(`the measure ${name}, which is not in the cube`);
+      const fn = (prop(m, 'function') || 'sum').toLowerCase();
+      if (!AGG[fn]) throw new Untranslatable(`the ${fn.toUpperCase()} measure function`);
+      return `${AGG[fn]}(${vb(prop(m, 'measureExpression') ?? '1', { inSet: true })})`;
+    };
+    const cc = { bindings: bindingsOf(e), dataSet: ds, region: it.Name,
+      cube: { level: (d, l) => ({ s: `(${levelVb(`${d}/${l}`)})`, t: 'any', p: 9 }), measure: (m) => ({ s: measureVb(m), t: 'num', p: 9 }) } };
+    let extra = 0;
+    /** the first text item of a cell (the rest are counted as not shown), with the cell's background */
+    const text = (cell) => {
+      if (!cell) return undefined;
+      const cst = { ...inherit(st), ...ownStyle(cell) };
+      const els = kids(slot(cell, 'content')).filter(x => ITEM_KINDS.has(x.name));
+      const all = els.map(x => item(x, W, cst, cc, depth + 1)?.it).filter(Boolean);
+      const t = all.filter(i => i.Type === 'textbox');
+      extra += all.length - Math.min(1, t.length);
+      if (t[0] && cst.backgroundColor && (!t[0].Style?.BackgroundColor || t[0].Style.BackgroundColor === 'Transparent')) (t[0].Style ||= {}).BackgroundColor = cst.backgroundColor;
+      return t[0];
+    };
+    const axis = (which) => {
+      const view = ext(e, which, 'CrosstabView')[0];
+      const lvs = ext(view, 'views', 'DimensionView').flatMap(d => ext(d, 'levels', 'LevelView'));
+      const grand = ext(view, 'grandTotal')[0];
+      return lvs.map((lv, i) => {
+        const key = prop(lv, 'level') || '';
+        let k;
+        try { k = '=' + levelVb(key); } catch (er) { if (!(er instanceof Untranslatable)) throw er; notes.push(`the level "${key}" uses ${er.message}, so its rows are not split by it (one group).`); }
+        const sortDir = prop(lv, 'sortType') || listProp(lv, 'sort').map(x => prop(x, 'direction'))[0];
+        const sub = i > 0 ? ext(lvs[i - 1], 'aggregationHeader')[0] : null;
+        const tc = i === 0 ? grand : sub;
+        const loc = i === 0 ? prop(view, 'grandTotalLocation') : prop(lvs[i - 1], 'aggregationHeaderLocation');
+        return { name: key.replace(/[^\w]/g, '_'), key: k, desc: /desc/i.test(sortDir || ''), size: pt(len(prop(lv, which === 'rows' ? 'width' : 'height'), 0, which === 'rows' ? 80 : 20) || (which === 'rows' ? 80 : 20)),
+          header: text(ext(lv, 'member')[0]), total: tc ? (loc === 'before' ? 'before' : 'after') : null, totalHeader: tc ? text(tc) : undefined };
+      });
+    };
+    const rows = axis('rows'), columns = axis('columns');
+    const mviews = ext(e, 'measures', 'MeasureView');
+    const values = mviews.map(mv => ({ label: prop(mv, 'measure') || 'Value', cell: text(ext(mv, 'detail')[0]), total: text(ext(mv, 'aggregations')[0]) }));
+    if (!values.length || !values.some(v => v.cell)) { it.Type = 'crosstab'; it.Height = pt(len(prop(e, 'height'), 0, 0)); it.__drop = 'the crosstab has no measure, so it was left out.'; return { it, h: 0 }; }
+    for (const v of values) if (!v.cell) v.cell = { Type: 'textbox', Value: '' };
+    if (extra) notes.push(`${extra} other items in its cells are not shown: a ReportWright matrix shows group headers, values and totals.`);
+    if (ext(e, 'measures', 'ComputedMeasureView').length) notes.push('its computed measures are left out.');
+    const w = len(prop(e, 'width'), W, W) || W;
+    const tx = crosstabTablix({
+      name: it.Name, dataSet: ds, repeatHeaders: prop(e, 'repeatColumnHeader') !== 'false',
+      rowHeight: pt(20), columnWidth: pt(72), rows, columns,
+      values: values.map(v => ({ label: v.label })),
+      cell: (r, cl, k) => ((r || cl) && values[k].total) || values[k].cell,
+      corner: text(ext(e, 'header')[0]),
+    });
+    Object.assign(it, tx, { Width: pt(w) });
+    const h = 20 * (columns.length + 3);
+    it.Height = pt(h);
+    return { it, h };
   }
 
   /** a cell's items: one text item as the cell's own (a table cell is text), else a rectangle that stacks them */

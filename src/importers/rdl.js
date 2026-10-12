@@ -239,7 +239,7 @@ function toRdlx(root, notes, year, resolve) {
         case 'Tablix': return tablix(e);
         case 'Chart': return year >= 2008 ? chart(e) : { Type: 'Chart (RDL 2005)', Name: e.attrs.Name };
         case 'GaugePanel': return gauge(e);
-        case 'Map': return { Type: 'Map', Name: e.attrs.Name }; // dropped with a note: SSRS maps (spatial layers) have no equivalent
+        case 'Map': return map(e);
         default: return { Type: e.name, Name: e.attrs.Name }; // the ActiveReports importer drops it with a note
       }
     } finally { itemNotes = saved; itemInfo = savedInfo; if (isRegion) regions--; }
@@ -486,6 +486,126 @@ function toRdlx(root, notes, year, resolve) {
       itemNotes = notesOf;
       return { ...base, Body: { Columns: cols.map(w => ({ Width: w })), Rows }, Corner, RowHierarchy: rowH, ColumnHierarchy: colH };
     } finally { region = saved; }
+  }
+
+  /* ---------------------------------------------------------------- maps */
+
+  /**
+   * An SSRS map → { Type: 'ssrsmap' } for rdlx.js: the first polygon layer colours its shapes by the analytical data (the
+   * colour range rule), embedded shapes (the map gallery's) become GeoJSON, embedded lines are added to it, a point
+   * layer over a data set keeps its data set. Shapefiles and SQL spatial data cannot be read here: a note asks for GeoJSON.
+   */
+  function map(e) {
+    const it = { ...common(e, 'ssrsmap') }; // not 'map': ActiveReports' own map type stays unsupported
+    const notes = it.__notes;
+    const layers = kids(kid(e, 'MapLayers'));
+    const features = [];
+    const embedded = (layer, geom) => {
+      for (const sh of kids(kid(layer, geom === 'line' ? 'MapLines' : geom === 'point' ? 'MapPoints' : 'MapPolygons'))) {
+        const g = sqlGeography(raw(sh, 'VectorData'));
+        if (!g) { notes.push(`a shape of the layer "${layer.attrs.Name}" could not be read, so it is left out.`); continue; }
+        features.push({ type: 'Feature', properties: Object.fromEntries(list(sh, 'MapFields', 'MapField').map(f => [raw(f, 'Name'), raw(f, 'Value')])), geometry: g });
+      }
+    };
+    const source = (layer) => {
+      const sd = kids(layer).find(x => /^MapSpatialData|^MapShapefile$/.test(x.name));
+      if (!sd) return;
+      if (sd.name === 'MapShapefile') notes.push(`the layer "${layer.attrs.Name}" reads the ESRI shapefile ${raw(sd, 'Source') || ''}, which cannot be converted here: convert it to GeoJSON (e.g. with mapshaper or ogr2ogr) and paste it into the map's Shapes.`);
+      else if (sd.name === 'MapSpatialDataSet') {
+        const ds = raw(sd, 'DataSetName'), f = raw(sd, 'SpatialField');
+        if (!it.ShapeDataSet) { it.ShapeDataSet = ds; it.Geometry = `=Fields!${f}.Value`; }
+        notes.push(`the layer "${layer.attrs.Name}" reads SQL Server spatial data (${ds}.${f}): make that query return the shape as GeoJSON (e.g. ${f}.STAsText() converted to GeoJSON, or a GeoJSON column), or supply GeoJSON text.`);
+      } else if (sd.name === 'MapSpatialDataRegion') notes.push(`the layer "${layer.attrs.Name}" reads its shapes from another data region; supply GeoJSON for it.`);
+      return sd;
+    };
+    let polygons = false;
+    for (const layer of layers) {
+      if (layer.name === 'MapTileLayer') { notes.push(`the Bing Maps tile background (layer "${layer.attrs.Name}") is left out.`); continue; }
+      const sd = source(layer);
+      const geom = layer.name === 'MapPolygonLayer' ? 'polygon' : layer.name === 'MapLineLayer' ? 'line' : layer.name === 'MapPointLayer' ? 'point' : null;
+      if (!geom) continue;
+      if (sd?.name === 'MapSpatialDataEmbedded') embedded(layer, geom);
+      if (geom === 'polygon' && !polygons) {
+        polygons = true;
+        const pair = list(layer, 'MapBindingFieldPairs', 'MapBindingFieldPair')[0];
+        if (pair) { it.ShapeKey = `=Fields!${raw(pair, 'FieldName')}.Value`; it.ValueKey = val(pair, 'BindingExpression'); }
+        it.ValueDataSet = raw(layer, 'DataSetName');
+        const rule = kid(kid(layer, 'MapPolygonRules'), 'MapColorRule') || kids(kid(layer, 'MapPolygonRules'))[0];
+        if (rule) {
+          it.Value = val(rule, 'DataValue');
+          if (rule.name === 'MapColorRangeRule') { it.ColorLow = raw(rule, 'StartColor'); it.ColorHigh = raw(rule, 'EndColor'); if (raw(rule, 'MiddleColor')) notes.push('its middle colour is left out: ReportWright shades from the start colour to the end colour.'); }
+          else if (rule.name === 'MapColorPaletteRule' || rule.name === 'MapCustomColorRule') notes.push('its shapes are coloured from a palette in SSRS; here they shade from light to dark blue by value.');
+          const dist = raw(rule, 'DistributionType'), n = Number(raw(rule, 'BucketCount'));
+          if (dist && dist !== 'Custom' && n >= 2) { it.ColorScale = 'classes'; it.Classes = Math.min(9, n); }
+          if (dist === 'Custom') notes.push('its custom buckets are read as equal classes.');
+          const fm = /\{([^}]+)\}/.exec(raw(rule, 'LegendText') || '');
+          if (fm) it.Format = fm[1];
+          it.Legend = raw(rule, 'LegendName') || kids(kid(e, 'MapLegends')).length ? 'bottom' : 'none';
+        }
+        const tpl = kid(layer, 'MapPolygonTemplate');
+        const act = tpl && action(tpl);
+        if (act) it.RegionAction = act;
+      } else if (geom === 'line') {
+        const tpl = kid(layer, 'MapLineTemplate');
+        const c = raw(tpl, 'BorderColor') || raw(kid(tpl, 'Style'), 'Color');
+        if (c) it.LineColor = c;
+        const w = raw(tpl, 'Width');
+        if (w) it.LineWidth = w;
+      } else if (geom === 'point') {
+        if (sd?.name === 'MapSpatialDataEmbedded') notes.push(`the embedded points of the layer "${layer.attrs.Name}" are left out: ReportWright places points from a data set's latitude and longitude.`);
+        else { it.PointDataSet = raw(layer, 'DataSetName') || it.ShapeDataSet; notes.push(`the point layer "${layer.attrs.Name}" needs latitude and longitude: set the map's Points latitude and longitude to the data set's fields.`); }
+        const c = raw(kid(kid(layer, 'MapPointTemplate'), 'Style'), 'Color') || raw(kid(layer, 'MapPointTemplate'), 'Color');
+        if (c) it.PointColor = c;
+      }
+      if (kid(layer, 'MapPolygonRules')?.children.length > 1 || kid(layer, 'MapCenterPointRules')) notes.push(`some rules of the layer "${layer.attrs.Name}" (sizes, markers, centre points) are left out.`);
+    }
+    if (features.length) it.GeoJson = JSON.stringify({ type: 'FeatureCollection', features });
+    else if (!it.ShapeDataSet) notes.push('its shapes could not be read from the file: paste GeoJSON into the map\'s Shapes (Properties → Shapes: GeoJSON text).');
+    if (!layers.length) notes.push('it has no layers.');
+    return it;
+  }
+
+  /**
+   * SQL Server's geography serialization (MS-SSCLRT, versions 1 and 2), as the map gallery embeds it in VectorData,
+   * → a GeoJSON geometry; null when it is not that.
+   */
+  function sqlGeography(b64) {
+    let bin;
+    try { bin = atob(String(b64 || '').replace(/\s+/g, '')); } catch { return null; }
+    if (bin.length < 6 || bin.length > 16e6) return null;
+    const buf = new ArrayBuffer(bin.length), u8 = new Uint8Array(buf);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    const dv = new DataView(buf);
+    let o = 4; // SRID
+    const ver = dv.getUint8(o++), flags = dv.getUint8(o++);
+    if (ver !== 1 && ver !== 2) return null;
+    const pts = [];
+    const need = (n) => { if (o + n > bin.length) throw new RangeError('short'); };
+    try {
+      const point = () => { need(16); const lat = dv.getFloat64(o, true), lon = dv.getFloat64(o + 8, true); o += 16; return [lon, lat]; };
+      if (flags & 8) return { type: 'Point', coordinates: point() };
+      if (flags & 16) return { type: 'LineString', coordinates: [point(), point()] };
+      need(4); const np = dv.getUint32(o, true); o += 4;
+      if (np > 2e6) return null;
+      for (let i = 0; i < np; i++) pts.push(point());
+      if (flags & 1) o += 8 * np; // Z
+      if (flags & 2) o += 8 * np; // M
+      need(4); const nf = dv.getUint32(o, true); o += 4;
+      if (nf > np) return null;
+      const figs = [];
+      for (let i = 0; i < nf; i++) { need(5); figs.push(dv.getInt32(o + 1, true)); o += 5; }
+      need(4); const ns = dv.getUint32(o, true); o += 4;
+      if (ns > nf + 1e5) return null;
+      const shapes = [];
+      for (let i = 0; i < ns; i++) { need(9); shapes.push({ fig: dv.getInt32(o + 4, true), type: dv.getUint8(o + 8) }); o += 9; }
+      const ring = (f) => pts.slice(figs[f], f + 1 < figs.length ? figs[f + 1] : pts.length);
+      const figsOf = (k) => { const s0 = shapes[k].fig; if (s0 < 0) return []; const next = shapes.slice(k + 1).find(x => x.fig >= 0)?.fig ?? figs.length; return Array.from({ length: next - s0 }, (_, j) => s0 + j); };
+      const polys = [], lines = [];
+      shapes.forEach((sh, k) => { if (sh.type === 3) polys.push(figsOf(k).map(ring)); else if (sh.type === 2) lines.push(...figsOf(k).map(ring)); });
+      if (polys.length) return polys.length === 1 ? { type: 'Polygon', coordinates: polys[0] } : { type: 'MultiPolygon', coordinates: polys };
+      if (lines.length) return lines.length === 1 ? { type: 'LineString', coordinates: lines[0] } : { type: 'MultiLineString', coordinates: lines };
+      return null;
+    } catch { return null; }
   }
 
   /* ---------------------------------------------------------------- charts and gauges */

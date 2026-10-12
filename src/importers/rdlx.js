@@ -852,6 +852,7 @@ const CONVERTERS = {
   subreport: (ar, cx, ctx) => subreport(ar, cx, ctx),
   table: (ar, cx, ctx) => table(ar, cx, ctx),
   tablix: (ar, cx, ctx) => tablix(ar, cx, ctx),
+  ssrsmap: (ar, cx, ctx) => mapItem(ar, cx, ctx),
   list: (ar, cx, ctx) => list(ar, cx, ctx),
   bandedlist: (ar, cx, ctx) => bandedlist(ar, cx, ctx),
   chart: (ar, cx, ctx) => chart(ar, cx, ctx, false),
@@ -1572,6 +1573,70 @@ function regionData(ar, it, cx, t, rctx, ctx) {
   if (f.length) it.filters = f;
 }
 
+/* ================================================================ map (the .rdl front end) */
+
+/** An SSRS map, as rdl.js reads it, → a ReportWright map. */
+function mapItem(ar, cx, ctx) {
+  const t = track(cx, ar);
+  const it = common(ar, cx, t, ctx, 'map');
+  const e = (v, what) => (v == null || v === '' ? undefined : ex(cx, t, v, ctx, { what }));
+  it.geojson = typeof ar.GeoJson === 'string' ? ar.GeoJson : '';
+  if (ar.ShapeDataSet) { it.dataSet = ar.ShapeDataSet; it.geometry = e(ar.Geometry, 'the spatial field'); }
+  // the shape key reads the shape's own fields (GeoJSON properties), which no data set declares: written as is
+  if (ar.ShapeKey) { const k = translateExpression(ar.ShapeKey, {}); if (k.ok) it.shapeKey = k.value; }
+  if (ar.ValueDataSet) it.valueDataSet = ar.ValueDataSet;
+  const vk = e(ar.ValueKey, 'the key that joins the data to the shapes'), v = e(ar.Value, 'the value that colours the shapes');
+  if (vk !== undefined) it.valueKey = vk;
+  if (v !== undefined) it.value = v;
+  for (const [k, from] of [['colorLow', ar.ColorLow], ['colorHigh', ar.ColorHigh], ['lineColor', ar.LineColor], ['pointColor', ar.PointColor]]) { const c = hexColor(from); if (c) it[k] = c; }
+  if (ar.LineWidth != null) it.lineWidth = toPt(ar.LineWidth, 1);
+  if (ar.Format) it.valueFormat = ar.Format;
+  it.legend = ar.Legend === 'none' ? 'none' : 'bottom';
+  if (ar.ColorScale) { it.colorScale = ar.ColorScale; it.classes = ar.Classes; }
+  if (ar.PointDataSet) it.pointDataSet = ar.PointDataSet;
+  const a = ar.RegionAction && action(ar.RegionAction, cx, t, ctx);
+  if (a) it.regionAction = a;
+  return finish(cx, t, it);
+}
+
+/* ================================================================ crosstab → tablix (for the JasperReports and BIRT front ends) */
+
+/**
+ * A crosstab (JasperReports, BIRT) as a tablix with column groups, which tablixMatrix() maps to a ReportWright matrix.
+ * Each group (outer → inner) is a dynamic member; its total, when it has one, a static member beside it; several
+ * values are static members under the innermost column group. cell(rowTotal, columnTotal, k): the body item where the
+ * row leaf (null, or the name of the group whose total it is) meets the column leaf of value k.
+ * @param {{ name?: string, dataSet: string, repeatHeaders?: boolean, corner?: any, rowHeight: string, columnWidth: string,
+ *   rows: Group[], columns: Group[], values: { label: string }[], cell: (r: string|null, c: string|null, k: number) => any }} s
+ * @typedef {{ name: string, key?: string, desc?: boolean, size: string, header?: any, total?: 'before'|'after'|null, totalHeader?: any }} Group
+ */
+export function crosstabTablix(s) {
+  const text = (v) => ({ Type: 'textbox', Value: v });
+  const chain = (gs, leafKids) => {
+    let inner = leafKids;
+    for (let k = gs.length - 1; k >= 0; k--) {
+      const g = gs[k];
+      const dyn = { Group: { Name: g.name, GroupExpressions: [g.key || '=""'] }, SortExpressions: g.key ? [{ Value: g.key, Direction: g.desc ? 'Descending' : 'Ascending' }] : [],
+        Header: { Item: g.header || text(g.key || '') }, Children: inner };
+      const tot = g.total ? { Header: { Item: g.totalHeader || text('Total') }, Children: [], __total: g.name } : null;
+      inner = tot ? (g.total === 'before' ? [tot, dyn] : [dyn, tot]) : [dyn];
+    }
+    return inner;
+  };
+  const valueMembers = s.values.length > 1 ? s.values.map((v, k) => ({ Header: { Item: text(v.label) }, Children: [], __value: k })) : [];
+  const rowMs = chain(s.rows, []), colMs = chain(s.columns, valueMembers);
+  /** leaves in body order: the group whose total holds them (or null), the value index */
+  const leaves = (ms, out = [], tot = null) => { for (const m of ms) { const t = m.__total ?? tot; if (m.Children.length) leaves(m.Children, out, t); else out.push({ total: t, k: m.__value ?? 0 }); } return out; };
+  const rL = leaves(rowMs), cL = leaves(colMs);
+  return {
+    Type: 'tablix', Name: s.name, DataSetName: s.dataSet, Filters: [], SortExpressions: [], RepeatColumnHeaders: s.repeatHeaders === false ? 'false' : 'true',
+    Body: { Columns: cL.map(() => ({ Width: s.columnWidth })), Rows: rL.map(r => ({ Height: s.rowHeight, Cells: cL.map(c => ({ Item: s.cell(r.total, c.total, c.k) })) })) },
+    Corner: s.corner ? [[{ Item: s.corner }]] : [],
+    RowHierarchy: { LevelSizes: s.rows.map(g => g.size), Members: rowMs },
+    ColumnHierarchy: { LevelSizes: s.columns.map(g => g.size), Members: colMs },
+  };
+}
+
 /* ================================================================ tablix */
 
 const isDyn = (m) => !!(m && m.Group && (m.Group.GroupExpressions || []).length);
@@ -1839,7 +1904,7 @@ function tablixMatrix(ar, cx, ctx) {
     if (cLeaves.length > 1 && cm.Header?.Item) { used.add(cm.Header.Item); v.label = ex(cx, t, cm.Header.Item.Value ?? '', rctx, { text: true }); }
     return v;
   });
-  it.columnWidth = toPt(ar.Body.Columns[cIdx.get(cLeaves[0]) ?? 0], 64);
+  { const col = ar.Body.Columns[cIdx.get(cLeaves[0]) ?? 0]; it.columnWidth = toPt(col?.Width ?? col, 64); } // RDL: { Width }
   // total cells: ReportWright totals use the value formulas
   const totRows = rc.levels.filter(L => L.tm).map(L => rIdx.get(L.tm)), totCols = cc.levels.filter(L => L.tm).map(L => cIdx.get(L.tm));
   for (const r of [ri, ...totRows]) for (const c of [...cLeaves.map(m => cIdx.get(m)), ...totCols]) {
