@@ -75,6 +75,9 @@ describe('batch output is shared', () => {
     process.env.PW_STORAGE = `sqlite:${path.join(dir, 'jobs.db')}`;
     process.env.PW_SESSION_SECRET = 'l'.repeat(40);
     process.env.PW_BASE_URL = 'https://pw.example';
+    // renders on this thread: a render worker takes its cwd (the fonts folder) from when it boots, and this test changes
+    // cwd below, so a worker booted after that would look for public/ in the other folder (a race, not the product)
+    process.env.PW_RENDER_WORKERS = '0';
     try {
       const jobs = await import('../../src/server/jobs.js');
       const job = await jobs.createBatch({ template: def, items: [1, 2].map(n => ({ parameters: { n: String(n) } })), format: 'json' }, null);
@@ -106,6 +109,6 @@ describe('batch output is shared', () => {
         await deleteReport('linked');
         expect((await get(j2.id, l2.search.slice(1))).status).toBe(403);
       } finally { process.chdir(dir); fs.rmSync(other, { recursive: true, force: true }); }
-    } finally { delete process.env.PW_STORAGE; }
+    } finally { delete process.env.PW_STORAGE; delete process.env.PW_RENDER_WORKERS; }
   });
 });
