@@ -37,17 +37,20 @@ export async function probeOracle(conn, oracledb) {
   // a positive list: SELECT or READ on tables and views, nothing else, granted to the user, its roles or PUBLIC; PUBLIC's
   // EXECUTE on Oracle's own packages is the install default (the risky ones are checked next; the statement check lets
   // no package be called at all); READ on a DIRECTORY is a file read (BFILENAME), so it counts
+  // a row is a grant this login must not have, unless it is one of the allowed kinds below (NOT of their OR)
   const grants = await q(`SELECT privilege || ' ON ' || table_schema || '.' || table_name || ' TO ' || grantee AS p FROM all_tab_privs
     WHERE grantee IN (SELECT role FROM session_roles UNION ALL SELECT USER FROM dual UNION ALL SELECT 'PUBLIC' FROM dual)
-      AND (grantable = 'YES' OR NOT (
-        (privilege IN ('SELECT', 'READ') AND NVL(type, 'TABLE') <> 'DIRECTORY')
-        -- what PUBLIC holds on Oracle's own objects is the install default (EXECUTE on packages, and some dictionary
-        -- tables grant PUBLIC DELETE/INSERT, e.g. SYS.MV_CAPABILITIES_TABLE$); a plain CREATE SESSION login must pass.
-        -- The risky packages are checked below; PUBLIC on a user's own object or a DIRECTORY is still refused
-        OR (grantee = 'PUBLIC' AND NVL(type, 'PACKAGE') <> 'DIRECTORY'
+      AND NOT (
+        -- what PUBLIC holds on Oracle's own objects is the install default, grantable or not (EXECUTE on packages, and
+        -- some dictionary tables grant PUBLIC DELETE/INSERT, e.g. SYS.MV_CAPABILITIES_TABLE$; SYS grants are GRANTABLE):
+        -- a plain CREATE SESSION login must pass. The risky packages are checked below; PUBLIC on a user's own object,
+        -- or on a DIRECTORY, is still refused
+        (grantee = 'PUBLIC' AND NVL(type, 'PACKAGE') <> 'DIRECTORY'
           AND table_schema IN (SELECT username FROM all_users WHERE oracle_maintained = 'Y'))
+        -- a SELECT or READ this login was given, that it cannot pass on (not a directory: READ on one is a file read)
+        OR (privilege IN ('SELECT', 'READ') AND grantable <> 'YES' AND NVL(type, 'TABLE') <> 'DIRECTORY')
         -- 12c+ grants INHERIT PRIVILEGES on each new user to PUBLIC: it lets others' invoker-rights code use this user's rights
-        OR (privilege = 'INHERIT PRIVILEGES' AND table_name = USER)))
+        OR (privilege = 'INHERIT PRIVILEGES' AND table_name = USER AND grantable <> 'YES'))
       AND ROWNUM <= 5`);
   if (grants.length) return `granted ${grants.map(r => r.P).join(', ')}`;
   const risky = await q(`SELECT table_name AS p FROM all_tab_privs WHERE grantee = 'PUBLIC' AND privilege = 'EXECUTE' AND table_name IN (${RISKY.map(x => `'${x}'`).join(', ')})`);

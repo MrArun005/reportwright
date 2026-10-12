@@ -291,14 +291,14 @@ describe('Snowflake (mocked snowflake-sdk, not live-tested)', () => {
 });
 
 /** A BigQuery client: the dry run says `type` and `bytes`; the job pages through `rows`. */
-function bigqueryMock({ type = 'SELECT', bytes = 1000, rows = [] } = {}) {
+function bigqueryMock({ type = 'SELECT', bytes = 1000, rows = [], noBytes = false } = {}) {
   const log = { jobs: [], cancelled: 0 };
   mocks.bigquery = {
     make: (cfg) => ({
       cfg,
       async createQueryJob(o) {
         log.jobs.push(o);
-        if (o.dryRun) return [{ metadata: { statistics: { totalBytesProcessed: String(bytes), query: { statementType: type } } } }];
+        if (o.dryRun) return [{ metadata: { statistics: { ...(noBytes ? {} : { totalBytesProcessed: String(bytes) }), query: { statementType: type } } } }];
         return [{
           cancel: async () => { log.cancelled++; },
           async getQueryResults({ pageToken, maxResults }) { const i = Number(pageToken || 0); const next = i + maxResults < rows.length ? { pageToken: String(i + maxResults) } : null; return [rows.slice(i, i + maxResults), next]; },
@@ -324,6 +324,14 @@ describe('BigQuery (mocked @google-cloud/bigquery, not live-tested)', () => {
     log = bigqueryMock({ bytes: 20e9 });
     await expect(runSql({ connection: env('bq', 'bigquery://proj'), query: 'select 1 as a' }, {})).rejects.toThrow(/would read 20 GB/);
     expect(log.jobs).toHaveLength(1);
+  });
+  it('a dry run with no byte count: refused on real BigQuery, run on an emulator endpoint (the emulator reports none)', async () => {
+    let log = bigqueryMock({ noBytes: true });
+    await expect(runSql({ connection: env('bq', 'bigquery://proj'), query: 'select 1 as a' }, {})).rejects.toThrow(/did not say how much/);
+    expect(log.jobs).toHaveLength(1);
+    log = bigqueryMock({ noBytes: true });
+    expect(await runSql({ connection: env('bq', 'bigquery://proj?endpoint=http://127.0.0.1:9050'), query: 'select 1 as a' }, {})).toEqual([]);
+    expect(log.jobs).toHaveLength(2);
   });
   it('a slow first page: 504 on time, and the job is cancelled', async () => {
     const log = bigqueryMock();

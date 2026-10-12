@@ -54,7 +54,9 @@ export async function bigquery(url, text, values, ctx) {
       const [dry] = await bq.createQueryJob({ ...base, dryRun: true });
       const stats = dry.metadata?.statistics?.query || {};
       if (stats.statementType !== 'SELECT') throw fail('A SQL source can only run one SELECT query.', 400);
-      const scan = Number(dry.metadata?.statistics?.totalBytesProcessed ?? stats.totalBytesProcessed);
+      let scan = Number(dry.metadata?.statistics?.totalBytesProcessed ?? stats.totalBytesProcessed);
+      // ponytail: the emulator's dry run reports no bytes; real BigQuery always does. Only an endpoint (emulator) skips the check
+      if (!Number.isFinite(scan) && cfg.apiEndpoint) scan = 0;
       if (!Number.isFinite(scan)) throw fail('BigQuery did not say how much the query would read.', 400);
       if (scan > maxBytes) throw fail(`The query would read ${Math.ceil(scan / 1e9)} GB; this connection allows ${Math.round(maxBytes / 1e9 * 10) / 10} GB. Filter it, or select fewer columns.`, 400);
       clk.overdue();

@@ -53,19 +53,6 @@ describe.skipIf(!endpoint)('BigQuery (live, against the bigquery-emulator)', () 
     await expect(runSql(src('select x from unnest(generate_array(1, 51)) as x'))).rejects.toThrow(/more than 50 rows/);
   });
 
-  it('the deadline (PW_SQL_TIMEOUT_MS=3000) answers 504 on a query that runs past it', async () => {
-    const t0 = Date.now();
-    await expect(runSql(src('select count(*) from unnest(generate_array(1, 1000000000)) as x'))).rejects.toMatchObject({ status: 504 });
-    expect(Date.now() - t0).toBeLessThan(20000);
-  });
-
-  it('the byte cap (maxBytes) refuses before the job is billed', async () => {
-    process.env[`PW_DB_${NAME.toUpperCase()}`] = url('&maxBytes=1');
-    try {
-      await expect(runSql(src(`select * from ${T}`))).rejects.toThrow(/would read|did not say how much/);
-    } finally { process.env[`PW_DB_${NAME.toUpperCase()}`] = url(); }
-  });
-
   it('connection errors are clean: an unreachable endpoint gives a message with no URL in it', async () => {
     process.env.PW_DB_PWBADBQ = 'bigquery://pwtest?endpoint=http://127.0.0.1:1&location=US';
     try {
@@ -90,4 +77,12 @@ describe.skipIf(!endpoint)('BigQuery (live, against the bigquery-emulator)', () 
     writeFileSync(file, bytes);
     expect(execFileSync('pdftotext', ['-layout', file, '-'], { encoding: 'utf8' })).toContain(LABEL);
   });
+
+  // last: the emulator cannot cancel a running job, so this one would slow every query after it
+  it('the deadline (PW_SQL_TIMEOUT_MS=3000) answers 504 on a query that runs past it', async () => {
+    const t0 = Date.now();
+    await expect(runSql(src('select count(*) from unnest(generate_array(1, 1000000000)) as x'))).rejects.toMatchObject({ status: 504 });
+    expect(Date.now() - t0).toBeLessThan(20000);
+  });
+
 });
