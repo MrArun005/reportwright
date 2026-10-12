@@ -31,7 +31,8 @@
     "scan:packages": "node scripts/scan-packages.mjs",
     "perf": "node scripts/perf.mjs",
     "build:site": "node scripts/build-site.mjs",
-    "format:check": "node scripts/format-check.mjs"
+    "format:check": "node scripts/format-check.mjs",
+    "qa": "node scripts/qa.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
