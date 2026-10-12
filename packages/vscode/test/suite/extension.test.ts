@@ -7,6 +7,9 @@ import * as vscode from 'vscode';
 const EXT_ID = 'reportwright.reportwright-vscode';
 const ext = vscode.extensions.getExtension(EXT_ID)!;
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rw-vscode-'));
+// the repository's own report fixtures (the extension lives in packages/vscode)
+const fixtures = path.resolve(ext?.extensionPath ?? '.', '..', '..', 'tests', 'fixtures');
+let api: { testing: { previewStatus: (uri: vscode.Uri) => { viewerReady: boolean; pages?: number; errors: string[]; cspViolations: string[] } | undefined } };
 
 /** Polls until fn returns a truthy value (diagnostics and files appear asynchronously). */
 async function waitFor<T>(fn: () => T | undefined | false, what: string, ms = 20_000): Promise<T> {
@@ -22,7 +25,7 @@ async function waitFor<T>(fn: () => T | undefined | false, what: string, ms = 20
 suite('ReportWright extension', () => {
   suiteSetup(async () => {
     assert.ok(ext, `${EXT_ID} is installed in the test host`);
-    await ext.activate();
+    api = (await ext.activate()) as typeof api;
   });
 
   test('associates *.pw.json with the bundled report schema', async () => {
@@ -60,5 +63,39 @@ suite('ReportWright extension', () => {
     const pdf = path.join(dir, 'ok.pdf');
     assert.ok(fs.existsSync(pdf), 'ok.pdf was written');
     assert.strictEqual(fs.readFileSync(pdf).subarray(0, 5).toString('latin1'), '%PDF-', 'a PDF file');
+  });
+
+  test('imports an SSRS .rdl file to .pw.json beside it', async () => {
+    const src = path.join(fixtures, 'rdl', 'kitchen-sink.rdl');
+    const file = path.join(dir, 'kitchen-sink.rdl');
+    fs.copyFileSync(src, file);
+    await vscode.commands.executeCommand('reportwright.importReport', vscode.Uri.file(file));
+    const out = JSON.parse(fs.readFileSync(path.join(dir, 'kitchen-sink.pw.json'), 'utf8'));
+    assert.ok(out.sections?.body, 'the imported report has a body section');
+  });
+
+  test('imports an ActiveReports .rdlx-json file to .pw.json beside it', async () => {
+    const file = path.join(dir, 'invoice.rdlx-json');
+    fs.copyFileSync(path.join(fixtures, 'rdlx', 'invoice.rdlx-json'), file);
+    await vscode.commands.executeCommand('reportwright.importReport', vscode.Uri.file(file));
+    const out = JSON.parse(fs.readFileSync(path.join(dir, 'invoice.pw.json'), 'utf8'));
+    assert.ok(out.sections?.body, 'the imported report has a body section');
+  });
+
+  test('the preview mounts the viewer, which reports ready, with no CSP violation', async function () {
+    this.timeout(60_000);
+    const { blankReport } = require(path.join(ext.extensionPath, 'dist', 'engine.js'));
+    const file = path.join(dir, 'preview.pw.json');
+    fs.writeFileSync(file, JSON.stringify(blankReport(), null, 2));
+    const uri = vscode.Uri.file(file);
+    await vscode.workspace.openTextDocument(uri);
+    await vscode.commands.executeCommand('reportwright.openPreview', uri);
+    const st = await waitFor(() => {
+      const s = api.testing.previewStatus(uri);
+      return s && (s.viewerReady || s.errors.length || s.cspViolations.length) ? s : undefined;
+    }, 'the viewer to report ready', 50_000);
+    assert.deepStrictEqual(st.errors, [], 'no viewer error');
+    assert.deepStrictEqual(st.cspViolations, [], 'no CSP violation in the webview');
+    assert.ok(st.viewerReady, 'the viewer reported ready');
   });
 });

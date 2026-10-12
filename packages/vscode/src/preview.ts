@@ -47,22 +47,44 @@ export function previewHtml(p: PreviewPage): string {
   var vscode = acquireVsCodeApi();
   var FONTS = ${JSON.stringify(p.fontsUrl)};
   var host = document.getElementById('host');
-  function notice(text) { host.replaceChildren(); var n = document.createElement('div'); n.id = 'notice'; n.textContent = text; host.appendChild(n); }
+  var handle = null;   // one viewer for the page's life: a change updates it, a data change remounts it
+  var dataWas = false;
+  // a CSP violation is reported to the extension (the webview's console is not visible to it)
+  window.addEventListener('securitypolicyviolation', function (e) {
+    vscode.postMessage({ type: 'csp-violation', directive: e.violatedDirective, uri: e.blockedURI });
+  });
+  function unmount() { if (handle) { try { handle.unmount(); } catch (e) { /* already gone */ } handle = null; } }
+  function notice(text) {
+    unmount();
+    host.replaceChildren();
+    var n = document.createElement('div'); n.id = 'notice'; n.textContent = text; host.appendChild(n);
+  }
+  function show(m) {
+    if (handle && !m.data && !dataWas) {
+      Promise.resolve(handle.setDefinition(m.definition)).catch(function (e) { notice(String((e && e.message) || e)); });
+      return;
+    }
+    unmount();
+    host.replaceChildren();
+    var target = document.createElement('div');
+    target.style.height = '100%';
+    host.appendChild(target);
+    dataWas = !!m.data;
+    try {
+      handle = window.ReportWright.mountViewer(target, {
+        definition: m.definition, data: m.data || undefined, fontsUrl: FONTS, server: m.server || undefined,
+        title: m.title || undefined, height: '100%', showWarnings: true, lang: 'en'
+      });
+      handle.on('ready', function (d) { vscode.postMessage({ type: 'viewer-ready', pages: d && d.pages }); });
+      handle.on('error', function (d) { vscode.postMessage({ type: 'viewer-error', message: d && d.message }); });
+    } catch (e) { notice(String((e && e.message) || e)); }
+  }
   window.addEventListener('message', function (ev) {
     var m = ev.data || {};
     if (m.type === 'error') return notice(m.message);
     if (m.type !== 'render') return;
     if (!window.ReportWright || !window.ReportWright.mountViewer) return notice('The viewer did not load.');
-    host.replaceChildren();
-    var target = document.createElement('div');
-    target.style.height = '100%';
-    host.appendChild(target);
-    try {
-      Promise.resolve(window.ReportWright.mountViewer(target, {
-        definition: m.definition, data: m.data || undefined, fontsUrl: FONTS, server: m.server || undefined,
-        title: m.title || undefined, height: '100%', showWarnings: true, lang: 'en'
-      })).catch(function (e) { notice(String((e && e.message) || e)); });
-    } catch (e) { notice(String((e && e.message) || e)); }
+    show(m);
   });
   vscode.postMessage({ type: 'ready' });
 })();

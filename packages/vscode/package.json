@@ -8,29 +8,94 @@
   "private": false,
   "author": "Arun Mallikarjun",
   "homepage": "https://github.com/MrArun005/reportwright/tree/main/packages/vscode#readme",
-  "repository": { "type": "git", "url": "git+https://github.com/MrArun005/reportwright.git", "directory": "packages/vscode" },
-  "bugs": { "url": "https://github.com/MrArun005/reportwright/issues" },
-  "keywords": ["reportwright", "report", "reporting", "pdf", "excel", "ssrs", "jasperreports", "birt"],
-  "categories": ["Other", "Snippets"],
-  "engines": { "vscode": "^1.90.0" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MrArun005/reportwright.git",
+    "directory": "packages/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/MrArun005/reportwright/issues"
+  },
+  "keywords": [
+    "reportwright",
+    "report",
+    "reporting",
+    "pdf",
+    "excel",
+    "ssrs",
+    "jasperreports",
+    "birt"
+  ],
+  "categories": [
+    "Other",
+    "Snippets"
+  ],
+  "engines": {
+    "vscode": "^1.90.0"
+  },
   "main": "./dist/extension.js",
-  "activationEvents": ["onLanguage:json"],
+  "activationEvents": [
+    "onLanguage:json"
+  ],
   "contributes": {
     "commands": [
-      { "command": "reportwright.openPreview", "title": "ReportWright: Open Preview", "icon": "$(preview)" },
-      { "command": "reportwright.validate", "title": "ReportWright: Validate Report" },
-      { "command": "reportwright.renderPdf", "title": "ReportWright: Render to PDF" },
-      { "command": "reportwright.renderXlsx", "title": "ReportWright: Render to Excel" },
-      { "command": "reportwright.renderDocx", "title": "ReportWright: Render to Word" },
-      { "command": "reportwright.renderHtml", "title": "ReportWright: Render to HTML" },
-      { "command": "reportwright.importReport", "title": "ReportWright: Import SSRS / JasperReports / BIRT File…" }
+      {
+        "command": "reportwright.openPreview",
+        "title": "ReportWright: Open Preview",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "reportwright.validate",
+        "title": "ReportWright: Validate Report"
+      },
+      {
+        "command": "reportwright.renderPdf",
+        "title": "ReportWright: Render to PDF"
+      },
+      {
+        "command": "reportwright.renderXlsx",
+        "title": "ReportWright: Render to Excel"
+      },
+      {
+        "command": "reportwright.renderDocx",
+        "title": "ReportWright: Render to Word"
+      },
+      {
+        "command": "reportwright.renderHtml",
+        "title": "ReportWright: Render to HTML"
+      },
+      {
+        "command": "reportwright.importReport",
+        "title": "ReportWright: Import SSRS / JasperReports / BIRT File\u2026"
+      }
     ],
     "menus": {
-      "editor/title": [{ "command": "reportwright.openPreview", "when": "resourceFilename =~ /\\.pw\\.json$/", "group": "navigation" }],
-      "commandPalette": [{ "command": "reportwright.openPreview", "when": "editorLangId == json" }]
+      "editor/title": [
+        {
+          "command": "reportwright.openPreview",
+          "when": "resourceFilename =~ /\\.pw\\.json$/",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "reportwright.openPreview",
+          "when": "editorLangId == json"
+        }
+      ]
     },
-    "jsonValidation": [{ "fileMatch": "*.pw.json", "url": "./dist/schemas/report.schema.json" }],
-    "snippets": [{ "language": "json", "path": "./dist/snippets/report.json" }],
+    "jsonValidation": [
+      {
+        "fileMatch": "*.pw.json",
+        "url": "./dist/schemas/report.schema.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "json",
+        "path": "./dist/snippets/report.json"
+      }
+    ],
     "configuration": {
       "title": "ReportWright",
       "properties": {
@@ -58,5 +123,6 @@
     "jsonc-parser": "^3.3.1",
     "mocha": "^10.8.2",
     "typescript": "^5.9.3"
-  }
+  },
+  "icon": "images/icon.png"
 }

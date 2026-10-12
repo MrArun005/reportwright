@@ -64,6 +64,8 @@ async function targetDocument(uri?: vscode.Uri): Promise<vscode.TextDocument | u
 
 // ---- preview ----
 const previews = new Map<string, vscode.WebviewPanel>();
+/** What the webview reported, per report: read by the tests (exports.testing.previewStatus). */
+const previewState = new Map<string, { viewerReady: boolean; pages?: number; errors: string[]; cspViolations: string[] }>();
 
 function openPreview(context: vscode.ExtensionContext, uri?: vscode.Uri) {
   void (async () => {
@@ -85,20 +87,29 @@ function openPreview(context: vscode.ExtensionContext, uri?: vscode.Uri) {
       fontsUrl: panel.webview.asWebviewUri(vscode.Uri.joinPath(dist, 'fonts')).toString() + '/',
       connectOrigin,
     });
+    const state = { viewerReady: false, errors: [] as string[], cspViolations: [] as string[] };
+    previewState.set(key, state);
     const send = async () => {
       const { def, error } = readReport(doc.getText());
       if (error) return panel.webview.postMessage({ type: 'error', message: error });
       const data = await readData(doc.uri.fsPath);
       void panel.webview.postMessage({ type: 'render', definition: def, data, title: def?.name, server: baseUrl() || undefined });
     };
-    panel.webview.onDidReceiveMessage((m) => { if (m?.type === 'ready') void send(); });
+    panel.webview.onDidReceiveMessage((m) => {
+      switch (m?.type) {
+        case 'ready': return void send();
+        case 'viewer-ready': state.viewerReady = true; state.pages = m.pages; return;
+        case 'viewer-error': state.errors.push(String(m.message)); return;
+        case 'csp-violation': state.cspViolations.push(`${m.directive}: ${m.uri}`); return;
+      }
+    });
     const timerKey = `preview:${key}`;
     const onChange = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() !== key) return;
       clearTimeout(timers.get(timerKey));
       timers.set(timerKey, setTimeout(() => void send(), 400));
     });
-    panel.onDidDispose(() => { onChange.dispose(); clearTimeout(timers.get(timerKey)); previews.delete(key); });
+    panel.onDidDispose(() => { onChange.dispose(); clearTimeout(timers.get(timerKey)); previews.delete(key); previewState.delete(key); });
     previews.set(key, panel);
   })();
 }
@@ -126,16 +137,17 @@ async function renderCommand(format: 'pdf' | 'xlsx' | 'docx' | 'html', uri?: vsc
   });
 }
 
-async function importCommand() {
-  const picked = await vscode.window.showOpenDialog({
-    canSelectMany: false, title: 'Import an SSRS, JasperReports or BIRT report',
-    filters: { 'Report files': ['rdl', 'rdlc', 'rds', 'jrxml', 'rptdesign'] },
-  });
-  const file = picked?.[0];
+/** Imports one report file (the picked one, or the given URI) to <name>.pw.json beside it. */
+async function importCommand(given?: vscode.Uri) {
+  const file = given ?? (await vscode.window.showOpenDialog({
+    canSelectMany: false, title: 'Import an SSRS, JasperReports, BIRT or ActiveReports report',
+    filters: { 'Report files': ['rdl', 'rdlc', 'rds', 'jrxml', 'rptdesign', 'rdlx-json'] },
+  }))?.[0];
   if (!file) return;
-  const target = path.join(path.dirname(file.fsPath), `${baseName(file.fsPath).replace(/\.(rdl|rdlc|rds|jrxml|rptdesign)$/i, '')}.pw.json`);
+  const activeReports = /\.rdlx-json$/i.test(file.fsPath);
+  const target = path.join(path.dirname(file.fsPath), `${path.basename(file.fsPath).replace(/\.(rdl|rdlc|rds|jrxml|rptdesign|rdlx-json)$/i, '')}.pw.json`);
   try {
-    const r = engine().importReport(await fs.readFile(file.fsPath), path.basename(file.fsPath).replace(/\.[^.]+$/, ''));
+    const r = engine().importReport(await fs.readFile(file.fsPath), path.basename(file.fsPath).replace(/\.[^.]+$/, '').replace(/\.rdlx$/i, ''), activeReports);
     output.clear();
     output.appendLine(`Import notes for ${path.basename(file.fsPath)}:`);
     r.warnings.forEach((w) => output.appendLine(`  ${w}`));
@@ -145,7 +157,7 @@ async function importCommand() {
     }
     let exists = false;
     try { await fs.access(target); exists = true; } catch { /* new file */ }
-    if (exists && (await vscode.window.showWarningMessage(`${path.basename(target)} exists. Replace it?`, { modal: true }, 'Replace')) !== 'Replace') return;
+    if (exists && !given && (await vscode.window.showWarningMessage(`${path.basename(target)} exists. Replace it?`, { modal: true }, 'Replace')) !== 'Replace') return;
     await fs.writeFile(target, JSON.stringify(r.definition, null, 2) + '\n');
     const doc = await vscode.workspace.openTextDocument(target);
     await vscode.window.showTextDocument(doc);
@@ -159,7 +171,9 @@ async function importCommand() {
   }
 }
 
-export function activate(context: vscode.ExtensionContext) {
+export function activate(context: vscode.ExtensionContext): { testing: { previewStatus: (uri: vscode.Uri) => unknown } } {
+  // exports: for the extension's own tests (the webview's reports are not visible to them otherwise)
+  const testing = { previewStatus: (uri: vscode.Uri) => previewState.get(uri.toString()) };
   output = vscode.window.createOutputChannel('ReportWright');
   context.subscriptions.push(output, diagnostics);
   const reg = (id: string, fn: (uri?: vscode.Uri) => unknown) => context.subscriptions.push(vscode.commands.registerCommand(id, fn));
@@ -176,7 +190,7 @@ export function activate(context: vscode.ExtensionContext) {
   reg('reportwright.renderXlsx', (uri?: vscode.Uri) => renderCommand('xlsx', uri));
   reg('reportwright.renderDocx', (uri?: vscode.Uri) => renderCommand('docx', uri));
   reg('reportwright.renderHtml', (uri?: vscode.Uri) => renderCommand('html', uri));
-  reg('reportwright.importReport', () => importCommand());
+  reg('reportwright.importReport', (uri?: vscode.Uri) => importCommand(uri));
 
   context.subscriptions.push(
     vscode.workspace.onDidOpenTextDocument(scheduleValidation),
@@ -185,6 +199,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onDidCloseTextDocument((doc) => diagnostics.delete(doc.uri)),
   );
   vscode.workspace.textDocuments.forEach(scheduleValidation);
+  return { testing };
 }
 
 export function deactivate() {

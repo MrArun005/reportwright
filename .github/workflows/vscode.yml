@@ -1,9 +1,9 @@
 name: VS Code extension
 on:
   push:
-    paths: ['packages/vscode/**', 'packages/engine/**', 'src/engine/**', 'src/exporters/**', 'src/importers/**', 'scripts/embed-options.mjs', 'public/**', '.github/workflows/vscode.yml']
+    paths: ['packages/vscode/**', 'packages/engine/**', 'src/engine/**', 'src/exporters/**', 'src/importers/**', 'tests/fixtures/**', 'scripts/embed-options.mjs', 'public/**', '.github/workflows/vscode.yml']
   pull_request:
-    paths: ['packages/vscode/**', 'packages/engine/**', 'src/engine/**', 'src/exporters/**', 'src/importers/**', 'scripts/embed-options.mjs', 'public/**', '.github/workflows/vscode.yml']
+    paths: ['packages/vscode/**', 'packages/engine/**', 'src/engine/**', 'src/exporters/**', 'src/importers/**', 'tests/fixtures/**', 'scripts/embed-options.mjs', 'public/**', '.github/workflows/vscode.yml']
   workflow_dispatch:
 jobs:
   extension:

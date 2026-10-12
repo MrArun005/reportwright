@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 // the engine's public entry (packages/engine/entry.js), and the importer the CLI's `pw import` uses
 import { render, validate, defaultFontStore, exportPdf, exportXlsx, exportDocx, exportHtml, createSubsetter, blankReport } from '../../engine/entry.js';
 import { importXmlReport, decodeXml } from '../../../src/importers/index.js';
+import { importRdlx } from '../../../src/importers/rdlx.js';
 
 export { validate, blankReport };
 export type Format = 'pdf' | 'xlsx' | 'docx' | 'html';
@@ -43,8 +44,12 @@ export async function renderFile(format: Format, def: any, data?: any, baseUrl?:
   return { bytes, warnings: [...(model.warnings || [])] };
 }
 
-/** An SSRS (.rdl/.rdlc/.rptdesign) or JasperReports (.jrxml) file as a ReportWright definition, with the import notes. */
-export function importReport(bytes: Uint8Array, name: string): { definition?: any; warnings: string[]; error?: string; stats?: any } {
-  const r: any = importXmlReport(decodeXml(bytes), { name });
+/** An SSRS (.rdl/.rdlc/.rds), JasperReports (.jrxml), BIRT (.rptdesign) or ActiveReports (.rdlx-json) file as a ReportWright definition, with the import notes. Same routes as src/cli/importBatch.js. */
+export function importReport(bytes: Uint8Array, name: string, activeReports = false): { definition?: any; warnings: string[]; error?: string; stats?: any } {
+  let r: any;
+  if (activeReports) {
+    try { r = importRdlx(JSON.parse(Buffer.from(bytes).toString('utf8').replace(/^\uFEFF/, '')), { name }); }
+    catch (e) { return { warnings: [], error: `The file is not valid JSON (${(e as Error).message}).` }; }
+  } else r = importXmlReport(decodeXml(bytes), { name });
   return { definition: r.error ? undefined : r.definition, warnings: r.warnings || [], error: r.error, stats: r.stats };
 }
