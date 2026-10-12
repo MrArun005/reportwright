@@ -38,7 +38,7 @@ jobs:
       layout: ${{ steps.plan.outputs.layout }}
       groups: ${{ steps.plan.outputs.groups }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Plan the language jobs
         id: plan
         env:
@@ -94,7 +94,7 @@ jobs:
           for k, v in refs.items():
               print(f'{k}={v}')
           EOF
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -112,7 +112,7 @@ jobs:
           esac
           python3 bench/deep/fixtures/make.py "$FX" --rows "$ROWS" --plain "$PLAIN" --fuzz "$FUZZ"
           du -sh "$FX"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ inputs.prefix }}fixtures
           path: /tmp/fx
@@ -133,8 +133,8 @@ jobs:
       RUNS: ${{ inputs.runs || '5' }}
       PUPPETEER_CACHE_DIR: /home/runner/.cache/puppeteer
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ inputs.prefix }}fixtures
           path: /tmp/fx
@@ -142,7 +142,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq qpdf mupdf-tools poppler-utils time >/dev/null
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
@@ -202,7 +202,7 @@ jobs:
           npm install --prefix bench/deep/ours --no-audit --no-fund "$SIDE"/tgz/*.tgz
           npm ls --prefix bench/deep/ours @reportwright/engine @reportwright/pdf || true
           (IFS=,; echo "BENCH_SOURCE=${SRC[*]}") >> "$GITHUB_ENV"
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: matrix.lang == 'js'
         with:
           path: /home/runner/.cache/puppeteer
@@ -211,7 +211,7 @@ jobs:
         if: matrix.lang == 'js'
         continue-on-error: true
         run: npm ci --prefix bench/deep/js --no-audit --no-fund
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         if: matrix.lang == 'python' || matrix.lang == 'cli'
         with:
           python-version: "3.12"
@@ -227,7 +227,7 @@ jobs:
         if: matrix.lang == 'cli'
         continue-on-error: true
         run: pip install -q -r bench/deep/cli/requirements.txt
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         if: matrix.lang == 'java'
         with:
           distribution: temurin
@@ -243,11 +243,11 @@ jobs:
           mvn -q -B -f bench/deep/java/pom.xml package
           mvn -q -B -f bench/deep/java/jasper/pom.xml package
           sh bench/deep/java/birt/build.sh
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         if: matrix.lang == 'dotnet'
         with:
           dotnet-version: 8.0.x
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: matrix.lang == 'dotnet'
         with:
           path: ~/.nuget/packages
@@ -259,7 +259,7 @@ jobs:
           sudo apt-get install -y -qq libgdiplus >/dev/null # FastReport's System.Drawing on Linux
           dotnet publish bench/deep/dotnet/Bench.csproj -c Release -o bench/deep/dotnet/out --nologo -v q
           dotnet publish bench/deep/dotnet/fastreport/FastReportBench.csproj -c Release -o bench/deep/dotnet/fastreport/out --nologo -v q
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         if: matrix.lang == 'go'
         with:
           go-version: "1.24"
@@ -269,7 +269,7 @@ jobs:
         continue-on-error: true
         working-directory: bench/deep/go
         run: go mod tidy && go build -o bench .
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: matrix.lang == 'rust'
         with:
           path: |
@@ -290,7 +290,7 @@ jobs:
           { echo "lang $LANG_ tier $TIER runs $RUNS"; date -u; lscpu | head -20; free -m; df -h /tmp; } | tee "results/$LANG_-runner.txt"
       - name: Benchmark
         run: python3 bench/deep/drive.py --lang "$LANG_" --tier "$TIER" --runs "$RUNS" --fixtures "$FX" --out "results/$LANG_.jsonl"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: ${{ inputs.prefix }}results-${{ matrix.lang }}
@@ -309,8 +309,8 @@ jobs:
       engine_src: ${{ steps.side.outputs.engine_src }}
       pdf_src: ${{ steps.side.outputs.pdf_src }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
@@ -319,11 +319,11 @@ jobs:
             bench/deep/js/package-lock.json
             bench/deep/ours/package-lock.json
             package-lock.json
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: /home/runner/.cache/puppeteer
           key: puppeteer-${{ hashFiles('bench/deep/js/package-lock.json') }}
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: "21"
@@ -331,18 +331,18 @@ jobs:
           cache-dependency-path: |
             bench/deep/java/pom.xml
             bench/deep/java/jasper/pom.xml
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: 8.0.x
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.nuget/packages
           key: nuget-${{ hashFiles('bench/deep/dotnet/Bench.csproj', 'bench/deep/dotnet/fastreport/FastReportBench.csproj') }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.24"
           cache-dependency-path: bench/deep/go/go.mod
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry
@@ -417,13 +417,13 @@ jobs:
             bench/deep/dotnet/out bench/deep/go/bench bench/deep/rust/target/release/bench
           ls -la /tmp/build.tar.zst
           if [ -d bench/deep/ours-branch ]; then tar -cf /tmp/ours-branch.tar --exclude=.bin bench/deep/ours-branch; fi # pure JS, for the Windows job
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.side.outcome == 'success'
         with:
           name: ours-branch
           path: /tmp/ours-branch.tar
           retention-days: 3
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ inputs.prefix }}build
           path: /tmp/build.tar.zst
@@ -447,12 +447,12 @@ jobs:
       BENCH_SRC_PDF: ${{ needs.build.outputs.pdf_src }}
       MEM_CAP_MB: "4000" # hard (cgroup MemoryMax when systemd-run allows it), well under the runner's 7.8 GB
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ inputs.prefix }}fixtures
           path: /tmp/fx
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ inputs.prefix }}build
           path: /tmp/build
@@ -465,10 +465,10 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq qpdf mupdf-tools poppler-utils time libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 libgdiplus >/dev/null
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -476,11 +476,11 @@ jobs:
             bench/deep/python/requirements.txt
             bench/deep/cli/requirements.txt
       - run: pip install -q -r bench/deep/python/requirements.txt -r bench/deep/cli/requirements.txt
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: "21"
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: 8.0.x
       - name: veraPDF (the CLI image) as a command
@@ -516,7 +516,7 @@ jobs:
         env:
           BENCH_SOURCE: ${{ needs.build.outputs.engine_src && format('engine {0}', needs.build.outputs.engine_src) }}${{ needs.build.outputs.pdf_src && format(',pdf {0}', needs.build.outputs.pdf_src) }}
         run: python3 bench/deep/drive.py --group "$G" ${ONLY:+--only "$ONLY"} --langs "${{ needs.fixtures.outputs.all_langs }}" --tier "$TIER" --runs "$RUNS" --fixtures "$FX" --out "results/$SLUG.jsonl" ${PRUNE:+--prune "$PRUNE"}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: ${{ inputs.prefix }}results-${{ env.SLUG }}
@@ -540,12 +540,12 @@ jobs:
       BENCH_SRC_PDF: ${{ needs.build.outputs.pdf_src }}
       MEM_CAP_MB: "4000"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ inputs.prefix }}fixtures
           path: ${{ runner.temp }}/fx
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         if: needs.build.outputs.engine_src != '' || needs.build.outputs.pdf_src != ''
         with:
           name: ours-branch
@@ -553,7 +553,7 @@ jobs:
       - name: ours from branch code (built on Linux; pure JS)
         if: needs.build.outputs.engine_src != '' || needs.build.outputs.pdf_src != ''
         run: tar -xf "$(cygpath -u '${{ runner.temp }}')/ob/ours-branch.tar"
-      - uses: msys2/setup-msys2@v2
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
         id: msys2
         with:
           msystem: UCRT64
@@ -570,10 +570,10 @@ jobs:
           export PATH="$MSYS_BIN:$PATH"
           for t in qpdf pdftotext mutool; do command -v $t; done
           qpdf --version | head -1; (pdftotext -v 2>&1 || true) | head -1; (mutool -v 2>&1 || true) | head -1 # both exit non-zero on -v
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: node contestants (npm) and pdf.js
@@ -601,7 +601,7 @@ jobs:
           { echo "windows tier $TIER runs $RUNS"; date -u; systeminfo | grep -E 'OS Name|OS Version|Processor|Total Physical Memory'; nproc; } | tee results-win/windows-runner.txt
       - name: Benchmark (ours and SSRS, the report job)
         run: PATH="$MSYS_BIN:$PATH" PYTHONUTF8=1 "$pythonLocation/python" bench/deep/drive.py --group create-engines --only report --langs ours,ssrs --tier "$TIER" --runs "$RUNS" --fixtures "${{ runner.temp }}/fx" --work "${{ runner.temp }}/work" --out results-win/windows.jsonl
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: ${{ inputs.prefix }}windows-results
@@ -614,13 +614,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: ${{ inputs.prefix }}results-*
           path: results
           merge-multiple: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         continue-on-error: true # only same-machine runs with the report engines have it
         with:
           name: ${{ inputs.prefix }}windows-results
@@ -633,7 +633,7 @@ jobs:
           cp out/results.md "out/${{ inputs.results_md }}"
           cp results/*.jsonl results/*-runner.txt out/ 2>/dev/null || true
           cat out/results.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ inputs.prefix }}bench-deep-results
           path: out/

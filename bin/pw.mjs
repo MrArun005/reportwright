@@ -43,6 +43,10 @@ pw test [folder] [--update] [--layout]
                                    render every <folder>/__tests__/*.test.json case and compare it with its snapshot
                                    (the words; --layout: the layout, see the CLI README)
 pw diff <old.pw.json> <new.pw.json> [-p name=value]… [-d source=data.json]… [--base URL]
+pw compare <original.pdf> <converted.pdf|report.pw.json> [-d source=data.json]… [-p name=value]… [-o dir]
+          [--tolerance PT] [--threshold PCT] [--dpi 72-100] [--numbers-only] [--no-visual] [--no-positions]
+                                   prove a converted report matches the original PDF: compare.html, compare.json;
+                                   exit 1 when a number or total differs, or the differences pass --threshold
 SERVER ONLY (the self-hosted app, run in its folder; the npm CLI does not include these):
 pw audit verify [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json] [--public-key file.pem]
                                    check the server's audit log (hash chain, signed checkpoints); run it in the app
@@ -394,15 +398,15 @@ async function cmdAssess(args) {
   const failUnder = values['fail-under'] == null ? undefined : Number(values['fail-under']);
   if (failUnder !== undefined && !(failUnder >= 0 && failUnder <= 100)) usage('--fail-under is a percentage, 0 to 100');
   const { assessFolder, parseUsage, parseHours, summaryText, assessmentHtml, ASSESS_LIMITS } = await import('../src/cli/assess.js');
-  let usage, hours;
+  let usageData, hours;
   try { hours = parseHours(values.hours); } catch (e) { usage(e.message); }
   if (values.usage) {
     const st = fs.statSync(values.usage, { throwIfNoEntry: false });
     if (!st?.isFile()) fail(`${values.usage} is not a file`);
     if (st.size > 16 * 1024 * 1024) fail(`${values.usage} is larger than 16 MB`);
-    try { usage = parseUsage(fs.readFileSync(values.usage, 'utf8'), values.usage); } catch (e) { fail(`${values.usage}: ${e.message}`); }
+    try { usageData = parseUsage(fs.readFileSync(values.usage, 'utf8'), values.usage); } catch (e) { fail(`${values.usage}: ${e.message}`); }
   }
-  const a = await assessFolder(positionals[0], { recursive: !!values.recursive, maxFiles: num('max-files'), maxBytes: num('max-bytes'), usage, hours,
+  const a = await assessFolder(positionals[0], { recursive: !!values.recursive, maxFiles: num('max-files'), maxBytes: num('max-bytes'), usage: usageData, hours,
     retireDays: num('retire-days') ?? 180 });
   const out = values.o || '.';
   fs.mkdirSync(out, { recursive: true });
@@ -413,7 +417,34 @@ async function cmdAssess(args) {
   if (failUnder !== undefined && a.summary.readiness < failUnder) { console.error(`pw: readiness ${a.summary.readiness}% is below --fail-under ${failUnder}`); process.exitCode = 1; }
 }
 
-const commands = { assess: cmdAssess, render: cmdRender, import: cmdImport, test: cmdTest, diff: cmdDiff, audit: cmdAudit, 'migrate-storage': cmdMigrateStorage };
+/** pw compare <original.pdf> <converted.pdf | report.pw.json>: see src/compare/index.js and docs/migration-compare.md. */
+async function cmdCompare(args) {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { p: { type: 'string', multiple: true }, d: { type: 'string', multiple: true }, base: { type: 'string' }, 'allow-internal': { type: 'boolean' }, o: { type: 'string' }, tolerance: { type: 'string' }, threshold: { type: 'string' }, dpi: { type: 'string' }, 'no-visual': { type: 'boolean' }, 'no-positions': { type: 'boolean' }, 'numbers-only': { type: 'boolean' } } });
+  if (positionals.length !== 2) usage('give the original PDF and the converted PDF or .pw.json');
+  const num = (k, d) => { const v = values[k]; if (v == null) return d; if (!/^\d+(\.\d+)?$/.test(v)) usage(`--${k} is a number`); return Number(v); };
+  const { comparePdfs, toJson, toHtml, toText } = await import('../src/compare/index.js');
+  const [orig, conv] = positionals;
+  let converted;
+  if (/\.json$/i.test(conv)) {
+    const def = readJson(conv);
+    const data = Object.fromEntries(Object.entries(pairs(values.d)).map(([k, f]) => [k, readJson(f)]));
+    const model = await renderModel(def, { parameters: pairs(values.p), data, base: values.base, internal: !!values['allow-internal'], file: conv, exportData: false });
+    converted = await exportPdf(model, fontStore, { title: def.name, subset });
+  } else converted = fs.readFileSync(conv);
+  let r;
+  try {
+    r = await comparePdfs(fs.readFileSync(orig), converted, { tolerance: num('tolerance', 2), threshold: num('threshold', 0), dpi: num('dpi', 72), visual: values['no-visual'] ? false : 'auto', positions: values['no-positions'] ? false : 'auto', numbersOnly: !!values['numbers-only'], names: [path.basename(orig), path.basename(conv)] });
+  } catch (e) { fail(`could not read the PDFs: ${e.message}`); }
+  const dir = values.o || '.';
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'compare.json'), toJson(r));
+  fs.writeFileSync(path.join(dir, 'compare.html'), toHtml(r));
+  console.log(toText(r));
+  console.error(`pw: wrote ${path.join(dir, 'compare.html')} and compare.json`);
+  if (!r.pass) process.exit(1);
+}
+
+const commands = { assess: cmdAssess, compare: cmdCompare, render: cmdRender, import: cmdImport, test: cmdTest, diff: cmdDiff, audit: cmdAudit, 'migrate-storage': cmdMigrateStorage };
 if (cmd === '--version' || cmd === '-v') {
   // the CLI's package.json (the repository's, or @reportwright/cli's next to dist/), and the engine bundled with it
   const cli = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));

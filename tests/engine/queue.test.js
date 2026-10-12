@@ -1,5 +1,5 @@
 // Durable job queue and one scheduler across replicas (ROADMAP week 10), on shared SQL storage.
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -28,15 +28,18 @@ afterAll(() => { process.chdir(cwd); delete process.env.PW_STORAGE; delete proce
 
 describe('leases', () => {
   it('one owner at a time, renewable, taken over after it expires', async () => {
-    const s = store();
-    expect(await s.lease('x', 'A', 200)).toBe(true);
-    expect(await s.lease('x', 'B', 200)).toBe(false);
-    expect(await s.lease('x', 'A', 200)).toBe(true); // renew
-    await sleep(250);
-    expect(await s.lease('x', 'B', 200)).toBe(true);
-    expect(await s.lease('x', 'A', 200)).toBe(false);
-    await s.release('x', 'B');
-    expect(await s.lease('x', 'A', 200)).toBe(true);
+    vi.useFakeTimers({ toFake: ['Date'] }); // expiry reads the clock: move it, do not wait for it
+    try {
+      const s = store();
+      expect(await s.lease('x', 'A', 200)).toBe(true);
+      expect(await s.lease('x', 'B', 200)).toBe(false);
+      expect(await s.lease('x', 'A', 200)).toBe(true); // renew
+      vi.advanceTimersByTime(250);
+      expect(await s.lease('x', 'B', 200)).toBe(true);
+      expect(await s.lease('x', 'A', 200)).toBe(false);
+      await s.release('x', 'B');
+      expect(await s.lease('x', 'A', 200)).toBe(true);
+    } finally { vi.useRealTimers(); }
   });
 });
 
