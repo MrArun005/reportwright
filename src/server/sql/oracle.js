@@ -37,15 +37,21 @@ export async function probeOracle(conn, oracledb) {
   // a positive list: SELECT or READ on tables and views, nothing else, granted to the user, its roles or PUBLIC; PUBLIC's
   // EXECUTE on Oracle's own packages is the install default (the risky ones are checked next; the statement check lets
   // no package be called at all); READ on a DIRECTORY is a file read (BFILENAME), so it counts
+  // a row is a grant this login must not have, unless it is one of the allowed kinds below (NOT of their OR)
   const grants = await q(`SELECT privilege || ' ON ' || table_schema || '.' || table_name || ' TO ' || grantee AS p FROM all_tab_privs
     WHERE grantee IN (SELECT role FROM session_roles UNION ALL SELECT USER FROM dual UNION ALL SELECT 'PUBLIC' FROM dual)
-      AND (grantable = 'YES' OR NOT (
-        (privilege IN ('SELECT', 'READ') AND NVL(type, 'TABLE') <> 'DIRECTORY')
-        -- PUBLIC's EXECUTE (and SELECT/READ) on Oracle's own objects is the install default; nothing else of PUBLIC's is
-        OR (grantee = 'PUBLIC' AND privilege IN ('EXECUTE', 'SELECT', 'READ') AND NVL(type, 'PACKAGE') <> 'DIRECTORY'
+      AND NOT (
+        -- what PUBLIC holds on Oracle's own objects is the install default, grantable or not (EXECUTE on packages, and
+        -- some dictionary tables grant PUBLIC DELETE/INSERT, e.g. SYS.MV_CAPABILITIES_TABLE$; SYS grants are GRANTABLE):
+        -- a plain CREATE SESSION login must pass. The risky packages are checked below; PUBLIC on a user's own object,
+        -- or on a DIRECTORY, is still refused
+        (grantee = 'PUBLIC' AND NVL(type, 'PACKAGE') <> 'DIRECTORY'
           AND table_schema IN (SELECT username FROM all_users WHERE oracle_maintained = 'Y'))
-        -- 12c+ grants INHERIT PRIVILEGES on each new user to PUBLIC: it lets others' invoker-rights code use this user's rights
-        OR (privilege = 'INHERIT PRIVILEGES' AND table_name = USER)))
+        -- a SELECT or READ this login was given, that it cannot pass on (not a directory: READ on one is a file read)
+        OR (privilege IN ('SELECT', 'READ') AND grantable <> 'YES' AND NVL(type, 'TABLE') <> 'DIRECTORY')
+        -- 12c+ grants INHERIT PRIVILEGES on every user (this one and each other) to PUBLIC by default: it lets invoker-rights
+        -- code run with that user's rights. This login cannot create code, and any rights of its own are checked above
+        OR (privilege = 'INHERIT PRIVILEGES' AND grantee = 'PUBLIC' AND grantable <> 'YES'))
       AND ROWNUM <= 5`);
   if (grants.length) return `granted ${grants.map(r => r.P).join(', ')}`;
   const risky = await q(`SELECT table_name AS p FROM all_tab_privs WHERE grantee = 'PUBLIC' AND privilege = 'EXECUTE' AND table_name IN (${RISKY.map(x => `'${x}'`).join(', ')})`);
@@ -57,9 +63,11 @@ export async function probeOracle(conn, oracledb) {
   return '';
 }
 
+// LOB types (CLOB, NCLOB, BLOB) are not here: a LOB's size is known only by reading it, so no cap can hold before the read.
+// A SQL source converts them (TO_CHAR, DBMS_LOB.SUBSTR). Anything not listed is refused at the statement's metadata, before any row
 const READABLE = new Set(['DB_TYPE_NUMBER', 'DB_TYPE_BINARY_INTEGER', 'DB_TYPE_BINARY_FLOAT', 'DB_TYPE_BINARY_DOUBLE', 'DB_TYPE_VARCHAR', 'DB_TYPE_NVARCHAR',
   'DB_TYPE_CHAR', 'DB_TYPE_NCHAR', 'DB_TYPE_DATE', 'DB_TYPE_TIMESTAMP', 'DB_TYPE_TIMESTAMP_TZ', 'DB_TYPE_TIMESTAMP_LTZ', 'DB_TYPE_RAW', 'DB_TYPE_BOOLEAN',
-  'DB_TYPE_INTERVAL_DS', 'DB_TYPE_INTERVAL_YM', 'DB_TYPE_ROWID', 'DB_TYPE_CLOB', 'DB_TYPE_NCLOB', 'DB_TYPE_BLOB']);
+  'DB_TYPE_INTERVAL_DS', 'DB_TYPE_INTERVAL_YM', 'DB_TYPE_ROWID']);
 
 /**
  * @param {string} url @param {string} text @param {any[]} values
@@ -99,14 +107,21 @@ export async function oracle(url, text, values, ctx) {
         clk.overdue();
         await conn.execute('SET TRANSACTION READ ONLY');
         clk.overdue();
-        const r = await conn.execute(text, values, { resultSet: true, outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: 1, prefetchRows: 1 });
+        // The types come from the parse of the exact text that is executed below (getStatementInfo: no rows, no wrapper, so
+        // what is checked is what runs). A LOB or any other unreadable column is refused here, before the statement runs.
+        // Then the widest row must fit a batch under the cap; then rows are read in 10-row batches and counted as they
+        // arrive (the bytes actually received, not a length learned earlier)
+        const FETCH_ROWS = 10;
+        const cols = info.metaData;
+        if (!Array.isArray(cols)) throw fail('The column types of this query could not be read, so it is refused.', 400);
+        const odd = cols.find(m => !READABLE.has(m.dbType?.name ?? m.dbTypeName));
+        if (odd) throw fail(`The column "${String(odd.name).slice(0, 60)}" is ${odd.dbTypeName || 'a type'} a SQL source cannot read. Convert it in the query (TO_CHAR, DBMS_LOB.SUBSTR).`, 400);
+        const r = await conn.execute(text, values, { resultSet: true, outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: FETCH_ROWS, prefetchRows: 0 });
         const rs = r.resultSet;
         try {
-          const odd = (r.metaData || []).find(m => !READABLE.has(m.dbType?.name ?? m.dbTypeName));
-          if (odd) throw fail(`The column "${String(odd.name).slice(0, 60)}" is ${odd.dbTypeName || 'a type'} a SQL source cannot read. Convert it in the query (TO_CHAR, DBMS_LOB.SUBSTR).`, 400);
-          // the widest a row can be (a VARCHAR2 can be 32 kB; text is held at 2 bytes a character): each batch is as
-          // many rows as fit in a quarter of the cap, so a batch of wide rows never goes far past it
-          const widest = (r.metaData || []).reduce((n, m) => n + 2 * (Number(m.byteSize) || 64) + 64, 0);
+          // the widest a row can be (a VARCHAR2 can be 32 kB; text is held at 2 bytes a character)
+          const widest = cols.reduce((n, m) => n + 2 * (Number(m.byteSize) || 64) + 64, 0);
+          if (widest * FETCH_ROWS > Number(limits.bytes)) throw fail(`The rows are too wide to read in batches under ${Math.round(Number(limits.bytes) / 1048576)} MB. Select fewer or narrower columns.`, 400);
           const per = Math.max(1, Math.min(200, Math.floor(Number(limits.bytes) / 4 / Math.max(1, widest))));
           const rows = [];
           const take = count();
@@ -115,18 +130,8 @@ export async function oracle(url, text, values, ctx) {
             const batch = await rs.getRows(per);
             if (!batch.length) break;
             if (batch.length > per) throw fail('Oracle sent more rows than were asked for.', 500);
-            for (const row of batch) {
-              for (const [k, v] of Object.entries(row)) {
-                if (v && typeof v === 'object' && typeof v.getData === 'function') {
-                  // a LOB: its length (characters for CLOB, bytes for BLOB) is checked before a byte of it is read
-                  take.reserve(Number(v.length) * (v.type === oracledb.DB_TYPE_BLOB ? 1 : 4));
-                  row[k] = await v.getData();
-                  if (typeof v.close === 'function') await v.close().catch(() => {});
-                }
-              }
-              take(row);
-              rows.push(row);
-            }
+            for (const row of batch) take(row);
+            for (const r of batch) rows.push(r);
           }
           ok = true;
           return rows;
