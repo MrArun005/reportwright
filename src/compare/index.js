@@ -7,18 +7,36 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { spawnSync } from 'node:child_process';
 import { loadPdf } from '@reportwright/pdf';
 
 export const LIMITS = Object.freeze({
   maxBytes: 50 * 1024 * 1024,
   maxPages: 300,
+  /** words a page, and in the whole document (each side) */
   maxWords: 20000,
+  maxTotalWords: 300_000,
+  /** LCS cells a page, and in the whole comparison; past them a hashed (linear) alignment */
+  maxCells: 4_000_000,
+  maxTotalCells: 40_000_000,
   maxVisualPages: 50,
+  /** pixels a page, and rendered in all (both sides) */
   maxPixels: 4_000_000,
+  maxTotalPixels: 60_000_000,
+  /** what is emitted: differences and reconciliation rows kept, pages with images in the HTML */
+  maxListed: 5000,
+  maxImagePages: 20,
   timeoutMs: 20000,
   toolTimeoutMs: 15000,
+  /** the whole comparison */
+  wallMs: 90_000,
 });
+/** the external tools: null in the npm CLI (a stub there), which compares in pure JS */
+const tools = () =>
+  import('../../src/server/compareTools.js') /* the path names src/server: the npm CLI's bundle stubs it */
+    .catch(() => null);
+const overTime = (deadline) => {
+  if (Date.now() > deadline) throw Object.assign(new Error('the comparison took too long (stopped)'), { status: 422 });
+};
 const BUDGET = {
   maxDecoded: 256 * 1024 * 1024,
   maxStream: 64 * 1024 * 1024,
@@ -27,18 +45,11 @@ const BUDGET = {
   maxTextItems: 200_000,
 };
 
-const has = (tool) => {
-  try {
-    return spawnSync(tool, ['-v'], { timeout: 5000 }).error == null;
-  } catch {
-    return false;
-  }
-};
 /** a word is a number when it has a digit and no letter: 1,234.50  (12.00)  -7%  $3  2026-01-01 */
 export const isNumber = (t) => /\d/.test(t) && !/\p{L}/u.test(t);
 
 /** Load a PDF under the reader's budget: page sizes, and each page's words in content order (no positions). */
-async function readJs(bytes, warn) {
+async function readJs(bytes, warn, deadline, total) {
   if (bytes.length > LIMITS.maxBytes)
     throw Object.assign(new Error(`a PDF can be at most ${LIMITS.maxBytes / 1048576} MB`), { status: 413 });
   const doc = await loadPdf(bytes, { budget: BUDGET, timeoutMs: LIMITS.timeoutMs });
@@ -46,13 +57,20 @@ async function readJs(bytes, warn) {
   if (doc.pageCount > n) warn(`only the first ${n} of ${doc.pageCount} pages are compared`);
   const pages = [];
   for (let i = 0; i < n; i++) {
+    overTime(deadline);
+    if (total.words >= LIMITS.maxTotalWords) {
+      warn(`only the first ${i} pages are compared: the document has more than ${LIMITS.maxTotalWords} words`);
+      break;
+    }
     const p = doc.page(i);
     const words = p
       .extractText({ timeoutMs: 5000 })
       .split(/\s+/)
       .filter(Boolean)
-      .map((t) => ({ t }));
-    pages.push({ w: p.width, h: p.height, words: cap(words, i, warn) });
+      .map((t) => ({ t: t.slice(0, 200) })); // a word is at most 200 characters in what is compared and emitted
+    const kept = cap(words, i, warn).slice(0, LIMITS.maxTotalWords - total.words);
+    total.words += kept.length;
+    pages.push({ w: p.width, h: p.height, words: kept });
   }
   return { pageCount: doc.pageCount, pages };
 }
@@ -65,13 +83,13 @@ const cap = (words, i, warn) => {
 };
 
 /** Word boxes from pdftotext -bbox (top-left origin, points), as scripts/parity-tiers.mjs reads them. */
-function readPoppler(file, n, warn) {
-  const r = spawnSync('pdftotext', ['-bbox', '-l', String(n), file, '-'], {
-    timeout: LIMITS.toolTimeoutMs,
+async function readPoppler(T, file, n, warn, deadline) {
+  const out = await T.run('pdftotext', ['-bbox', '-l', String(n), file, '-'], {
+    timeout: Math.min(LIMITS.toolTimeoutMs, deadline - Date.now()),
     maxBuffer: 64 * 1024 * 1024,
   });
-  if (r.error || r.status !== 0) {
-    warn(`pdftotext failed (${r.error?.code || r.status}): word positions are not compared`);
+  if (!out) {
+    warn('pdftotext failed, timed out or made too much text: word positions are not compared');
     return null;
   }
   const ent = (s) =>
@@ -81,27 +99,30 @@ function readPoppler(file, n, warn) {
       .replace(/&quot;/g, '"')
       .replace(/&apos;/g, "'")
       .replace(/&amp;/g, '&');
-  return r.stdout
+  const re = /<word xMin="([\d.-]+)" yMin="([\d.-]+)" xMax="([\d.-]+)" yMax="([\d.-]+)">([^<]*)<\/word>/g;
+  return out
     .toString()
-    .split('<page ')
+    .split('<page ', LIMITS.maxPages + 1)
     .slice(1)
-    .map((pg, i) =>
-      cap(
-        [
-          ...pg.matchAll(/<word xMin="([\d.-]+)" yMin="([\d.-]+)" xMax="([\d.-]+)" yMax="([\d.-]+)">([^<]*)<\/word>/g),
-        ].map((m) => ({ t: ent(m[5]), x: +m[1], y: +m[2], w: m[3] - m[1], h: m[4] - m[2] })),
-        i,
-        warn,
-      ),
-    );
+    .map((pg, i) => {
+      const words = [];
+      for (const m of pg.matchAll(re)) {
+        if (words.length > LIMITS.maxWords) break; // one over: cap() says so
+        words.push({ t: ent(m[5].slice(0, 1200)).slice(0, 200), x: +m[1], y: +m[2], w: m[3] - m[1], h: m[4] - m[2] });
+      }
+      return cap(words, i, warn);
+    });
 }
 
-/** LCS alignment of two word lists: [['=', a, b] | ['-', a] | ['+', b]]. Over 16 M cells: an order-blind multiset diff. */
-function align(A, B) {
+/**
+ * LCS alignment of two word lists: [['=', a, b] | ['-', a] | ['+', b]]. Over LIMITS.maxCells, or once the comparison has
+ * spent LIMITS.maxTotalCells: an order-blind multiset diff (linear, hashed).
+ */
+function align(A, B, spent) {
   const n = A.length,
     m = B.length,
     ops = [];
-  if (n * m > 16_000_000) {
+  if (n * m > LIMITS.maxCells || spent.cells + n * m > LIMITS.maxTotalCells) {
     // ponytail: a huge page loses order; split pages by line if this ever matters
     const pool = new Map();
     B.forEach((b) => {
@@ -117,6 +138,7 @@ function align(A, B) {
     for (const l of pool.values()) for (const b of l) ops.push(['+', b]);
     return ops;
   }
+  spent.cells += n * m;
   const L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
   for (let i = n - 1; i >= 0; i--)
     for (let j = m - 1; j >= 0; j--)
@@ -187,7 +209,7 @@ function labelOf(words, i) {
 }
 
 /** The differences on one page, and its numbers reconciled. sx, sy: the converted page's coordinates to the original's. */
-function diffPage(page, A, B, { tolerance, sx, sy }) {
+function diffPage(page, A, B, { tolerance, sx, sy, spent }) {
   const out = [],
     recon = [];
   A.forEach((w, i) => {
@@ -196,7 +218,7 @@ function diffPage(page, A, B, { tolerance, sx, sy }) {
   B.forEach((w, i) => {
     w.i = i;
   });
-  const ops = align(A, B);
+  const ops = align(A, B, spent);
   const num = (a, b, status, extra = {}) => {
     const label = labelOf(a ? A : B, (a || b).i);
     recon.push({
@@ -292,6 +314,7 @@ function reconcile(items) {
   const sorted = [...items].sort((x, y) => y.total - x.total || order[x.status] - order[y.status] || x.page - y.page);
   const c = (s, l = items) => l.filter((i) => i.status === s).length;
   const totals = sorted.filter((i) => i.total);
+  const issues = sorted.filter((i) => i.status !== 'matched');
   return {
     compared: items.length,
     matched: c('matched'),
@@ -301,32 +324,34 @@ function reconcile(items) {
     missing: c('missing'),
     extra: c('extra'),
     matchPercent: items.length ? +((c('matched') * 100) / items.length).toFixed(2) : 100,
-    totals: { compared: totals.length, mismatched: totals.filter((i) => i.status !== 'matched').length, items: totals },
-    issues: sorted.filter((i) => i.status !== 'matched'),
+    totals: {
+      compared: totals.length,
+      mismatched: totals.filter((i) => i.status !== 'matched').length,
+      items: totals.slice(0, LIMITS.maxListed),
+    },
+    issues: issues.slice(0, LIMITS.maxListed),
+    issuesTotal: issues.length,
   };
 }
 
 // ---------- visual ----------
 /** a page as greyscale pixels: pdftoppm -gray, a binary PGM */
-function raster(file, i, dpi, size) {
-  const a = [
-    '-gray',
-    '-f',
-    String(i + 1),
-    '-l',
-    String(i + 1),
-    '-r',
-    String(dpi),
-    ...(size ? ['-scale-to-x', String(size[0]), '-scale-to-y', String(size[1])] : []),
-    file,
-  ];
-  const r = spawnSync('pdftoppm', a, { timeout: LIMITS.toolTimeoutMs, maxBuffer: 4 * LIMITS.maxPixels + 1024 });
-  if (r.error || r.status !== 0 || !r.stdout?.length) return null;
-  const m = /^P5\s+(\d+)\s+(\d+)\s+255\s/.exec(r.stdout.subarray(0, 64).toString('latin1'));
+async function raster(T, file, i, dpi, size, deadline) {
+  const a = ['-gray', '-f', String(i + 1), '-l', String(i + 1), '-r', String(dpi)];
+  if (size) a.push('-scale-to-x', String(size[0]), '-scale-to-y', String(size[1]));
+  a.push(file);
+  // the output cap bounds the pixels whatever the page claims (a rotated or UserUnit page)
+  const out = await T.run('pdftoppm', a, {
+    timeout: Math.min(LIMITS.toolTimeoutMs, deadline - Date.now()),
+    maxBuffer: LIMITS.maxPixels + 64,
+  });
+  if (!out?.length) return null;
+  const m = /^P5\s+(\d+)\s+(\d+)\s+255\s/.exec(out.subarray(0, 64).toString('latin1'));
   if (!m) return null;
   const w = +m[1],
     h = +m[2];
-  return { w, h, px: r.stdout.subarray(m[0].length, m[0].length + w * h) };
+  if (w * h > LIMITS.maxPixels || out.length < m[0].length + w * h) return null;
+  return { w, h, px: out.subarray(m[0].length, m[0].length + w * h) };
 }
 /** an RGB PNG (8-bit, filter 0) */
 function png(w, h, rgb) {
@@ -358,11 +383,14 @@ const grey = (g) => {
   return b;
 };
 /** both pages at the original's pixel size; the converted one scaled to it (a different page size is normalised) */
-function visualPage(fa, fb, i, dpi, size, same) {
-  if (size.w * size.h * (dpi / 72) ** 2 > LIMITS.maxPixels) return { skipped: 'the page is too large to render' };
-  const a = raster(fa, i, dpi);
+async function visualPage(T, fa, fb, i, dpi, size, same, spent, deadline) {
+  const px = size.w * size.h * (dpi / 72) ** 2;
+  if (!(px <= LIMITS.maxPixels)) return { skipped: 'the page is too large to render' };
+  if (spent.pixels + 2 * px > LIMITS.maxTotalPixels) return { skipped: 'the pixel budget of the comparison is spent' };
+  spent.pixels += 2 * px;
+  const a = await raster(T, fa, i, dpi, undefined, deadline);
   if (!a) return { skipped: 'the original page did not render' };
-  const b = raster(fb, i, dpi, same ? undefined : [a.w, a.h]); // scaled only when the page sizes differ (scaling alone moves pixels)
+  const b = await raster(T, fb, i, dpi, same ? undefined : [a.w, a.h], deadline); // scaled only when the page sizes differ (scaling alone moves pixels)
   if (!b || b.w !== a.w || b.h !== a.h) return { skipped: 'the converted page did not render' };
   const over = Buffer.alloc(a.w * a.h * 3);
   let changed = 0;
@@ -391,16 +419,16 @@ export async function comparePdfs(original, converted, o = {}) {
   const tolerance = o.tolerance ?? 2,
     dpi = Math.min(100, Math.max(72, o.dpi ?? 72)),
     threshold = o.threshold ?? 0;
+  const deadline = Date.now() + Math.min(o.wallMs ?? LIMITS.wallMs, LIMITS.wallMs);
   const warnings = [];
   const warn = (side) => (m) => warnings.push(`${side}: ${m}`);
-  const [A, B] = [
-    await readJs(Buffer.from(original), warn('original')),
-    await readJs(Buffer.from(converted), warn('converted')),
-  ];
+  const A = await readJs(Buffer.from(original), warn('original'), deadline, { words: 0 });
+  const B = await readJs(Buffer.from(converted), warn('converted'), deadline, { words: 0 });
+  const T = await tools();
   const wantPos = o.positions ?? 'auto',
-    wantVis = o.visual ?? 'auto';
-  const usePos = wantPos === true || (wantPos === 'auto' && has('pdftotext'));
-  const useVis = (!o.numbersOnly && wantVis === true) || (!o.numbersOnly && wantVis === 'auto' && has('pdftoppm'));
+    wantVis = o.numbersOnly ? false : (o.visual ?? 'auto');
+  const usePos = !!T && (wantPos === true || (wantPos === 'auto' && (await T.has('pdftotext'))));
+  const useVis = !!T && (wantVis === true || (wantVis === 'auto' && (await T.has('pdftoppm'))));
   let tmp = null;
   if (usePos || useVis) {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-compare-'));
@@ -409,68 +437,83 @@ export async function comparePdfs(original, converted, o = {}) {
   }
   try {
     if (usePos) {
-      const pa = readPoppler(path.join(tmp, 'a.pdf'), A.pages.length, warn('original')),
-        pb = readPoppler(path.join(tmp, 'b.pdf'), B.pages.length, warn('converted'));
+      const pa = await readPoppler(T, path.join(tmp, 'a.pdf'), A.pages.length, warn('original'), deadline),
+        pb = await readPoppler(T, path.join(tmp, 'b.pdf'), B.pages.length, warn('converted'), deadline);
+      // the same caps as the reader's words: per page (readPoppler) and in total (as many as the reader kept)
+      const take = (pages, pp) => {
+        let left = LIMITS.maxTotalWords;
+        pages.forEach((p, i) => {
+          if (pp[i]) p.words = pp[i].slice(0, Math.max(0, left));
+          left -= p.words.length;
+        });
+      };
       if (pa && pb) {
-        A.pages.forEach((p, i) => {
-          if (pa[i]) p.words = pa[i];
-        });
-        B.pages.forEach((p, i) => {
-          if (pb[i]) p.words = pb[i];
-        });
+        take(A.pages, pa);
+        take(B.pages, pb);
       }
     }
     const differences = [],
       pages = [],
-      numbers = [];
+      numbers = [],
+      spent = { cells: 0, pixels: 0 };
     const n = Math.max(A.pages.length, B.pages.length);
+    let visualMax = 0;
     for (let i = 0; i < n; i++) {
+      overTime(deadline);
       const a = A.pages[i],
         b = B.pages[i];
       const { diffs: all, recon } = diffPage(i + 1, a?.words || [], b?.words || [], {
         tolerance,
         sx: a && b ? a.w / b.w : 1,
         sy: a && b ? a.h / b.h : 1,
+        spent,
       });
       const diffs = o.numbersOnly ? all.filter((d) => d.kind === 'number') : all;
-      differences.push(...diffs);
-      numbers.push(...recon);
+      for (const d of diffs) differences.push(d);
+      for (const x of recon) numbers.push(x);
       const page = {
         page: i + 1,
         original: a ? { width: a.w, height: a.h, words: a.words.length } : null,
         converted: b ? { width: b.w, height: b.h, words: b.words.length } : null,
         differences: diffs.length,
       };
-      if (useVis && !o.numbersOnly && a && b && i < LIMITS.maxVisualPages)
-        page.visual = visualPage(
+      if (useVis && a && b && i < LIMITS.maxVisualPages) {
+        page.visual = await visualPage(
+          T,
           path.join(tmp, 'a.pdf'),
           path.join(tmp, 'b.pdf'),
           i,
           dpi,
           { w: a.w, h: a.h },
           Math.abs(a.w - b.w) < 0.5 && Math.abs(a.h - b.h) < 0.5,
+          spent,
+          deadline,
         );
+        if (page.visual.percent > visualMax) visualMax = page.visual.percent;
+        if (i >= LIMITS.maxImagePages) delete page.visual.images; // what the HTML carries stays bounded
+      }
       pages.push(page);
     }
     if (useVis && n > LIMITS.maxVisualPages)
       warnings.push(`only the first ${LIMITS.maxVisualPages} pages are compared visually`);
+    if (useVis && n > LIMITS.maxImagePages)
+      warnings.push(`the page images of the first ${LIMITS.maxImagePages} pages only are in the HTML`);
     const order = { number: 0, missing: 1, extra: 2, changed: 3, moved: 4 };
     differences.sort((x, y) => order[x.kind] - order[y.kind] || x.page - y.page);
-    const count = (k) => differences.filter((d) => d.kind === k).length;
-    const words = Math.max(
-      1,
-      A.pages.reduce((s, p) => s + p.words.length, 0),
-    );
-    const textPercent = +(((differences.length - count('moved')) * 100) / words).toFixed(3);
-    const visualMax = Math.max(0, ...pages.map((p) => p.visual?.percent ?? 0));
+    const counts = { number: 0, missing: 0, extra: 0, changed: 0, moved: 0 };
+    for (const d of differences) counts[d.kind]++;
+    const count = (k) => counts[k];
+    let words = 0;
+    for (const p of A.pages) words += p.words.length;
+    const textPercent = +(((differences.length - count('moved')) * 100) / Math.max(1, words)).toFixed(3);
     const pageCount = { original: A.pageCount, converted: B.pageCount };
     const serious =
       count('number') + count('missing') + count('extra') + count('changed') + (A.pageCount !== B.pageCount ? 1 : 0);
     const verdict =
       !serious && !count('moved') && visualMax === 0 ? 'Matches' : !serious ? 'Minor differences' : 'Differences found';
-    // the CI gate: a number that differs, or a page count, always fails; otherwise the worse of the text and pixel % against --threshold
     const reconciliation = reconcile(numbers);
-    // a total that differs (by value, rounding included) always fails
+    // the CI gate: a number or total that differs (rounding included) always fails; otherwise the page count, and the
+    // worse of the text and pixel % against the threshold
     const pass =
       !reconciliation.totals.mismatched &&
       !count('number') &&
@@ -482,12 +525,7 @@ export async function comparePdfs(original, converted, o = {}) {
       numbersOnly: !!o.numbersOnly,
       reconciliation,
       names: o.names || ['original.pdf', 'converted.pdf'],
-      modes: {
-        positions: A.pages.some((p) => p.words[0]?.x != null),
-        visual: useVis && !o.numbersOnly,
-        tolerance,
-        dpi,
-      },
+      modes: { positions: A.pages.some((p) => p.words[0]?.x != null), visual: useVis, tolerance, dpi },
       pageCount,
       summary: {
         numbers: count('number'),
@@ -499,8 +537,10 @@ export async function comparePdfs(original, converted, o = {}) {
         visualMaxPercent: visualMax,
       },
       pages,
-      differences,
-      warnings,
+      // what is emitted is bounded: the first LIMITS.maxListed (numbers first), and how many there were
+      differences: differences.slice(0, LIMITS.maxListed),
+      differencesTotal: differences.length,
+      warnings: warnings.slice(0, 100),
     };
   } finally {
     if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
@@ -542,7 +582,7 @@ const reconTable = (l) =>
 function reconHtml(R) {
   return `<h2>Reconciliation</h2><div class="stats"><div><b>${R.compared}</b>numbers compared</div><div><b>${R.matchPercent}%</b>match exactly</div><div class="num"><b>${R.mismatched}</b>mismatched</div><div><b>${R.rounding}</b>rounding</div><div><b>${R.missing}</b>missing</div><div><b>${R.extra}</b>extra</div><div><b>${R.formattingOnly}</b>equal, formatted differently</div></div>
 <h3>Totals: ${R.totals.compared} found, ${R.totals.mismatched ? `<span class="badtxt">${R.totals.mismatched} do not match</span>` : 'all match'}</h3>${R.totals.items.length ? reconTable(R.totals.items) : '<p>No totals found (a label with total, sum, grand, subtotal…).</p>'}
-<h3>Number differences</h3>${R.issues.length ? reconTable(R.issues) : '<p>Every number matches.</p>'}`;
+<h3>Number differences</h3>${R.issues.length ? reconTable(R.issues) : '<p>Every number matches.</p>'}${R.issuesTotal > Math.min(R.issues.length, 1000) ? `<p>${R.issuesTotal - Math.min(R.issues.length, 1000)} more number differences not listed.</p>` : ''}`;
 }
 
 /** compare.html: self-contained (images inline), full width */
@@ -550,7 +590,6 @@ export function toHtml(r) {
   const tone = { Matches: 'ok', 'Minor differences': 'minor', 'Differences found': 'bad' }[r.verdict];
   const S = r.summary;
   const rows = r.differences
-    .slice(0, 2000)
     .map(
       (d) =>
         `<tr class="k-${d.kind}"><td><span class="tag">${d.kind === 'number' ? 'number' : d.kind}</span></td><td>${d.page}</td><td>${d.at ? `${d.at.x}, ${d.at.y}` : ''}</td><td>${esc(d.original)}</td><td>${esc(d.converted)}</td><td>${d.by ? `moved ${d.by.dx}, ${d.by.dy} pt` : ''}</td></tr>`,
@@ -589,7 +628,7 @@ tr.r-mismatched td,tr.r-missing td,tr.r-extra td{color:var(--bad)}tr.r-rounding 
 <div class="stats"><div class="num"><b>${S.numbers}</b>numbers differ</div><div><b>${S.missing}</b>missing</div><div><b>${S.extra}</b>extra</div><div><b>${S.changed}</b>changed</div><div><b>${S.moved}</b>moved</div><div><b>${S.textPercent}%</b>of words differ</div><div><b>${S.visualMaxPercent}%</b>worst page, pixels</div></div>
 ${r.warnings.length ? `<ul class="warn">${r.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
 ${reconHtml(r.reconciliation)}
-<h2>Differences${r.differences.length > 2000 ? ` (first 2000 of ${r.differences.length})` : ''}</h2>
+<h2>Differences${r.differencesTotal > r.differences.length ? ` (the first ${r.differences.length}; ${r.differencesTotal - r.differences.length} more differences not listed)` : ''}</h2>
 ${r.differences.length ? `<table><thead><tr><th>Kind</th><th>Page</th><th>Position (pt)</th><th>Original</th><th>Converted</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<p>None.</p>'}
 <h2>Pages</h2>${pages}
 </main></body></html>`;
@@ -613,7 +652,7 @@ export function toText(r) {
     lines.push(
       `  p${d.page} ${d.kind.padEnd(7)} ${d.original != null ? JSON.stringify(d.original) : ''}${d.converted != null ? ` → ${JSON.stringify(d.converted)}` : ''}${d.by ? ` (${d.by.dx}, ${d.by.dy} pt)` : ''}`,
     );
-  if (r.differences.length > 20) lines.push(`  … ${r.differences.length - 20} more (see compare.html)`);
+  if (r.differencesTotal > 20) lines.push(`  … ${r.differencesTotal - 20} more (see compare.html)`);
   for (const w of r.warnings) lines.push(`  warning: ${w}`);
   return lines.join('\n');
 }

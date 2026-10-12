@@ -260,12 +260,12 @@ Tested on 29 BIRT sample reports (`tests/fixtures/birt/corpus`, EPL-2.0): all im
 
 ### Compare with the original PDF
 
-`POST /api/reports/compare` (multipart/form-data, the files `original` and `converted`, at most 20 MB each): the
+`POST /api/reports/compare` (multipart/form-data, the files `original` and `converted`, at most 5 MB each, the import limit): the
 `pw compare` result (see [migration-compare.md](migration-compare.md)) as JSON with the self-contained page as `html`;
 `?format=html` returns the page alone (served with a CSP that allows nothing but inline styles and `data:` images).
 Query: `tolerance` (pt, 2), `threshold` (%, 0), `dpi` (72–100), `numbersOnly=1`. Same access as import: designers,
 admins and service keys (401 not signed in, 403 viewers); 413 too large, 422 a PDF the reader refuses (malformed, over
-budget, timed out), 429 when two comparisons are already running. Audited as `report.compare`.
+budget, timed out), 429 when the server is busy (the render admission) or two comparisons are already running. Audited as `report.compare`.
 
 ```bash
 curl -F original=@sales-ssrs.pdf -F converted=@sales-rw.pdf -H "Authorization: Bearer $KEY" \

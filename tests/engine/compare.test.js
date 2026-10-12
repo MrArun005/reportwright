@@ -1,7 +1,7 @@
 // pw compare: src/compare/index.js on PDFs written here (standard fonts, no files).
 import { describe, it, expect } from 'vitest';
 import { createPdf } from '@reportwright/pdf';
-import { comparePdfs, parseNumber, toHtml, toJson } from '../../src/compare/index.js';
+import { comparePdfs, parseNumber, toHtml, toJson, LIMITS } from '../../src/compare/index.js';
 
 /** pages: [[ [text, x, y], … ], …] → PDF bytes */
 async function pdf(pages, size) {
@@ -154,5 +154,72 @@ describe('visual', () => {
     if (!r.modes.visual) return;
     expect(r.pages[0].visual.percent).toBeGreaterThan(0);
     expect(toHtml(r)).toContain('data:image/png;base64,');
+  });
+});
+
+describe('hostile inputs are refused or bounded, fast', () => {
+  it('a huge page count: the first LIMITS.maxPages pages, said so', async () => {
+    const many = Array.from({ length: LIMITS.maxPages + 20 }, (_, i) => [[`p${i}`, 40, 40]]);
+    const t = Date.now();
+    const r = await comparePdfs(await pdf(many), await pdf(many), { visual: false });
+    expect(r.pages.length).toBe(LIMITS.maxPages);
+    expect(r.warnings.join()).toMatch(/only the first 300 of 320 pages/);
+    expect(Date.now() - t).toBeLessThan(15000);
+  }, 30000);
+  it('a page with 500k words: capped per page, and the alignment stays linear', async () => {
+    const big = [[['x '.repeat(500000), 0, 20]]];
+    const t = Date.now();
+    const r = await comparePdfs(await pdf(big, { width: 14400, height: 400 }), await pdf([[['y', 0, 20]]]), {
+      visual: false,
+      positions: false,
+    });
+    expect(r.pages[0].original.words).toBe(LIMITS.maxWords);
+    expect(r.warnings.join()).toMatch(/only the first 20000 words/);
+    expect(r.differences.length).toBeLessThanOrEqual(LIMITS.maxListed);
+    expect(r.differencesTotal).toBeGreaterThan(LIMITS.maxListed);
+    expect(toHtml(r).length).toBeLessThan(5_000_000);
+    expect(Date.now() - t).toBeLessThan(15000);
+  }, 30000);
+  it('a giant MediaBox is not rasterised', async () => {
+    const r = await comparePdfs(
+      await pdf(invoice(), { width: 14400, height: 14400 }),
+      await pdf(invoice(), { width: 14400, height: 14400 }),
+      {},
+    );
+    if (!r.modes.visual) return;
+    expect(r.pages[0].visual).toEqual({ skipped: 'the page is too large to render' });
+  });
+  it('two 50 MB uploads: 413 before the body is parsed', async () => {
+    const { POST } = await import('../../app/api/reports/compare/route.js');
+    const fd = new FormData();
+    fd.set('original', new Blob([new Uint8Array(50 * 1024 * 1024)]), 'a.pdf');
+    fd.set('converted', new Blob([new Uint8Array(50 * 1024 * 1024)]), 'b.pdf');
+    const t = Date.now();
+    const res = await POST(new Request('http://localhost/api/reports/compare', { method: 'POST', body: fd }));
+    expect(res.status).toBe(413);
+    // no content-length (chunked): the stream is cut at the cap
+    const body = new ReadableStream({
+      pull(c) {
+        c.enqueue(new Uint8Array(1024 * 1024));
+      },
+    });
+    const res2 = await POST(
+      new Request('http://localhost/api/reports/compare', {
+        method: 'POST',
+        body,
+        duplex: 'half',
+        headers: { 'content-type': 'multipart/form-data; boundary=x' },
+      }),
+    );
+    expect(res2.status).toBe(413);
+    expect(Date.now() - t).toBeLessThan(10000);
+  });
+  it('three files: refused', async () => {
+    const { POST } = await import('../../app/api/reports/compare/route.js');
+    const fd = new FormData();
+    for (const k of ['original', 'converted', 'third']) fd.set(k, new Blob([new Uint8Array(8)]), `${k}.pdf`);
+    expect((await POST(new Request('http://localhost/api/reports/compare', { method: 'POST', body: fd }))).status).toBe(
+      400,
+    );
   });
 });
