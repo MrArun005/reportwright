@@ -44,6 +44,8 @@ env:
   PACKAGES: fonts fonts-cjk engine cli viewer react vue svelte angular create-reportwright # all @reportwright/<p> except create-reportwright (unscoped)
 jobs:
   publish:
+    # only a version release (tag v1.2.3 or v1.2.3-rc.4) publishes; other releases (a docs zip) never do
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
