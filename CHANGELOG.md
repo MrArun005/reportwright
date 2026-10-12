@@ -2,6 +2,18 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## Unreleased (0.14.0-rc.7)
+
+Merged to `main` since 0.14.0-rc.6, not yet published.
+
+- **Admission control and PKCS#12 (PR #11).** Render admission counts a request from arrival, before its body, auth or template is read (`bfca0bf9`). A caller over its share gets 429 and the rest 503, each with `Retry-After`. `/api/v1/health` reports `render.arriving`. Signing reads `.p12` files with `node:crypto`; `node-forge` and `@signpdf/signer-p12` are out of production. PKCS#12 parsing is bounded and needs a MAC, with a fuzz test.
+- **API keys:** a key seen in the last 30 s skips the credential check's storage leases; a changed `PW_API_KEYS` revokes it at once.
+- **PDF/A and parity (PR #10).** PDF/A-2b no longer draws `.notdef` for a character the font lacks. Parity fixes: a tool that cannot run fails its row by name; CRLF checkout and Windows fixes in the build and bench.
+- **QA suites (PRs #7, #8).** `qa-load` (admission spike and fairness), a security suite (PDF reader fuzz, SSRF, expression injection, oversized inputs, auth, npm audit, semgrep), a rival-best suite and an engines suite. Benchmarks measure the current releases.
+- **Docs.** `docs/compare/` pages for Jasper, SSRS, Puppeteer, pdfmake and Python.
+- **Self-host.** `deploy/compose` (docker compose, optional Caddy HTTPS through `PW_DOMAIN`) and `self-host.yml`.
+- **`create-reportwright`** scaffolds a sample app (node, react, vue, svelte, angular). Not yet on npm.
+
 ## 0.14.0-rc.6 — 2026-10-11 (release candidate)
 
 ### Summary

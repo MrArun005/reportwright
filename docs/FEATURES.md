@@ -1,6 +1,6 @@
 # ReportWright: feature list
 
-Version 0.6.0+ (`main`, 4 Oct 2026). Everything below is built and covered by tests unless it is marked otherwise.
+Version 0.14.0-rc.6 (`main`, Oct 2026). Everything below is built and covered by tests unless it is marked otherwise.
 
 > **Built, not yet released:** items marked **[not released]** are committed on the local `main` only. SQL data sources: SQLite and MySQL are released; PostgreSQL and SQL Server stay unreleased because the last review round found probe gaps (fixed and live-tested, but that round was not repeated); Oracle, Snowflake and BigQuery are not live-tested. See [DATA-SQL.md](DATA-SQL.md#release-status).
 Live demo: https://mrarun005.github.io/reportwright-demo/
@@ -91,7 +91,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 
 ## 6. Charts
 
-- Column, bar, line, area, pie, donut, scatter, bubble, radar, polar, candlestick, OHLC, gauge, funnel, treemap (squarified), histogram (bin count or width), box plot (quartiles, 1.5 IQR whiskers, outliers), waterfall (increase/decrease/total colours, subtotals) and Gantt (start/end per row, lanes by task, date ticks, today line).
+- Column, bar, line, area, pie, donut, scatter, bubble, radar, polar, candlestick, OHLC, gauge (half, three-quarter or full circle), funnel, treemap (squarified), histogram (bin count or width), box plot (quartiles, 1.5 IQR whiskers, outliers), waterfall (increase/decrease/total colours, subtotals) and Gantt (start/end per row, lanes by task, date ticks, today line).
 - Caps on untrusted data: 10,000 points or bars, 1,000 categories, 50 series, 500 bins, 2,000 outlier dots.
 - Combo charts: each series picks its own type and value axis (second Y axis).
 - 100% stacked, range series (low/high), smooth lines (no overshoot), step lines.
@@ -103,7 +103,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 
 ## 6a. Maps
 
-- Shapes from GeoJSON (Polygon, MultiPolygon) coloured by a joined value, line layers (LineString, MultiLineString), points sized by a value.
+- Shapes from GeoJSON (Polygon, MultiPolygon) coloured by a joined value, line layers (LineString, MultiLineString), point markers sized by a value, with a label and colour from expressions (latitude and longitude from a data set).
 - Colour scale: continuous with a gradient (heat) legend, or 2–9 equal-width classes with a graduated legend.
 - A click on a region drills through, sets parameters or opens a URL (`regionAction`), in the region's scope; tooltips show the value.
 - Caps: 5,000 shapes, 200,000 coordinates, 10,000 points.
@@ -135,7 +135,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - Filters: equals, `in` (multi-value), TopN, BottomN, TopPercent, BottomPercent, Between; filters run in order.
 - Data sources: JSON, REST, GraphQL, CSV (separator, quote, header row, start row), XML (XPath rows and fields, namespaces; inline or by URL), SOAP (envelope template with escaped parameters, SOAPAction 1.1/1.2), OData (query editor from $metadata: entity set, $select, $filter builder, $orderby, $top/$skip, $expand, next links up to a page cap), inline data, pushed data via the API.
 - Importers map XML data: SSRS's XML data provider (ElementPath, XmlData, SOAP Method), ActiveReports' XML provider and JasperReports xPath queries.
-- SQL on the server ([DATA-SQL.md](DATA-SQL.md)): SQLite and MySQL (released); **[not released]** PostgreSQL, SQL Server (`mssql://`), Oracle (`oracle://`, thin mode), Snowflake, BigQuery. Connections are set by the admin only (`PW_DB_<NAME>`); the safety rests on the connection login's verified least privileges (every right, role and grant, PUBLIC's included, checked against an allow-list before queries; anything else refuses the connection). Defence in depth: one SELECT whose calls are built-in functions only (an allow-list per dialect, failing closed on quoting it cannot classify), read-only transactions, the server's own parse (SQL Server SHOWPLAN, Oracle getStatementInfo, BigQuery dry run). Rows, bytes (every value type and message) and one wall-clock deadline are enforced on the client; at a cap or the deadline the query is stopped on the server (cancel, `pg_terminate_backend`, `KILL`) and its connection discarded. Live-tested: SQLite, PostgreSQL 16, MySQL 8.4, SQL Server (Azure SQL Edge). Oracle, Snowflake, BigQuery: mocked drivers only; BigQuery's service account rights are not checked.
+- SQL on the server ([DATA-SQL.md](DATA-SQL.md)): SQLite and MySQL (released); **[not released]** PostgreSQL, SQL Server (`mssql://`), Oracle (`oracle://`, thin mode), Snowflake, BigQuery (Oracle, Snowflake and BigQuery: built with mocked drivers only, not yet live-tested against a real database). Connections are set by the admin only (`PW_DB_<NAME>`); the safety rests on the connection login's verified least privileges (every right, role and grant, PUBLIC's included, checked against an allow-list before queries; anything else refuses the connection). Defence in depth: one SELECT whose calls are built-in functions only (an allow-list per dialect, failing closed on quoting it cannot classify), read-only transactions, the server's own parse (SQL Server SHOWPLAN, Oracle getStatementInfo, BigQuery dry run). Rows, bytes (every value type and message) and one wall-clock deadline are enforced on the client; at a cap or the deadline the query is stopped on the server (cancel, `pg_terminate_backend`, `KILL`) and its connection discarded. Live-tested: SQLite, PostgreSQL 16, MySQL 8.4, SQL Server (Azure SQL Edge). Oracle, Snowflake, BigQuery: mocked drivers only; BigQuery's service account rights are not checked.
 - **[not released]** Stored procedures (opt-in per connection, `PW_DB_<NAME>_PROCS`): allow-listed procedures with bound arguments, first result set; SQL Server (rolled back), PostgreSQL (set-returning functions, read-only), MySQL (read-only), Snowflake (read-only role). The Designer's SQL source has a Stored procedure mode listing only the allowed ones.
 - Nested data sets: a child data set filtered to the current parent row; `Parent.*` access.
 - Parameters: option lists, options from a data set, multi-value, cascading, hidden, nullable, allow-blank, select-all; custom editors (slider, range, date range, radio, list, toggle).
@@ -159,15 +159,16 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - PDF outline (bookmarks panel) nested by level; a bookmarked heading takes its heading level.
 - PDF/A-2b, digital signatures, fillable PDF form fields.
 - PDF passwords (AES-256, user and owner passwords, permissions).
-- Excel (merged cells), Word `.docx` (real tables, section page sizes; charts and images are left out), HTML (incl. a single-file offline interactive version), CSV, SVG, JSON (the laid-out pages, in the viewer and the API), print.
+- Excel (merged cells), Word `.docx` (real tables, section page sizes; charts, pictures, maps, barcodes and shapes are drawn into it), HTML (incl. a single-file offline interactive version), CSV, SVG, JSON (the laid-out pages, in the viewer and the API), print.
 - Static HTML links: web links, bookmark jumps and table-of-contents entries (anchors at the target page and height), drill-through opening the ReportWright viewer.
 
 ## 11. Embedding and developer platform
 
 - Script tag or ES module; Shadow DOM so host styles do not leak in; CORS by `PW_EMBED_ORIGINS`.
-- Framework wrappers: `@reportwright/react`, `/vue`, `/svelte`, `/angular` (built, not published to npm yet).
+- Framework wrappers: `@reportwright/react`, `/vue`, `/svelte`, `/angular` (published to npm on `next`, 0.14.0-rc.6; `latest` is still 0.12.1).
 - TypeScript types (`.d.ts`) for the engine, viewer and report format.
-- `@reportwright/engine` and `@reportwright/viewer` npm packages (built and packed, not published).
+- `@reportwright/engine`, `@reportwright/viewer`, `@reportwright/cli` and `@reportwright/fonts` are published on `next` (0.14.0-rc.6). `@reportwright/pdf` 0.1.0-beta.15 is on `latest`.
+- The viewer runs the engine in a Web Worker and falls back to the main thread if the worker cannot start.
 - CLI: `pw render`, `pw test`, `pw diff`, PDF password options; a GitHub Action for report regression tests (syntax-checked only, not run on GitHub yet).
 
 ## 12. Server, automation and operations
@@ -223,17 +224,15 @@ Sample data APIs (stand-ins for customer data): `/api/sample/hard?rows=N` (nasty
 | Area | Gap |
 |---|---|
 | SSRS | Maps, custom report items and RDL 2005 Table/Matrix/List are not imported; custom code is kept as text, not converted; gauges are approximated. |
-| SQL | No Oracle, Snowflake or BigQuery connector. |
-| Identity | No two-factor sign-in, no password reset by email; no SAML single logout. |
+| SQL | Oracle, Snowflake and BigQuery connectors are built with mocked drivers only: not live-tested, not released. |
 | Governance | Permissions are not applied with accounts off (the shared `PW_BASIC_AUTH` password is all or nothing). Exports made in the viewer are the browser's word, linked to the server's own view record. The audit hash chain is beta (docs/API.md, Known limits). |
 | Reuse | Named placeholders other than the first are filled in the first body section only. The ActiveReports importer does not map master reports, report parts or layers yet. Themes use `Theme.Colors.Accent1`, not ActiveReports' `!` syntax. Word and Excel exports draw no rounded corners (no borders as lines there either). |
 | Tools | Phase 9 deferred: desktop designer, VS Code extension. |
-| Charts | Word export leaves charts out; no leader lines on outside pie labels; overlays not in the legend; half-circle gauges only. |
+| Charts | No leader lines on outside pie labels; overlays not in the legend. |
 | Tables | A pivot's recursion is on its innermost row group only. A framed (bordered, keep-together) container inside a cell is still kept whole. |
 | Engine | A `pageBreakBefore` on an item already moved to a new page leaves a blank page. (Fixed in batch 6: tall overlapping items no longer leave page 1 blank, and the cut-off part of an item taller than the page makes no blank pages.) |
-| Scale | Batch output files go to one server's disk; the embed viewer has no Web Worker (100k rows block the page for about 5 s). |
 | Fonts | Scripts beyond the bundled ones (Sinhala, Tibetan, Malayalam, Gurmukhi, Oriya, Ethiopic…) need an uploaded font. Vowel-pointed Arabic/Hebrew extract with their marks apart (pdftotext). |
-| Publishing | npm packages and the GitHub Action not published or run; Docker image not built. |
+| Publishing | The GitHub Action is syntax-checked only, not run on GitHub yet. A Dockerfile and self-host compose files exist; the image is not verified here. |
 | Security | SQL sources (**[not released]** for PostgreSQL, SQL Server, Oracle, Snowflake, BigQuery): the final review round's probe findings (SQL Server system-object grants; PostgreSQL column, sequence, large-object and setting rights; Oracle inactive roles and PUBLIC grants; Snowflake secondary roles) are fixed and tested but that round was not repeated. Open by design: `public`'s default EXECUTE on `xp_dirtree`/`xp_fileexist` in `master` (only reachable through EXEC, which the keyword scan and the SHOWPLAN check refuse; revoke it from public on Windows servers); PUBLIC's default EXECUTE on PostgreSQL user functions (only the built-ins-only check stands in front of a SECURITY DEFINER function); BigQuery IAM is not checked. |
 | Speed | Fixed: scope aggregates are computed once per render (stress ledger 38 s → ~2 s), and a table of contents keeps the fast first page (page numbers fill in after). Open: the home-page thumbnail now draws in a worker thread (security track) and has not been re-measured. |
 | Designer | The Oct 2026 gap list is closed (outline, filters, row visibility and style, expression styles, matrix styles, palettes, images, galleries, data set and parameter dialogs, focus, merged-cell columns). Still open: older inspector labels are English only; the outline reorders with buttons, not drag and drop, and cannot move an item into a container; "show or hide another item" works in the viewer and the interactive HTML; a static export keeps the state it was exported in. |

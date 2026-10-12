@@ -24,7 +24,7 @@ The files themselves are the subpath `@reportwright/fonts/public/*` (e.g. `@repo
 ## Install
 
 ```bash
-npm i @reportwright/engine @reportwright/fonts
+npm i @reportwright/engine@next @reportwright/fonts@next
 ```
 
 ## Quick start (30 seconds)

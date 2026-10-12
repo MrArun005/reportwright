@@ -17,7 +17,7 @@ The CLI carries [`@reportwright/engine`](https://github.com/MrArun005/reportwrig
 ## Install
 
 ```bash
-npm i -D @reportwright/cli @reportwright/fonts     # then: npx pw …
+npm i -D @reportwright/cli@next @reportwright/fonts@next     # then: npx pw …
 # or one-off, without installing:
 npx -p @reportwright/cli pw --version
 ```
