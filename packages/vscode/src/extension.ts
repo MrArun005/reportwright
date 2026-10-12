@@ -116,8 +116,9 @@ async function renderCommand(format: 'pdf' | 'xlsx' | 'docx' | 'html', uri?: vsc
       const r = await engine().renderFile(format, def, data, baseUrl() || undefined);
       await fs.writeFile(out, r.bytes);
       if (r.warnings.length) { output.appendLine(`${doc.fileName} (${format}):`); r.warnings.forEach((w) => output.appendLine(`  ${w}`)); }
-      const open = await vscode.window.showInformationMessage(`ReportWright: wrote ${path.basename(out)}`, 'Open');
-      if (open) void vscode.env.openExternal(vscode.Uri.file(out));
+      // not awaited: the promise resolves only when the notification is clicked or dismissed, which would hold the command
+      void vscode.window.showInformationMessage(`ReportWright: wrote ${path.basename(out)}`, 'Open')
+        .then((open) => { if (open) void vscode.env.openExternal(vscode.Uri.file(out)); });
     } catch (e) {
       output.appendLine(`Render to ${format} failed: ${(e as Error).stack || e}`);
       void vscode.window.showErrorMessage(`ReportWright: the ${format.toUpperCase()} render failed: ${(e as Error).message}`);
