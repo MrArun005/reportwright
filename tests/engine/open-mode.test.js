@@ -408,7 +408,7 @@ describe('records and modes', () => {
     expect((await proxy(rq('/api/data/sql', { method: 'POST', body: {} }))).status).toBe(401); // reached around the proxy
     expect(await proxy(rq('/designer/x', { headers: VIA_PROXY }))).toBe(undefined);
     expect(await proxy(rq('/api/v1/templates'))).toBe(undefined); // its own keys
-    expect(await proxy(rq('/designer/x', { headers: { 'x-pagewright-proxy-secret': SECRET } }))).toBe(undefined); // the old name (deprecated 0.13.2) still works
+    expect((await proxy(rq('/designer/x', { headers: { 'x-pagewright-proxy-secret': SECRET } }))).status).toBe(401); // the old name was removed in 1.0
   }));
 });
 

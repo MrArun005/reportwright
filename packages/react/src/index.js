@@ -75,5 +75,3 @@ export function ReportWrightDesigner({ className, style, ...options }) {
   return createElement('div', { ref, className, style });
 }
 
-/** @deprecated 0.9: renamed ReportWrightViewer / ReportWrightDesigner; the old names go in 1.0. */
-export { ReportWrightViewer as PagewrightViewer, ReportWrightDesigner as PagewrightDesigner };

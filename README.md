@@ -160,7 +160,7 @@ PW_BASIC_AUTH=admin:change-me PW_API_KEYS=change-me npm start
 |---|---|
 | `PW_AUTH=users` (+ `PW_SESSION_SECRET`) | People with their own accounts and roles, or single sign-on (OIDC, SAML). See [Users and roles](#users-and-roles). |
 | `PW_BASIC_AUTH=user:password` | Everyone who has the shared password. They can do everything, SQL included. |
-| `PW_AUTH=proxy` | Everyone who reaches the app. Only behind a reverse proxy that signs people in (oauth2-proxy, Cloudflare Access, your SSO gateway) and that nothing can bypass. **`PW_PROXY_SECRET` is required in production** (16+ random characters; the server refuses to start without it): the proxy sends it as `x-pagewright-proxy-secret`, and a request that reaches the app port around the proxy is refused (401). ReportWright reads no identity header from the proxy: whoever comes through it is one trusted operator, as with `PW_BASIC_AUTH`. |
+| `PW_AUTH=proxy` | Everyone who reaches the app. Only behind a reverse proxy that signs people in (oauth2-proxy, Cloudflare Access, your SSO gateway) and that nothing can bypass. **`PW_PROXY_SECRET` is required in production** (16+ random characters; the server refuses to start without it): the proxy sends it as `x-reportwright-proxy-secret`, and a request that reaches the app port around the proxy is refused (401). ReportWright reads no identity header from the proxy: whoever comes through it is one trusted operator, as with `PW_BASIC_AUTH`. |
 | `PW_PUBLIC_READONLY=1` (with none of the above) | Anyone may open and render the saved reports, **including the rows their saved queries return**; nobody can change anything, run SQL of their own, or open the designer. |
 
 With `PW_EMBED_ORIGINS` and `PW_BASIC_AUTH`, report definitions (`GET /api/reports/<id>`, which hold SQL text and data-source headers) and sample data are readable without the password, for embedded viewers: keep secrets out of definitions, or use accounts (then only reports shared with `group:public` are). With `PW_AUTH=proxy` they need the proxy secret like everything else.
@@ -226,10 +226,10 @@ The viewer runs in a Shadow DOM, so the host page styles do not change it. Set `
 |---|---|---|
 | `PW_API_KEYS` | run time | Comma-separated keys for `/api/v1`. Send `Authorization: Bearer <key>` or `x-api-key`. **Required in production.** |
 | `PW_ALLOW_KEYLESS` | run time | `1` lets `/api/v1` answer without a key in production, read-only: `GET`s and `POST /api/v1/render` of a saved template, with no definition or data in the request, no signing, no batches or schedules. Anyone can then render every report. In development the API answers without a key, and refuses a keyless write that carries another site's `Origin`. |
-| `PW_WEBHOOK_SECRET` | run time | Signs webhook bodies: header `x-reportwright-signature: sha256=<HMAC-SHA256 hex>` (also sent as the deprecated `x-pagewright-signature`) |
+| `PW_WEBHOOK_SECRET` | run time | Signs webhook bodies: header `x-reportwright-signature: sha256=<HMAC-SHA256 hex>` |
 | `PW_BASE_URL` | run time | Public URL of this server. Relative data URLs in server renders, thumbnails, batches and schedules resolve against it, and the server's calls to itself go there. **Required in production** for reports with relative data URLs: the server never takes its own address from a request. In development the address Next listens on. |
 | `PW_FIXED_FETCH_HOSTS` | run time | `1` (default in production): a server-side data fetch must write its host out; parameters and expressions fill only the path and query. `0` (default in development) allows hosts made by expressions. |
-| `PW_PROXY_SECRET` | run time | With `PW_AUTH=proxy`: a secret (16+ characters) the reverse proxy sends as `x-reportwright-proxy-secret` (the deprecated `x-pagewright-proxy-secret` is still read). Requests without it are refused, so nothing can go around the proxy. Required in production. The server's own calls to itself send it too. |
+| `PW_PROXY_SECRET` | run time | With `PW_AUTH=proxy`: a secret (16+ characters) the reverse proxy sends as `x-reportwright-proxy-secret`. Requests without it are refused, so nothing can go around the proxy. Required in production. The server's own calls to itself send it too. |
 | `PW_DEV_HOSTS` | run time | Development only: more host names (comma-separated) a `next dev` server with no sign-in answers to, besides `localhost`, `127.0.0.1` and `::1`. |
 | `PW_BATCH_CONCURRENCY` | run time | Reports rendered at the same time in a batch (default 2) |
 | `PW_RENDER_WORKERS` | run time | Worker threads that do every server render and export (API, report links, batches, schedules, thumbnails). Default: CPU cores minus one, at most 8. `0` renders on the request thread (no pool). Each worker loads fonts and HarfBuzz once, and opens its own SQL connection pools. |
@@ -397,11 +397,9 @@ packages are deprecated), finished in 0.13.2. What did not change, so deployment
 - settings keep the `PW_` prefix (`PW_AUTH`, `PW_BASE_URL`, …), and the CLI is still `pw` (`reportwright` works too);
 - cookie names and storage table names, and report files keep the `.pw.json` extension.
 
-Deprecated, still working, removed in 1.0 (each is an alias of its ReportWright name):
+Removed in 1.0 (see the CHANGELOG's 1.0.0 section for each replacement): the `<pagewright-*>` tags, the
+`Pagewright*` / `pagewright*` component and function names, `window.Pagewright`, the `/embed/pagewright-*.js` files,
+the `x-pagewright-*` HTTP headers and the `pagewright_*` metrics.
 
-- `<pagewright-viewer>` / `<pagewright-designer>`, `PagewrightViewer`, `PagewrightDesigner`, `pagewrightViewer`,
-  `pagewrightDesigner`, `definePagewrightElements`, `window.Pagewright` and the `/embed/pagewright-viewer.js` loader
-  (each warns once in the console, except the React and Vue components, which are the same objects);
-- `"$schema": "pagewright/report@1"`, read as `reportwright/report@1`;
-- the `x-pagewright-*` HTTP headers, sent next to their `x-reportwright-*` names (the proxy secret is read under
-  either name), and the `pagewright_*` metrics, emitted next to the `reportwright_*` ones.
+Still read, and documented as part of 1.0: a saved report with `"$schema": "pagewright/report@1"` is the same format,
+read and normalised to `reportwright/report@1` (it is saved under the new name).

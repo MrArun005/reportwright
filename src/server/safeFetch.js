@@ -98,7 +98,7 @@ export const serverFetch = (selfOrigin, { internal = true, anon = false } = {}) 
   if (url.origin === NO_BASE_URL) throw Object.assign(new Error('A relative data URL needs PW_BASE_URL in production (this server\'s public URL): the server never takes its own address from a request.'), { status: 500 });
   const headers = new Headers(init.headers || {});
   // the connection is ours to frame: a report cannot pick the virtual host (Host) or the body's framing
-  for (const k of ['host', 'content-length', 'transfer-encoding', 'connection', 'te', 'upgrade', 'x-reportwright-proxy-secret', 'x-pagewright-proxy-secret']) headers.delete(k);
+  for (const k of ['host', 'content-length', 'transfer-encoding', 'connection', 'te', 'upgrade', 'x-reportwright-proxy-secret']) headers.delete(k);
   const toSelf = self && url.origin === self;
   // credentials only to the configured self: PW_BASE_URL's exact origin (scheme, host, port); without it, development only
   const credentials = toSelf && (process.env.PW_BASE_URL ? safeOrigin(process.env.PW_BASE_URL) === self : devMode());

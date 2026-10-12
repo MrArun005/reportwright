@@ -27,7 +27,7 @@ function installSnapshot(snapshot) {
       const res = await live(input, init);
       if (res.ok || !(url in snapshot)) return res;
     } catch (e) { if (!(url in snapshot)) throw e; }
-    return new Response(JSON.stringify(snapshot[url]), { status: 200, headers: { 'content-type': 'application/json', 'x-reportwright-snapshot': '1', 'x-pagewright-snapshot': '1' } });
+    return new Response(JSON.stringify(snapshot[url]), { status: 200, headers: { 'content-type': 'application/json', 'x-reportwright-snapshot': '1' } });
   };
 }
 
@@ -136,6 +136,4 @@ export function mountViewer(target, opts = {}) {
 
 if (typeof window !== 'undefined') {
   window.ReportWright = { mountViewer };
-  let warned = false; // window.Pagewright: the old name, deprecated (0.9), gone in 1.0; one warning per page
-  Object.defineProperty(window, 'Pagewright', { configurable: true, get() { if (!warned) { warned = true; console.warn('ReportWright: window.Pagewright is deprecated, use window.ReportWright (the old name goes in 1.0).'); } return window.ReportWright; } });
 }

@@ -48,12 +48,12 @@ export function devHostOk(req) {
   return ok.includes(host);
 }
 /**
- * PW_AUTH=proxy with PW_PROXY_SECRET: the reverse proxy sends it as x-reportwright-proxy-secret (or the deprecated x-pagewright-proxy-secret), so a request that
+ * PW_AUTH=proxy with PW_PROXY_SECRET: the reverse proxy sends it as x-reportwright-proxy-secret, so a request that
  * reaches the app port directly (around the proxy) is refused. Without PW_PROXY_SECRET: true (and a warning at start).
  * @param {Request} req
  */
-/** The proxy secret header: x-reportwright-proxy-secret, else the old name (deprecated 0.13.2). @param {Request} req */
-export const proxySecretHeader = (req) => req.headers.get('x-reportwright-proxy-secret') ?? req.headers.get('x-pagewright-proxy-secret');
+/** The proxy secret header: x-reportwright-proxy-secret (the old x-pagewright-proxy-secret is not read since 1.0). @param {Request} req */
+export const proxySecretHeader = (req) => req.headers.get('x-reportwright-proxy-secret');
 export function proxySecretOk(req) {
   const want = process.env.PW_PROXY_SECRET;
   if (process.env.PW_AUTH !== 'proxy' || !want) return true;

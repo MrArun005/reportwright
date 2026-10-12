@@ -354,7 +354,7 @@ describe('shipping to a SIEM', () => {
       expect(e).toMatchObject({ type: 'auth.login', actor: 'user:ship@x.test' });
       expect(e.hash).toBe(A.hashEntry(e)); // the chained event, as stored
       expect(got[0].sig).toBe(`sha256=${crypto.createHmac('sha256', 'siem-secret').update(got[0].body).digest('hex')}`);
-      expect(got[0].old).toBe(got[0].sig); // the old header name (deprecated 0.13.2) too
+      expect(got[0].old).toBeUndefined(); // the old x-pagewright-signature name was removed in 1.0
       expect(siem.siemStatus()).toMatchObject({ on: true, kind: 'webhook', sent: 1, queued: 0 });
     } finally { for (const k of ['PW_AUDIT_SIEM', 'PW_AUDIT_SIEM_ALLOW_HTTP', 'PW_AUDIT_SIEM_SECRET']) delete process.env[k]; srv.close(); }
   });

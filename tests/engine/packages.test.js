@@ -1,6 +1,6 @@
 // Phase 7: the npm packages build, the framework wrappers keep the framework and the viewer external,
 // and the published types type-check a consumer (tests/fixtures/types/consumer.ts, with @ts-expect-error lines).
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -211,25 +211,20 @@ describe('npm packages', () => {
     expect(env.filter(n => !/^PW_/.test(n))).toEqual([]);
   });
 
-  it('the rename keeps the Pagewright names as deprecated aliases (0.9); the CLI answers to reportwright and pw', async () => {
+  it('the Pagewright aliases are gone (1.0); the CLI answers to reportwright and pw', async () => {
     const src = (n) => fs.readFileSync(path.join(root, `packages/${n}/dist/index.js`), 'utf8');
-    expect(src('react')).toMatch(/ReportWrightViewer as PagewrightViewer/);
-    expect(src('vue')).toMatch(/ReportWrightViewer as PagewrightViewer/);
-    expect(src('svelte')).toMatch(/export const pagewrightViewer = .*reportWrightViewer\(node, options\)/);
-    // the Angular elements: both tag names registered, each its own class
+    for (const n of ['react', 'vue', 'svelte', 'angular']) expect(src(n)).not.toMatch(/pagewright/i);
+    // the Angular elements: the two tag names, each its own class
     const defined = new Map();
     globalThis.HTMLElement ??= class {};
     const prev = globalThis.customElements;
     globalThis.customElements = { get: (t) => defined.get(t), define: (t, c) => { if ([...defined.values()].includes(c)) throw new Error('class reused'); defined.set(t, c); } };
     try {
       const m = await import(path.join(root, 'packages/angular/dist/index.js'));
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      m.definePagewrightElements();
-      m.definePagewrightElements();
-      expect(warn.mock.calls.flat().join(' ')).toMatch(/definePagewrightElements is deprecated, use defineReportWrightElements/);
-      expect(warn).toHaveBeenCalledTimes(1); // once per page
-      warn.mockRestore();
-      expect([...defined.keys()].sort()).toEqual(['pagewright-designer', 'pagewright-viewer', 'reportwright-designer', 'reportwright-viewer']);
+      expect(m.definePagewrightElements).toBeUndefined();
+      m.defineReportWrightElements();
+      m.defineReportWrightElements();
+      expect([...defined.keys()].sort()).toEqual(['reportwright-designer', 'reportwright-viewer']);
     } finally { globalThis.customElements = prev; }
     expect(json('packages/cli/package.json').bin).toEqual({ reportwright: 'dist/pw.mjs', pw: 'dist/pw.mjs' });
     expect(Object.keys(json('packages/fonts-cjk/package.json').bin)).toEqual(['reportwright-fonts-cjk']);
