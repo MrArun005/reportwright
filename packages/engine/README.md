@@ -250,6 +250,21 @@ format: `import type { Report } from '@reportwright/engine/report'`; JSON Schema
 | Disk used by a spilled sort | 2 GB | `spill: { maxMB }` |
 | Warning threshold for a large data set | 100,000 rows | `largeReportRows` |
 
+## Stability and versioning
+
+From 1.0.0, ReportWright follows [semantic versioning](https://semver.org). All `@reportwright/*` packages share one
+version.
+
+- **What is covered:** exactly what [docs/PUBLIC-API.md](https://github.com/MrArun005/reportwright/blob/main/docs/PUBLIC-API.md) lists: the report JSON format, the
+  packages' exports and types, the CLI commands, flags and exit codes, the REST routes and headers, and the `PW_*`
+  settings. Names marked `@internal`, undocumented options and anything under `src/` are not covered.
+- **Breaking changes only in a major release**, each listed in the CHANGELOG with its replacement. Before removal a
+  feature is deprecated (typed `@deprecated`, a console warning or a note in the CHANGELOG) for at least one minor
+  release.
+- **Security fixes may change behaviour in a patch release** when that is what closes the hole (for example refusing
+  input that used to be accepted); the CHANGELOG says so.
+- Report files saved by any 1.x release open in every later 1.x release.
+
 ## Related packages
 
 | Package | What it is |

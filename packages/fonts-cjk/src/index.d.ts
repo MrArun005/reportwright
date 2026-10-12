@@ -5,7 +5,7 @@ export declare const CJK_FONTS: [string, string, string][];
 export declare function cacheDir(env?: Record<string, string | undefined>, platform?: string, home?: string): string;
 /** cacheDir() when this module loaded */
 export declare const FONTS_DIR: string;
-/** where earlier versions put the fonts (this package's fonts/ folder); still read */
+/** @internal where earlier versions put the fonts (this package's fonts/ folder); still read. Not part of the public API. */
 export declare const LEGACY_DIR: string;
 /** the path of a downloaded font file (NotoSansJP.ttf…), or undefined when no folder has it */
 export declare function fontPath(name: string, dirs?: string[]): string | undefined;

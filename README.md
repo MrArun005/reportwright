@@ -15,7 +15,7 @@
 
 ```bash
 mkdir pw-hello && cd pw-hello && npm init -y >/dev/null && npm pkg set type=module
-npm i @reportwright/engine@next @reportwright/fonts@next
+npm i @reportwright/engine @reportwright/fonts
 ```
 
 Save as `report.mjs` and run `node report.mjs`:
@@ -388,6 +388,21 @@ ActiveReportsJS did not finish the 50,000-row reports within 10 minutes; ReportW
 **Not released:** SQL Server, PostgreSQL, Oracle, Snowflake and BigQuery data sources and stored procedures (see `docs/DATA-SQL.md`); the audit log's hash chain is beta. **Deferred:** running SSRS custom VB `Code`, and page-at-a-time streaming layout for millions of rows.
 
 **Breaking change:** `render()` keeps table data for Excel, CSV, Word, interactive HTML and accessible PDF only with `render(def, { exportData: true })`; the built-in server, CLI and viewer pass it. After upgrading, re-save SQL reports once in the Designer.
+
+## Stability and versioning
+
+From 1.0.0, ReportWright follows [semantic versioning](https://semver.org). All `@reportwright/*` packages share one
+version.
+
+- **What is covered:** exactly what [docs/PUBLIC-API.md](docs/PUBLIC-API.md) lists: the report JSON format, the
+  packages' exports and types, the CLI commands, flags and exit codes, the REST routes and headers, and the `PW_*`
+  settings. Names marked `@internal`, undocumented options and anything under `src/` are not covered.
+- **Breaking changes only in a major release**, each listed in the CHANGELOG with its replacement. Before removal a
+  feature is deprecated (typed `@deprecated`, a console warning or a note in the CHANGELOG) for at least one minor
+  release.
+- **Security fixes may change behaviour in a patch release** when that is what closes the hole (for example refusing
+  input that used to be accepted); the CHANGELOG says so.
+- Report files saved by any 1.x release open in every later 1.x release.
 
 ## Renamed from Pagewright
 

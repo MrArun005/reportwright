@@ -12,7 +12,7 @@ roles, schedules and the automation API: what JasperReports Server, SSRS or Crys
 ## Install (5 commands)
 
 ```bash
-git clone --depth 1 https://github.com/MrArun005/reportwright.git
+git clone --depth 1 --branch v1.0.0 https://github.com/MrArun005/reportwright.git   # a release tag; main is the development line
 cd reportwright/deploy/compose
 cp .env.example .env
 nano .env        # fill in the values below
@@ -66,7 +66,7 @@ Copy the backup file off the server (for example `scp`), or it is not a backup.
 ## Upgrade
 
 ```bash
-cd reportwright && git pull
+cd reportwright && git fetch --depth 1 origin tag v1.0.1 && git checkout v1.0.1   # the release you move to
 cd deploy/compose && docker compose --profile https up -d --build
 ```
 

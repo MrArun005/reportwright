@@ -63,6 +63,7 @@ export async function reband(pages, total, def, first, opts) {
 export const CAPPED = 'The page headers and footers would draw more than';
 
 /**
+ * @internal not part of @reportwright/engine's public API (exported for its stream exporters only).
  * @param {any} def0 @param {any} opts render() options, and maxRows/sorter/sqlRows as planStream takes them;
  *   window: rows per window (tests); holdItems: the page items a held counting pass keeps at most (tests); aheadRows,
  *   autoRows: AHEAD_ROWS and AUTO_ROWS (tests); the three can only lower their built-in caps
