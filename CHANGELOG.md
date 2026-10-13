@@ -70,6 +70,7 @@ the TOTP-key and audit-checkpoint salts (changing them would break pasting betwe
 - **QA suites (PRs #7, #8).** `qa-load` (admission spike and fairness), a security suite (PDF reader fuzz, SSRF, expression injection, oversized inputs, auth, npm audit, semgrep), a rival-best suite and an engines suite. Benchmarks measure the current releases.
 - **Docs.** `docs/compare/` pages for Jasper, SSRS, Puppeteer, pdfmake and Python.
 - **Self-host.** `deploy/compose` (docker compose, optional Caddy HTTPS through `PW_DOMAIN`) and `self-host.yml`.
+- **Security.** The assess route's upload limits are hardened (PR #29).
 - **`create-reportwright`** scaffolds a sample app (node, react, vue, svelte, angular). Not yet on npm.
 
 ## 0.14.0-rc.6 — 2026-10-11 (release candidate)
