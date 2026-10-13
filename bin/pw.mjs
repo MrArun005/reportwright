@@ -76,6 +76,12 @@ Exit codes: 0 ok, 1 a test failed, the pages differ or the audit log does not ch
 // fontFile(k), not `${k}.ttf`: the shaper key is "harfbuzz" → harfbuzz.wasm (without it Arabic and Indic text is not shaped)
 const fontStore = new FontStore((k) => fs.readFileSync(path.join(PUB, 'fonts', fontFile(k))));
 // PDFs embed only the glyphs they use, as the server's do
+/** "1 page", "2 pages" */
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+/** formats with no pages: "wrote x.csv" says no page count */
+const UNPAGED = new Set(['csv', 'xlsx', 'json']);
+/** pw: wrote out (the parts that are set) */
+const wroteLine = (out, parts) => { const p = parts.filter(Boolean); return `pw: wrote ${out}${p.length ? ` (${p.join(', ')})` : ''}`; };
 const subset = createSubsetter(() => fs.promises.readFile(path.join(PUB, 'harfbuzz-subset.wasm')));
 const readJson = (f) => JSON.parse(fs.readFileSync(f, 'utf8').replace(/^﻿/, ''));
 const pairs = (list = []) => Object.fromEntries(list.map((s) => { const i = s.indexOf('='); if (i < 1) usage(`"${s}" should be name=value`); return [s.slice(0, i), s.slice(i + 1)]; }));
@@ -203,7 +209,7 @@ async function cmdRender(args) {
   const pdfOpts = () => ({ title: def.name, subset, encrypt, drillBase: values.base, pdfa: values.pdfa ? { icc: fs.readFileSync(path.join(PUB, 'icc', 'sRGB-v2-magic.icc')) } : undefined, tagged: values.ua ? { lang: def.locale || 'en' } : undefined });
   if (fmt === 'pdf' && out !== '-') {
     const r = await writePdf(def, ro, pdfOpts(), out);
-    console.error(`pw: wrote ${out} (${r.pages} pages${r.streamed ? ', streamed' : ''}${r.warnings.length ? `, ${r.warnings.length} warnings` : ''})`);
+    console.error(wroteLine(out, [plural(r.pages, 'page'), r.streamed && 'streamed', r.warnings.length && plural(r.warnings.length, 'warning')]));
     return;
   }
   // the data CSV skips the page layout; a report without a table falls back to its page text
@@ -225,7 +231,7 @@ async function cmdRender(args) {
   else if (fmt === 'txt') bytes = snapshotText(def.name || positionals[0], model);
   else usage(`unknown format "${fmt}"`);
   if (out === '-') process.stdout.write(typeof bytes === 'string' ? bytes : Buffer.from(bytes));
-  else { fs.writeFileSync(out, typeof bytes === 'string' ? bytes : Buffer.from(bytes)); console.error(`pw: wrote ${out} (${model.pages.length} pages${model.warnings.length ? `, ${model.warnings.length} warnings` : ''})`); }
+  else { fs.writeFileSync(out, typeof bytes === 'string' ? bytes : Buffer.from(bytes)); console.error(wroteLine(out, [!UNPAGED.has(fmt) && plural(model.pages.length, 'page'), model.warnings.length && plural(model.warnings.length, 'warning')])); }
 }
 
 /** The layout of every page, one line per item: its box (points, rounded to 0.5), size and colour; then each table's column widths. What pw test --layout compares. */
