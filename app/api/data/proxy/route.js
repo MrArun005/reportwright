@@ -14,6 +14,23 @@ const allow = () => (process.env.PW_PROXY_ALLOW || '').split(',').map(s => s.tri
 const SAFE = { 'x-content-type-options': 'nosniff', 'content-security-policy': "sandbox; default-src 'none'" };
 const err = (error, status) => Response.json({ error }, { status, headers: SAFE });
 
+/** the upstream body, read as a stream and stopped at MAX_BYTES (null past it): never buffered whole first */
+async function readCapped(res) {
+  if (Number(res.headers.get('content-length')) > MAX_BYTES) { await res.body?.cancel().catch(() => {}); return null; }
+  if (!res.body) return new Uint8Array(0);
+  const reader = res.body.getReader();
+  const parts = [];
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.byteLength;
+    if (n > MAX_BYTES) { await reader.cancel().catch(() => {}); return null; }
+    parts.push(value);
+  }
+  return Buffer.concat(parts, n);
+}
+
 export async function GET(req) {
   const target = new URL(req.url).searchParams.get('url');
   let u;
@@ -21,8 +38,8 @@ export async function GET(req) {
   if (!allow().includes(u.hostname.toLowerCase())) return err(`The host "${u.hostname}" is not in PW_PROXY_ALLOW`, 403);
   try {
     const res = await safeFetch(u, { headers: { accept: 'application/json, text/csv;q=0.9, */*;q=0.1' } }, { hostsOnly: allow() });
-    const buf = await res.arrayBuffer();
-    if (buf.byteLength > MAX_BYTES) return err('The response is larger than 5 MB', 413);
+    const buf = await readCapped(res);
+    if (!buf) return err('The response is larger than 5 MB', 413);
     // a data read through the server: host and path only (a query string may hold a token)
     await audit('data.read', { req, principal: await principalOf(req).catch(() => undefined), detail: { via: 'proxy', host: u.hostname, path: u.pathname.slice(0, 200), status: res.status, bytes: buf.byteLength } });
     return new Response(buf, { status: res.status, headers: { 'content-type': proxiedType(res.headers.get('content-type')), ...SAFE } });
