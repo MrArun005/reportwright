@@ -11,6 +11,7 @@ import { listReports } from '@/server/reports.js';
 import { mailOn, allowedDomains } from '@/server/mail.js';
 import { audit } from '@/server/audit.js';
 import { errorResponse } from '@/server/errors.js';
+import { readJson, DEF_BYTES } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 const json = (o, status = 200) => Response.json(o, { status, headers: { 'cache-control': 'no-store' } });
@@ -31,7 +32,7 @@ export async function POST(req) {
   const { p, res } = await designer(req);
   if (res) return res;
   try {
-    const s = await createSchedule(specOf(await req.json()), p, { session: true });
+    const s = await createSchedule(specOf(await readJson(req, DEF_BYTES)), p, { session: true });
     await audit('schedule.create', { req, principal: p, report: s.template, detail: { schedule: s.id, cron: s.cron, timezone: s.timezone, email: s.email ? s.email.to.length : 0, via: 'page' } });
     return json(s, 201);
   } catch (e) { return errorResponse(e); }

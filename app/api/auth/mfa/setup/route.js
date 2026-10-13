@@ -8,6 +8,7 @@ import { mailOn } from '@/server/mail.js';
 import { checkCredential } from '@/server/limits.js';
 import { audit } from '@/server/audit.js';
 import { errorResponse } from '@/server/errors.js';
+import { readJsonOr } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 
@@ -18,7 +19,7 @@ export async function POST(req) {
     const u = st?.enrol ? await getUser(st.e) : null;
     if (!st?.enrol || !u || u.disabled || (u.sessionVersion || 0) !== st.v) return Response.json({ error: 'The sign-in took too long. Sign in again.' }, { status: 401 });
     if (mailOn()) {
-      const body = await req.json().catch(() => ({}));
+      const body = await readJsonOr(req, {});
       if (!(await checkCredential({ kind: 'mfa', account: u.email, req }, () => enrolCodeOk(u, body?.emailCode)))) { await audit('auth.mfa_failed', { req, actor: `user:${u.email}`, status: 'failed', detail: { reason: 'wrong enrolment code' } }); return Response.json({ error: 'That emailed code is not right.' }, { status: 401 }); }
     }
     const out = await startTwoFactor(u.email);

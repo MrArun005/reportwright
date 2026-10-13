@@ -59,6 +59,7 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 | `PW_PROXY_ALLOW` | list | (none) | Public hosts the browser data proxy may fetch. |
 | `PW_FETCH_DEADLINE_MS` | ms | 60000 | A server fetch, start to last byte. |
 | `PW_FETCH_MAX_MB` | int | 64 | Largest response a server fetch reads (data sources, images); past it the render fails with 413. |
+| `PW_MAX_BODY_KB` | int | 1024 | Largest request body a JSON or form API route reads (sign-in, settings, users, folders, SQL…), counted as it arrives (chunked too); past it 413. Larger fixed limits: report definitions, imports and schedules 5 MB, render and batch requests (pushed data) `PW_FETCH_MAX_MB`, fonts 20 MB, compare 2×5 MB, assess 50 MB, SAML 1 MB. A declared Content-Length over the largest of these is refused before routing. |
 | `PW_STORAGE` | text | file | file, sqlite:/path, postgres://, mysql://, mssql:// or sql:<name>. |
 | `PW_STORAGE_FROM_DATABASE_URL` | flag | unset | 1: when `PW_STORAGE` is unset, DATABASE_URL is the storage (always on when VERCEL is set). Otherwise DATABASE_URL is never read. |
 | `PW_STORAGE_POOL_MAX` | int | 5 | Storage connections per server thread. |

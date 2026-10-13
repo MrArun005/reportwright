@@ -11,13 +11,14 @@ import { audit, queryAudit } from '@/server/audit.js';
 import { principalId } from '@/server/perms.js';
 import { accountsOn } from '@/server/session.js';
 import { errorResponse } from '@/server/errors.js';
+import { readJsonOr } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 const FORMATS = new Set(['pdf', 'xlsx', 'docx', 'html', 'csv', 'json', 'svg', 'print']);
 
 export async function POST(req) {
   try {
-    const body = await req.json().catch(() => null);
+    const body = await readJsonOr(req, null);
     if (!body || typeof body.report !== 'string' || !FORMATS.has(body.format)) return Response.json({ error: 'Send { report, format }' }, { status: 400 });
     const p = await principalOf(req);
     if (accountsOn() && p.kind !== 'user') return Response.json({ error: 'Sign in first.' }, { status: 401 });

@@ -6,9 +6,13 @@
 // PW_PUBLIC_READONLY=1 what a viewer may do (open and render the saved reports). See openTrusted in session.js.
 import { basicAuth } from './src/server/basicAuth.js';
 import { accountsOn, sameOrigin, openTrusted, publicReadonly, devOpen, devHostOk, proxySecretOk, proxySecretHeader, NO_AUTH_HELP } from './src/server/session.js';
+import { largestBodyBytes } from './src/server/body.js';
 import { guard, decide, canonical, UNSAFE, CROSS_SITE_WRITES } from './src/server/access.js';
 
 export async function proxy(request) {
+  // defence in depth: a declared body bigger than any route takes is refused before routing (each route's streaming cap,
+  // src/server/body.js, is the real guard: a chunked body declares no length)
+  if (Number(request.headers.get('content-length')) > largestBodyBytes()) return Response.json({ error: 'The request body is too large.' }, { status: 413 });
   if (accountsOn()) return (await guard(request)) ?? undefined;
   // a typo must not leave the app open: refuse to serve
   if (process.env.PW_AUTH && process.env.PW_AUTH !== 'proxy') return new Response('PW_AUTH must be "users" or "proxy" (or not set at all).', { status: 500 });

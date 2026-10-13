@@ -1,6 +1,7 @@
 import { apiPrincipal, fail } from '@/server/auth.js';
 import { getSchedule, updateSchedule, deleteSchedule } from '@/server/schedules.js';
 import { audit } from '@/server/audit.js';
+import { readJson, DEF_BYTES } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 const nf = () => Response.json({ error: 'Schedule not found' }, { status: 404 });
@@ -13,7 +14,7 @@ export async function GET(req, { params }) {
 export async function PUT(req, { params }) {
   const { principal, res } = await apiPrincipal(req); if (res) return res;
   try {
-    const s = await updateSchedule((await params).id, await req.json(), principal);
+    const s = await updateSchedule((await params).id, await readJson(req, DEF_BYTES), principal);
     if (!s) return nf();
     await audit('schedule.update', { req, principal, report: typeof s.template === 'string' ? s.template : null, detail: { schedule: s.id, cron: s.cron, enabled: s.enabled !== false } });
     return Response.json(s);

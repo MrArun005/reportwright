@@ -19,28 +19,9 @@ export async function readDefinition(req) {
   try { return JSON.parse(text); } catch { throw Object.assign(new Error('Send the report as JSON'), { status: 400 }); }
 }
 
-/**
- * A request body, read only up to `max` bytes: past it the read stops and `tooBig()` is thrown, with or without a
- * Content-Length (a chunked body is counted as it arrives). @param {Request} req @param {number} max @param {() => Error} [tooBig]
- */
-export async function readBody(req, max, tooBig = () => Object.assign(new Error(`The request is larger than ${Math.round(max / 1048576)} MB`), { status: 413 })) {
-  if (Number(req.headers.get('content-length')) > max) throw tooBig();
-  if (!req.body) return new Uint8Array(0);
-  const reader = req.body.getReader();
-  const parts = [];
-  let n = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    n += value.length;
-    if (n > max) { await reader.cancel().catch(() => {}); throw tooBig(); }
-    parts.push(value);
-  }
-  const out = new Uint8Array(n);
-  let o = 0;
-  for (const p of parts) { out.set(p, o); o += p.length; }
-  return out;
-}
+/** A request body, read only up to `max` bytes (body.js; kept here for older callers). */
+export { readBodyCapped as readBody } from './body.js';
+import { readBodyCapped as readBody } from './body.js';
 
 export function safeId(id) {
   if (!ID.test(String(id))) throw Object.assign(new Error('Bad report id'), { status: 400 });

@@ -13,6 +13,7 @@ import { getSettings } from '@/server/settings.js';
 import { checkCredential } from '@/server/limits.js';
 import { audit } from '@/server/audit.js';
 import { errorResponse } from '@/server/errors.js';
+import { readJsonOr } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 const fail = (msg, status) => Object.assign(new Error(msg), { status });
@@ -22,7 +23,7 @@ export async function POST(req) {
   const { user: me, res } = await requireRole(req, 'viewer');
   if (res) return res;
   try {
-    const body = await req.json().catch(() => ({}));
+    const body = await readJsonOr(req, {});
     const action = String(body.action || '');
     if (action === 'setup') {
       const u = await getUser(me.email);

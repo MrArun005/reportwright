@@ -4,6 +4,7 @@ import { principalOf, updateFolder, deleteFolder, folderParam, snapshot, folderL
 import { audit } from '@/server/audit.js';
 import { withLock } from '@/server/storage/index.js';
 import { errorResponse } from '@/server/errors.js';
+import { readJsonOr } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 const fail = (e) => errorResponse(e);
@@ -29,7 +30,7 @@ export async function GET(req, { params }) {
 export async function PATCH(req, { params }) {
   try {
     const id = await idOf(params);
-    const body = await req.json().catch(() => null);
+    const body = await readJsonOr(req, null);
     if (!body || typeof body !== 'object') return Response.json({ error: 'Send { name?, parent?, inherit?, grants?, create? } (create: the top only)' }, { status: 400 });
     const patch = {};
     for (const k of ['name', 'inherit', 'grants', 'create']) if (k in body) patch[k] = body[k];
