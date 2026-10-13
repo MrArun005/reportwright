@@ -71,6 +71,8 @@ the TOTP-key and audit-checkpoint salts (changing them would break pasting betwe
 - **Docs.** `docs/compare/` pages for Jasper, SSRS, Puppeteer, pdfmake and Python.
 - **Self-host.** `deploy/compose` (docker compose, optional Caddy HTTPS through `PW_DOMAIN`) and `self-host.yml`.
 - **Security.** The assess route's upload limits are hardened (PR #29).
+- **Security.** The data proxy stops reading an upstream response once it passes its 5 MB limit (PR #30).
+- **Security.** Every request body the API reads is size-capped while it is read; `PW_MAX_BODY_KB` (default 1024) sets the limit for control routes (PR #31).
 - **`create-reportwright`** scaffolds a sample app (node, react, vue, svelte, angular). Not yet on npm.
 
 ## 0.14.0-rc.6 — 2026-10-11 (release candidate)
