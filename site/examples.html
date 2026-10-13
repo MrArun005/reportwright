@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReportWright · Migration examples</title>
+<meta name="description" content="Reports from the official SSRS, JasperReports and BIRT samples, converted by ReportWright's own importer: what converted, what was approximated or dropped, and why.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="examples.css">
+<script>try { const t = localStorage.getItem('pw-site-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}</script>
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="index.html" aria-label="ReportWright home">
+    <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path d="M4 1v6M1 4h6M28 1v6M25 4h6M4 25v6M1 28h6M28 25v6M25 28h6" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="7" width="14" height="18" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 13h8M12 17h8M12 21h5" stroke="currentColor" stroke-width="1.4"/></svg>
+    <span>ReportWright</span>
+  </a>
+  <nav class="nav" id="site-nav" aria-label="Site">
+    <a href="index.html#gallery">Gallery</a>
+    <a href="learn.html">Recipes</a>
+    <a href="examples.html" aria-current="page">Examples</a>
+    <a href="switch.html">Switch</a>
+    <a href="bench.html">Benchmarks</a>
+    <a href="play.html">Playground</a>
+  </nav>
+  <div class="bar-end">
+    <span class="licence">MIT licensed</span>
+    <button class="icon-btn" id="theme" type="button" aria-label="Switch light or dark theme" title="Light / dark">
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 3a7 7 0 0 1 0 14z" fill="currentColor"/></svg>
+    </button>
+    <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="Site menu" aria-expanded="false" aria-controls="site-nav">
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.8" fill="none"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="top" class="ex">
+  <section class="ex-hero" aria-labelledby="ex-h1">
+    <p class="kicker"><span class="mark">●</span> Migration examples · generated</p>
+    <h1 id="ex-h1">Official sample reports, <em>converted by the importer.</em></h1>
+    <p class="lede">Every card below is a report from an official SSRS, JasperReports or BIRT sample, run through ReportWright's own batch importer at site build time. Nothing here is hand-written. The import result is shown as found: what converted, what was approximated, and what was dropped, with the reason. Reports that read a database are shown as design only.</p>
+    <p class="ex-status" id="ex-status" role="status">Loading the examples…</p>
+  </section>
+
+  <section class="ex-sect" aria-labelledby="cov-h">
+    <header class="ex-sect-head">
+      <h2 id="cov-h">Coverage</h2>
+      <p class="ex-note">✅ every example in the cell imported with nothing dropped · ⚠️ some were approximated, dropped something, or did not import · ❌ no example in the cell. Each cell: the count of examples.</p>
+    </header>
+    <div class="ex-table-wrap">
+      <table class="ex-cov" id="coverage">
+        <caption class="sr-only">Coverage by category and source tool</caption>
+        <thead><tr><th scope="col">Category</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="ex-sect" aria-labelledby="gal-h">
+    <header class="ex-sect-head">
+      <h2 id="gal-h">Examples</h2>
+      <p class="ex-note" id="count"></p>
+    </header>
+    <div class="ex-filters">
+      <fieldset class="ex-group">
+        <legend>Source tool</legend>
+        <div class="chips" id="f-tool"></div>
+      </fieldset>
+      <fieldset class="ex-group">
+        <legend>Category</legend>
+        <div class="chips" id="f-cat"></div>
+      </fieldset>
+    </div>
+    <ul class="cards" id="cards" aria-live="polite"></ul>
+  </section>
+
+  <section class="ex-sect" aria-labelledby="src-h">
+    <header class="ex-sect-head">
+      <h2 id="src-h">Sources, licences and exclusions</h2>
+      <p class="ex-note">Only corpora whose licence allows redistribution are used. Each sample file is kept unchanged in the repository under its corpus folder.</p>
+    </header>
+    <div class="ex-two">
+      <div>
+        <h3>Included</h3>
+        <ul class="plain" id="sources"></ul>
+      </div>
+      <div>
+        <h3>Excluded</h3>
+        <ul class="plain" id="excluded"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="ex-sect ex-compare" id="compare-placeholder" aria-labelledby="cmp-h" data-todo="wire to pw compare">
+    <header class="ex-sect-head">
+      <h2 id="cmp-h">Compare with the original PDF</h2>
+      <p class="ex-note">Placeholder. This section will show the rendered example beside the original PDF, using <code>pw compare</code>. It is not implemented yet.</p>
+    </header>
+  </section>
+</main>
+
+<dialog id="viewer-dlg" class="ex-dlg" aria-labelledby="viewer-title">
+  <header class="ex-dlg-head">
+    <h2 id="viewer-title">Viewer</h2>
+    <button type="button" class="btn" id="viewer-close">Close</button>
+  </header>
+  <div id="viewer-mount" class="ex-mount"></div>
+</dialog>
+
+<script type="module" src="examples.js"></script>
+<script src="nav.js" defer></script>
+</body>
+</html>
