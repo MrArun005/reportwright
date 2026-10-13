@@ -46,7 +46,7 @@ workbook asks Excel to recalculate on open. Anything else (a ratio, a running va
 
 ## Accessible PDF (PDF/UA-1)
 
-`exportPdf(model, fonts, { tagged: { lang } })`, `?ua=1`, `"ua": true`, `pw render --ua`. Adds, from the page model:
+`exportPdf(model, { fonts, tagged: { lang } })`, `?ua=1`, `"ua": true`, `pw render --ua`. Adds, from the page model:
 
 - a structure tree in reading order (the engine's layout order): `H1`–`H6` from a text box's heading level or a
   bookmark at the text, `P`, `L`/`LI`/`Lbl`/`LBody` for rich-text lists, `Table`/`TR`/`TH` (Scope Column)/`TD` with
