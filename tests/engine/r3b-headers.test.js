@@ -45,6 +45,6 @@ describe('security headers', () => {
   });
 });
 
-it('our answer headers go out as x-reportwright-* and, deprecated (0.13.2), as x-pagewright-*', () => {
-  expect(rwHeaders({ pages: '2' })).toEqual({ 'x-reportwright-pages': '2', 'x-pagewright-pages': '2' });
+it('our answer headers go out as x-reportwright-* only (x-pagewright-* removed in 1.0)', () => {
+  expect(rwHeaders({ pages: '2' })).toEqual({ 'x-reportwright-pages': '2' });
 });

@@ -1,5 +1,7 @@
 # Deep PDF benchmark
 
+> Older run (10 Oct 2026, pre-1.0 code). The 1.0 numbers are GitHub runs [38317309719](https://github.com/MrArun005/reportwright/actions/runs/38317309719) (comparisons), [38312325290](https://github.com/MrArun005/reportwright/actions/runs/38312325290) (Windows SSRS, bulk) and [38312329287](https://github.com/MrArun005/reportwright/actions/runs/38312329287) (1,000,000 rows); see the README.
+
 Run 2026-10-10T00:55:55Z, tier `full`, 5 measured runs a cell after one warm-up (fewer for the biggest sizes, see README). Memory cap 4000 MB a run. Same-machine layout: each job group (create-writers, create-engines, read-edit, robustness) ran every contestant in one job, interleaved run by run; the line above each table names the runner hardware (CPU model) of the columns in it. Rankings and "where we lose" compare ours with the best other library, never one build of ours with another.
 
 Cells: median wall time from process start to exit (warm invoice: in-process median) · peak RSS. ✗ = the output failed a check (qpdf, MuPDF, pdf.js, or the job's own text check) and is not ranked. **Bold** = fastest valid. Create jobs are ranked within a league: **report engines** lay pages out themselves from a report/table definition; **PDF writers** execute the same pre-laid-out draw ops. Read and edit jobs are one league. Full numbers (CPU, min–max, time to first byte, sizes, checks) are in results.json and results.html.

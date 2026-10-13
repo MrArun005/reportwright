@@ -26,22 +26,21 @@ More in the [repository README](https://github.com/MrArun005/reportwright#screen
 
 ## Benchmarks
 
-Measured 2026-10-11 on GitHub `ubuntu-latest` (4 vCPU), median of 5 warm runs, every output checked (qpdf, MuPDF, pdf.js, text). 0.14.0-rc.5 against JasperReports 6.21 and QuestPDF (.NET) (both from the same day's earlier run on the same runner type) and 0.13.1:
+Measured on the 1.0 code on GitHub `ubuntu-latest` (4 vCPU), every contestant in the same job, median of 5 runs, every output checked (qpdf, MuPDF, pdf.js, text). Run [38317309719](https://github.com/MrArun005/reportwright/actions/runs/38317309719); the 1,000,000-row row is run [38312329287](https://github.com/MrArun005/reportwright/actions/runs/38312329287).
 
-| Grouped report | 0.14 | JasperReports | QuestPDF | 0.13.1 |
-|---|---|---|---|---|
-| 100 rows | **145 ms** | 641 ms | 227 ms | 288 ms |
-| 1,000 rows | **280 ms** | 1,286 ms | 499 ms | 532 ms |
-| 10,000 rows | **913 ms** | 3,885 ms | 2,736 ms | 1,494 ms |
-| 100,000 rows | **6.6 s** · 300 MB | 11.8 s | 24.1 s | 8.9 s |
-| 1,000,000 rows (streamed) | **53 s** · 746 MB | — | — | 79 s |
+| Grouped report | ReportWright 1.0 | QuestPDF (.NET) | JasperReports 6.21 | pdfmake | Puppeteer |
+|---|---|---|---|---|---|
+| 100 rows | **271 ms** | 397 ms | 2,278 ms | 564 ms | 911 ms |
+| 1,000 rows | **399 ms** | 698 ms | 2,921 ms | 1,439 ms | 1,861 ms |
+| 10,000 rows | **1,132 ms** · 192 MB | 3,111 ms | 5,372 ms | 8,150 ms | 20.3 s |
+| 1,000,000 rows (streamed) | **48.0 s** · 1,560 MB (parallel) / 52.4 s · 718 MB | — | — | — | — |
 
-The JavaScript engines are further behind: pdfmake 2.7× to 11× slower, @react-pdf/renderer and Puppeteer 4× to 700× slower or failing at 100,000 rows. First among report engines on the invoice, Unicode (Hindi, Arabic, CJK), PDF/A and plain-page jobs too. Losses: one invoice re-rendered in a warm process (16 ms; QuestPDF 7.4 ms), and 1,000 plain pages are ~6% slower than 0.13.1. All numbers, wins and losses: [bench/deep/RESULTS.md](https://github.com/MrArun005/reportwright/blob/bench-deep/bench/deep/RESULTS.md).
+0.13.1 took 74.4 s at 1,000,000 rows on the same machine. First among report engines on the cold invoice, Unicode (Hindi, Arabic, CJK), PDF/A-2b and plain-page jobs too. Losses: one invoice re-rendered in a warm process (9.0 ms; QuestPDF 4.6 ms), and 1,000 separate invoice files (QuestPDF 162.7 files/s, ours 136.8 with the worker pool; run [38312325290](https://github.com/MrArun005/reportwright/actions/runs/38312325290)).
 
 ## Install
 
 ```bash
-npm i @reportwright/engine@next @reportwright/fonts@next
+npm i @reportwright/engine @reportwright/fonts
 ```
 
 `@reportwright/fonts` is a peer dependency: it holds the fonts, the HarfBuzz text shaper, the PDF font subsetter and the PDF/A colour profile.
@@ -249,6 +248,21 @@ format: `import type { Report } from '@reportwright/engine/report'`; JSON Schema
 | Subreport nesting | 3 levels | none |
 | Disk used by a spilled sort | 2 GB | `spill: { maxMB }` |
 | Warning threshold for a large data set | 100,000 rows | `largeReportRows` |
+
+## Stability and versioning
+
+From 1.0.0, ReportWright follows [semantic versioning](https://semver.org). All `@reportwright/*` packages share one
+version.
+
+- **What is covered:** exactly what [docs/PUBLIC-API.md](https://github.com/MrArun005/reportwright/blob/main/docs/PUBLIC-API.md) lists: the report JSON format, the
+  packages' exports and types, the CLI commands, flags and exit codes, the REST routes and headers, and the `PW_*`
+  settings. Names marked `@internal`, undocumented options and anything under `src/` are not covered.
+- **Breaking changes only in a major release**, each listed in the CHANGELOG with its replacement. Before removal a
+  feature is deprecated (typed `@deprecated`, a console warning or a note in the CHANGELOG) for at least one minor
+  release.
+- **Security fixes may change behaviour in a patch release** when that is what closes the hole (for example refusing
+  input that used to be accepted); the CHANGELOG says so.
+- Report files saved by any 1.x release open in every later 1.x release.
 
 ## Related packages
 

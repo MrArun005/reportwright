@@ -58,16 +58,9 @@ describe('N6: exportHtml takes the options object like the other exporters', () 
     expect(html).toContain('@font-face');
     expect(html).toContain('<title>T</title>');
   });
-  it('the 0.7 form exportHtml(model, fontStore, options) still works, with one deprecation warning', async () => {
+  it('the 0.7 form exportHtml(model, fontStore, options) was removed in 1.0: a TypeError naming the new form', async () => {
     const m = await render(report([text('T', 'Hello')]), { fontStore });
-    const warn = [];
-    const orig = console.warn; console.warn = (...a) => warn.push(a.join(' '));
-    try {
-      const html = await exportHtml(m, fontStore, { title: 'Old', static: true });
-      expect(html).toContain('<title>Old</title>');
-      await exportHtml(m, fontStore, { static: true });
-    } finally { console.warn = orig; }
-    expect(warn.filter(w => /DEPRECATED.*exportHtml/.test(w))).toHaveLength(1);
+    expect(() => exportHtml(m, fontStore, { title: 'Old', static: true })).toThrow(/removed in 1\.0: use exportHtml\(model, \{ fonts: fontStore/);
   });
   it('a missing or wrong fonts value is a TypeError that says what was expected', async () => {
     const m = await render(report([text('T', 'Hello')]), { fontStore });

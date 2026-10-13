@@ -105,7 +105,6 @@ const defaultSubsetter = () => (defaultSubset ||= createSubsetter(async () => {
 
 /** @type {Set<string>} */
 const warned = new Set();
-/** One console warning per deprecated form. @param {string} key @param {string} msg */
 import { render as renderFull } from '../../src/engine/index.js';
 import { checkOptions } from '../../src/engine/options.js';
 /** @type {typeof renderFull} */
@@ -126,28 +125,21 @@ export async function render(def, opts) {
   return model;
 }
 const LARGE_ROWS = 100_000; // render's largeReportRows default
-const deprecated = (key, msg) => { if (!warned.has(key)) { warned.add(key); console.warn(`[reportwright] DEPRECATED: ${msg}`); } };
 const isFontStore = (/** @type {any} */ x) => x instanceof FontStore || (!!x && typeof x === 'object' && typeof x.load === 'function' && typeof x.get === 'function');
 /** @param {string} fn @param {any} model */
 function checkModel(fn, model) {
   if (!model || typeof model !== 'object' || !Array.isArray(model.pages)) throw new TypeError(`${fn}(model, options): model must be the page model render() returns (an object with pages), got ${model === null ? 'null' : Array.isArray(model) ? 'an array' : typeof model}`);
 }
 /**
- * The options object of exportX(model, options), from either signature: (model, { fonts, ... }) or the 0.7
- * positional one (model, fontStore | ExcelJS, options), which still works in 0.8 with a deprecation warning.
+ * The options object of exportX(model, options). The 0.7 positional form (model, fontStore | ExcelJS, options) throws.
  * @param {string} fn @param {any[]} args @param {'fonts'|'excel'|'none'} legacy what the 0.7 second argument was
  */
 function optionsOf(fn, args, legacy) {
   const [model, second, third] = args;
   checkModel(fn, model);
-  if (legacy === 'fonts' && isFontStore(second)) {
-    deprecated(fn, `${fn}(model, fontStore, options) is replaced by ${fn}(model, { fonts: fontStore, ...options }); the old form will be removed in 1.0`);
-    return { ...(third || {}), fonts: second };
-  }
-  if (legacy === 'excel' && second && (typeof second === 'function' || typeof second.Workbook === 'function')) {
-    deprecated(fn, `${fn}(model, ExcelJS, options) is replaced by ${fn}(model, options): ExcelJS is no longer used; the old form will be removed in 1.0`);
-    return { ...(third || {}) };
-  }
+  // removed in 1.0: the 0.7 positional forms (model, fontStore | ExcelJS, options)
+  if (legacy === 'fonts' && isFontStore(second)) throw new TypeError(`${fn}(model, fontStore, options) was removed in 1.0: use ${fn}(model, { fonts: fontStore, ...options })`);
+  if (legacy === 'excel' && second && (typeof second === 'function' || typeof second.Workbook === 'function')) throw new TypeError(`${fn}(model, ExcelJS, options) was removed in 1.0: use ${fn}(model, options)`);
   if (second != null && (typeof second !== 'object' || Array.isArray(second))) throw new TypeError(`${fn}(model, options): options must be an object such as { fonts }, got ${Array.isArray(second) ? 'an array' : typeof second}`);
   const o = { ...(second || {}) };
   if (o.fonts != null && !isFontStore(o.fonts)) throw new TypeError(`${fn}(model, { fonts }): fonts must be a FontStore (defaultFontStore() or new FontStore(loader)), got ${typeof o.fonts}`);
@@ -170,7 +162,6 @@ const modelFonts = async (model, o) => {
  * Page model → PDF bytes: exportPdf(model, { fonts, title, ... }). fonts: optional, any FontStore (render()'s saves
  * loading the fonts again; default: the one over @reportwright/fonts); the fonts the model uses are loaded into it. Fonts are subset with harfbuzz-subset.wasm from @reportwright/fonts (when it can't be
  * loaded the full font is embedded); `subset: false` embeds every font in full, a function replaces the subsetter.
- * The 0.7 form exportPdf(model, fontStore, options) still works in 0.8 (deprecated).
  * @param {any} model  render() output
  * @param {PdfOptions} [options]
  * @returns {Promise<Uint8Array>}
@@ -192,7 +183,6 @@ export async function exportPdf(model, options) {
 }
 /**
  * Page model → .xlsx bytes: exportXlsx(model, { fonts, currency, formulas, ... }) (needs render(def, { exportData: true })).
- * The 0.7 form exportXlsx(model, ExcelJS, options) still works in 0.8 (deprecated; ExcelJS is not used).
  * @param {any} model @param {NonNullable<Parameters<typeof exportXlsxFull>[1]> & { fonts?: FontStore }} [options]
  * @returns {Promise<Uint8Array>}
  */
@@ -227,8 +217,9 @@ import { exportPptx as exportPptxFull } from '../../src/exporters/pptx.js';
 export { pageToSvg } from '../../src/exporters/svg.js';
 import { exportPdfStream as exportPdfStreamFull } from '../../src/exporters/pdfstream.js';
 import { spillSorter, canSpill } from '../../src/exporters/spill.js';
-/** internal: the paint worker (dist/pdfstreamworker.js) imports it from this bundle, not a copy of the engine */
+/** @internal Not part of the public API (no semver promise): the paint worker (dist/pdfstreamworker.js) imports it from this bundle, not a copy of the engine. */
 export { __streamPaint } from '../../src/exporters/streampaint.js';
+/** @internal Not part of the public API (no semver promise): the paged plan exportPdfStream and the Office streams use. */
 export { planPaged } from '../../src/engine/paged.js';
 
 /**

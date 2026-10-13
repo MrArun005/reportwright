@@ -85,7 +85,7 @@ describe('exporters: page sizes per section, merged cells', () => {
     expect(doc).toMatch(/<w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"\/>[^]*<\/w:body>/);
   });
   it('HTML: the landscape page is drawn at its own size', async () => {
-    const html = await exportHtml(await twoSizes(), fontStore);
+    const html = await exportHtml(await twoSizes(), { fonts: fontStore });
     expect(html).toMatch(/viewBox="0 0 841.89 595.28"/);
     expect(html).toMatch(/viewBox="0 0 595.28 841.89"/);
   });

@@ -27,11 +27,12 @@ The existing source predates this config and is **not** reformatted in bulk, so 
 
 All `@reportwright/*` packages share one version and are released together.
 
-- **Before 1.0** (now): a **minor** release (0.7 → 0.8) may change the public API; a **patch** release (0.8.0 → 0.8.1)
+- **Before 1.0**: a **minor** release (0.7 → 0.8) may change the public API; a **patch** release (0.8.0 → 0.8.1)
   only fixes bugs and adds nothing that breaks. Anything removed is first deprecated for one minor release, with a
   console warning that names the replacement (for example the positional `exportPdf(model, fontStore, opt)` form,
   deprecated in 0.8 and removed in 0.9).
-- **From 1.0**: the usual rules. Breaking changes only in a major release.
+- **From 1.0** (now): the usual rules. Breaking changes only in a major release, after at least one minor release of
+  deprecation; security fixes may change behaviour in a patch. What is covered: [docs/PUBLIC-API.md](docs/PUBLIC-API.md).
 - **The public API** is what `index.d.ts` / `report.d.ts` of each package declare, and the report JSON schema
   (`@reportwright/engine/schema.json`). A report that validates in a release keeps rendering the same in every later
   release of the same major version (older definitions are upgraded on load, `src/engine/schema/upgrade.js`).

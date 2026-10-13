@@ -4,11 +4,11 @@
 
 | Version | Supported |
 |---|---|
-| 0.13.x | yes |
-| 0.12.x | security fixes until 0.14.0 |
-| < 0.12 | no |
+| 1.x | yes (the latest minor) |
+| 0.13.x / 0.14 release candidates | security fixes until 1.1.0 |
+| < 0.13 | no |
 
-Before 1.0, only the latest minor line gets fixes; upgrade to it. `@pagewrightjs/*` (the old name) is not maintained.
+From 1.0, security fixes go to the latest 1.x minor; a security fix may change behaviour in a patch release. `@pagewrightjs/*` (the old name) is not maintained.
 
 ## Reporting a vulnerability
 

@@ -48,5 +48,3 @@ export const ReportWrightViewer = component('ReportWrightViewer', () => import('
 // the designer keeps its edits: it remounts only for another report or definition (by content)
 export const ReportWrightDesigner = component('ReportWrightDesigner', () => import('@reportwright/viewer/designer').then(m => m.mountDesigner), designerKey);
 
-/** @deprecated 0.9: renamed ReportWrightViewer / ReportWrightDesigner; the old names go in 1.0. */
-export { ReportWrightViewer as PagewrightViewer, ReportWrightDesigner as PagewrightDesigner };

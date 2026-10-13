@@ -38,7 +38,5 @@ function metricsText() {
   h.buckets.forEach((b, i) => out.push(`reportwright_http_request_duration_seconds_bucket{le="${b}"} ${h.hist[i]}`));
   out.push(`reportwright_http_request_duration_seconds_bucket{le="+Inf"} ${h.n}`, `reportwright_http_request_duration_seconds_sum ${h.sum}`, `reportwright_http_request_duration_seconds_count ${h.n}`);
   metric('reportwright_uptime_seconds', 'gauge', 'Process uptime.', [['', Math.round(process.uptime())]]);
-  // every family again under its old name pagewright_* (deprecated 0.13.2, gone in 1.0): dashboards and alerts keep working
-  const old = out.map(l => l.replace(/^(# (?:HELP|TYPE) )?reportwright_/, '$1pagewright_'));
-  return [...out, ...old].join('\n') + '\n';
+  return out.join('\n') + '\n'; // the old pagewright_* names were removed in 1.0
 }

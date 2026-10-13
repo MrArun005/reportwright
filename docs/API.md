@@ -111,7 +111,7 @@ body: JSON.stringify({
 
 Permissions: `print`, `printHighQuality`, `modify`, `copy`, `annotate`, `fillForms`, `accessibility`, `assemble`. The file is AES-256 (the PDF 2.0 standard security handler, revision 6), which Acrobat X and later, pdf.js, poppler and macOS Preview open. Passwords are Unicode (NFKC-normalised) and at most 127 bytes in UTF-8; longer is refused, not cut. A password is never in an error message. A password cannot go with `pdfa` (PDF/A forbids encryption) or `sign`: both are refused with 400.
 
-CLI: `pw render report.pw.json --password 'to open it' --owner-password 'boss' --deny copy --deny modify -o out.pdf`. In code: `exportPdf(model, fonts, { encrypt: { userPassword, ownerPassword, permissions } })`.
+CLI: `pw render report.pw.json --password 'to open it' --owner-password 'boss' --deny copy --deny modify -o out.pdf`. In code: `exportPdf(model, { fonts, encrypt: { userPassword, ownerPassword, permissions } })`.
 
 ## Batches
 

@@ -43,10 +43,3 @@ export const reportWrightViewer = action(() => import('@reportwright/viewer').th
 // the designer keeps its edits: it remounts only for another report or definition (by content)
 export const reportWrightDesigner = action(() => import('@reportwright/viewer/designer').then(m => m.mountDesigner), (a, b) => designerKey(a) === designerKey(b));
 
-const warned = new Set();
-/** One console warning per deprecated name per page. */
-const deprecated = (old, now) => { if (!warned.has(old)) { warned.add(old); console.warn(`ReportWright: ${old} is deprecated, use ${now} (the old name goes in 1.0).`); } };
-/** @deprecated 0.9: renamed reportWrightViewer; the old name goes in 1.0. */
-export const pagewrightViewer = (node, options) => { deprecated('pagewrightViewer', 'reportWrightViewer'); return reportWrightViewer(node, options); };
-/** @deprecated 0.9: renamed reportWrightDesigner; the old name goes in 1.0. */
-export const pagewrightDesigner = (node, options) => { deprecated('pagewrightDesigner', 'reportWrightDesigner'); return reportWrightDesigner(node, options); };

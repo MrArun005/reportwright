@@ -11,7 +11,3 @@ export interface ReportWrightDesignerProps extends DesignerOptions, Common { onR
 export const ReportWrightViewer: ForwardRefExoticComponent<ReportWrightViewerProps & RefAttributes<ViewerHandle>>;
 export function ReportWrightDesigner(props: ReportWrightDesignerProps): ReactElement;
 
-/** @deprecated renamed ReportWrightViewerProps */ export type PagewrightViewerProps = ReportWrightViewerProps;
-/** @deprecated renamed ReportWrightDesignerProps */ export type PagewrightDesignerProps = ReportWrightDesignerProps;
-/** @deprecated renamed ReportWrightViewer */ export declare const PagewrightViewer: typeof ReportWrightViewer;
-/** @deprecated renamed ReportWrightDesigner */ export declare const PagewrightDesigner: typeof ReportWrightDesigner;

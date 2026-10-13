@@ -1,5 +1,10 @@
 # Releasing the npm packages
 
+**1.0.0 order.** `@reportwright/pdf@1.0.0` is published first (its own repository). Then, on `release/1.0` before
+merging: `npm i -E @reportwright/pdf@1.0.0`, commit `package.json` and `package-lock.json` (the engine, CLI and viewer
+pin the installed version through `scripts/build-packages.mjs`), let CI pass, merge, and publish 1.0.0. The branch
+pins `0.1.0-beta.15` until then so `npm ci` works in CI.
+
 All `@reportwright/*` packages share one version (the root `package.json`). They are published by
 `.github/workflows/publish.yml` with `npm publish --provenance --access public`, in dependency order:
 fonts, fonts-cjk, engine, cli, viewer, react, vue, svelte, angular.

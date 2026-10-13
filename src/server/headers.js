@@ -49,7 +49,6 @@ export function outputHeaders(type) {
 }
 
 /**
- * Our own x-reportwright-* answer headers, each also sent under its old name x-pagewright-* (deprecated 0.13.2, gone in
- * 1.0) so a client written before the rename keeps reading it. @param {Record<string, string>} h name → value
+ * Our own x-reportwright-* answer headers (the old x-pagewright-* names were removed in 1.0). @param {Record<string, string>} h name → value
  */
-export const rwHeaders = (h) => Object.fromEntries(Object.entries(h).flatMap(([k, v]) => [[`x-reportwright-${k}`, v], [`x-pagewright-${k}`, v]]));
+export const rwHeaders = (h) => Object.fromEntries(Object.entries(h).map(([k, v]) => [`x-reportwright-${k}`, v]));

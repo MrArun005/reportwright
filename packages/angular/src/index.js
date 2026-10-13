@@ -27,12 +27,7 @@ const showError = (el, e) => {
   el.setAttribute('role', 'alert');
 };
 
-const warned = new Set();
-/** One console warning per deprecated name per page. */
-const deprecated = (old, now) => { if (!warned.has(old)) { warned.add(old); console.warn(`ReportWright: ${old} is deprecated, use ${now} (the old name goes in 1.0).`); } };
-
-/** @param {string} [old] the new tag, when this is the deprecated <pagewright-*> one */
-function element(load, isDesigner, old) {
+function element(load, isDesigner) {
   return class extends HTMLElement {
     static get observedAttributes() { return ATTRS; }
     #options = {};
@@ -50,7 +45,7 @@ function element(load, isDesigner, old) {
     }
     get options() { return this.#options; }
     set options(v) { this.#options = v && typeof v === 'object' ? v : {}; this.#mount(); }
-    connectedCallback() { if (old) deprecated(`<${this.localName}>`, `<${old}>`); this.#mount(); }
+    connectedCallback() { this.#mount(); }
     attributeChangedCallback() { this.#mount(); }
     disconnectedCallback() { this.#gen++; this.#handle?.unmount(); this.#handle = null; this.#key = ''; }
     #mount() {
@@ -73,13 +68,9 @@ function element(load, isDesigner, old) {
   };
 }
 
-/** Register <reportwright-viewer> and <reportwright-designer> (once), and the old <pagewright-*> tags (deprecated 0.9, gone in 1.0). */
+/** Register <reportwright-viewer> and <reportwright-designer> (once). */
 export function defineReportWrightElements() {
   if (typeof customElements === 'undefined') return; // server rendering
-  for (const p of ['reportwright', 'pagewright']) {
-    if (!customElements.get(`${p}-viewer`)) customElements.define(`${p}-viewer`, element(() => import('@reportwright/viewer').then(m => m.mountViewer), false, p === 'pagewright' ? 'reportwright-viewer' : undefined));
-    if (!customElements.get(`${p}-designer`)) customElements.define(`${p}-designer`, element(() => import('@reportwright/viewer/designer').then(m => m.mountDesigner), true, p === 'pagewright' ? 'reportwright-designer' : undefined));
-  }
+  if (!customElements.get('reportwright-viewer')) customElements.define('reportwright-viewer', element(() => import('@reportwright/viewer').then(m => m.mountViewer), false));
+  if (!customElements.get('reportwright-designer')) customElements.define('reportwright-designer', element(() => import('@reportwright/viewer/designer').then(m => m.mountDesigner), true));
 }
-/** @deprecated 0.9: renamed defineReportWrightElements; the old name goes in 1.0. */
-export const definePagewrightElements = () => { deprecated('definePagewrightElements', 'defineReportWrightElements'); defineReportWrightElements(); };

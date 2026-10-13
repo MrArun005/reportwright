@@ -2,16 +2,77 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
-## Unreleased (0.14.0-rc.7)
+## 1.0.0 — unreleased
 
-Merged to `main` since 0.14.0-rc.6, not yet published.
+The first stable release. From here on ReportWright follows semantic versioning; what is covered is listed in
+[docs/PUBLIC-API.md](docs/PUBLIC-API.md) and the policy is in the README ("Stability and versioning").
 
+### Summary since 0.13.1 (the 0.13.2 and 0.14.0 release candidates)
+- **PDFs are written by `@reportwright/pdf`** (pinned `1.0.0`): every report (text, pictures, SVG paths, rounded
+  boxes, form fields, PDF/A-2b, encryption, signing, batch merges) goes through it, checked by the tiered writer
+  parity gate (pixel-identical pages, same text, qpdf, veraPDF). pdf-lib is no longer a runtime dependency; it is
+  loaded from the caller's own install only for `pdfWriter: 'legacy'` and the deprecated `prepare`/`save` options.
+- **HTML export is configurable at every level** (`html: interactive | tables | static`, `drillLinks`), from the
+  viewer prop down to `PW_HTML_EXPORT`; the default is `interactive`.
+- **The rename to ReportWright is finished** (0.13.2): new schema name, headers and metrics; the old names are removed
+  in this release (below).
+- `pw import <folder>` bulk import, `pw --version`, the viewer's `showWarnings`, typed `@reportwright/fonts-cjk`,
+  a minified render worker, publish-then-verify releases, memory fixes for zebra tables and large sorts, and the
+  release-gate fixes listed in the rc sections below.
+
+- **Benchmarks on the 1.0 code** (GitHub runs [38317309719](https://github.com/MrArun005/reportwright/actions/runs/38317309719), [38312325290](https://github.com/MrArun005/reportwright/actions/runs/38312325290), [38312329287](https://github.com/MrArun005/reportwright/actions/runs/38312329287)): first among report engines on grouped reports (271 ms at 100 rows, 1,132 ms at 10,000; QuestPDF 397 / 3,111 ms, JasperReports 2,278 / 5,372 ms), 6.1× to 7.9× faster than SSRS's LocalReport on Windows, 1,000,000 rows streamed in 52.4 s at 718 MB (0.13.1: 74.4 s). Losses: QuestPDF is faster on a warm one-page invoice (4.6 ms vs 9.0 ms) and on 1,000 separate invoices (162.7 vs 136.8 files/s); Go and Rust writers are 2× to 3× faster on small files.
+
+### Breaking changes
+| Removed | Use instead |
+|---|---|
+| `exportPdf(model, fontStore, options)`, `exportHtml(model, fontStore, options)` (0.7 positional form; now a `TypeError`) | `exportPdf(model, { fonts: fontStore, ...options })`, same for `exportHtml` |
+| `exportXlsx(model, ExcelJS, options)` (now a `TypeError`) | `exportXlsx(model, options)` |
+| `PagewrightViewer`, `PagewrightDesigner`, `PagewrightViewerProps`, `PagewrightDesignerProps` (`@reportwright/react`, `@reportwright/vue`) | `ReportWrightViewer`, `ReportWrightDesigner`, `ReportWrightViewerProps`, `ReportWrightDesignerProps` |
+| `pagewrightViewer`, `pagewrightDesigner`, `PagewrightAction` (`@reportwright/svelte`) | `reportWrightViewer`, `reportWrightDesigner`, `ReportWrightAction` |
+| `definePagewrightElements`, `<pagewright-viewer>`, `<pagewright-designer>`, `PagewrightViewerElement`, `PagewrightDesignerElement`, `PagewrightReadyEvent` (`@reportwright/angular`) | `defineReportWrightElements`, `<reportwright-viewer>`, `<reportwright-designer>`, `ReportWright*Element`, `ReportWrightReadyEvent` |
+| `window.Pagewright` | `window.ReportWright` |
+| `/embed/pagewright-viewer.js`, `/embed/pagewright-viewer.full.js` | `/embed/reportwright-viewer.js`, `/embed/reportwright-viewer.full.js` |
+| Answer headers `x-pagewright-pages`, `-ms`, `-warnings`, `-snapshot`, `-pending` | `x-reportwright-*` (same values) |
+| Webhook and audit-SIEM header `x-pagewright-signature`; mail header `x-pagewright-idempotency-key` | `x-reportwright-signature`, `x-reportwright-idempotency-key` |
+| Proxy secret header `x-pagewright-proxy-secret` (no longer read: a request with only it gets 401) | `x-reportwright-proxy-secret` |
+| Prometheus families `pagewright_*` on `/api/v1/metrics`; `scripts/uptime-check.mjs` reading them | `reportwright_*` |
+
+Kept on purpose: `"$schema": "pagewright/report@1"` is still read as the same format and normalised to
+`reportwright/report@1` (documented in docs/PUBLIC-API.md); the designer clipboard kind `pagewright/items@1` and
+the TOTP-key and audit-checkpoint salts (changing them would break pasting between tabs and stored data).
+
+### Changed
+- `__streamPaint` and `planPaged` (engine) and `LEGACY_DIR` (fonts-cjk) are marked `@internal`: exported for the
+  packages' own workers, not part of the public API.
+
+### Upgrading from 0.12 / 0.13
+- Install without `@next`: `npm i @reportwright/engine @reportwright/fonts` (`latest` is 1.0.0). Keep every
+  `@reportwright/*` package on the same version.
+- Replace the removed Pagewright names, headers and metrics with the table above (move dashboards and alerts to
+  `reportwright_*`; make the reverse proxy send `x-reportwright-proxy-secret`; read `x-reportwright-signature` in
+  webhook receivers).
+- Replace the positional export forms with the options object.
+- Single sign-on (SAML, OIDC): set `PW_BASE_URL` to the public origin outside development; the sign-in and logout
+  addresses are built from it.
+- The HTML export default is `interactive` (the viewer in one file). For the 0.13 behaviour set `html: 'tables'`
+  (report, admin setting, or `PW_HTML_EXPORT=tables`); the CLI defaults to `tables`.
+- A check box's value read back through `@reportwright/pdf` (`doc.fields`) is `true`/`false`; its on-state name is
+  `onValue`.
+- `render()` keeps table data only with `{ exportData: true }` (since 0.12); re-save SQL reports once in the Designer
+  if you skipped 0.12.
+- `pdfWriter: 'legacy'` and the `prepare`/`save` options still work (pdf-lib from your own install) and remain
+  deprecated.
+
+### Also in 1.0 (merged to main as 0.14.0-rc.7, never published separately)
 - **Admission control and PKCS#12 (PR #11).** Render admission counts a request from arrival, before its body, auth or template is read (`bfca0bf9`). A caller over its share gets 429 and the rest 503, each with `Retry-After`. `/api/v1/health` reports `render.arriving`. Signing reads `.p12` files with `node:crypto`; `node-forge` and `@signpdf/signer-p12` are out of production. PKCS#12 parsing is bounded and needs a MAC, with a fuzz test.
 - **API keys:** a key seen in the last 30 s skips the credential check's storage leases; a changed `PW_API_KEYS` revokes it at once.
 - **PDF/A and parity (PR #10).** PDF/A-2b no longer draws `.notdef` for a character the font lacks. Parity fixes: a tool that cannot run fails its row by name; CRLF checkout and Windows fixes in the build and bench.
 - **QA suites (PRs #7, #8).** `qa-load` (admission spike and fairness), a security suite (PDF reader fuzz, SSRF, expression injection, oversized inputs, auth, npm audit, semgrep), a rival-best suite and an engines suite. Benchmarks measure the current releases.
 - **Docs.** `docs/compare/` pages for Jasper, SSRS, Puppeteer, pdfmake and Python.
 - **Self-host.** `deploy/compose` (docker compose, optional Caddy HTTPS through `PW_DOMAIN`) and `self-host.yml`.
+- **Security.** The assess route's upload limits are hardened (PR #29).
+- **Security.** The data proxy stops reading an upstream response once it passes its 5 MB limit (PR #30).
+- **Security.** Every request body the API reads is size-capped while it is read; `PW_MAX_BODY_KB` (default 1024) sets the limit for control routes (PR #31).
 - **`create-reportwright`** scaffolds a sample app (node, react, vue, svelte, angular). Not yet on npm.
 
 ## 0.14.0-rc.6 — 2026-10-11 (release candidate)

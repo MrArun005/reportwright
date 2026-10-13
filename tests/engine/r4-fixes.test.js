@@ -80,7 +80,7 @@ describe('HTML export size', () => {
     const { exportHtml } = await import('../../src/exporters/html.js');
     const m = await render(def, { fontStore, exportData: true });
     expect(m.pages.length).toBe(1);
-    const html = await exportHtml(m, fontStore, { subset: await subsetP });
+    const html = await exportHtml(m, { fonts: fontStore, subset: await subsetP });
     expect(html.length).toBeLessThan(300 * 1024);
     expect(html).not.toContain('Customer 2999');
     expect(html).not.toContain('x'.repeat(120));

@@ -76,7 +76,7 @@ export async function sendMail(m) {
   const att = (m.attachments || []).map(a => ({ filename: oneLine(a.filename, 120).replace(/[\\/"]/g, '-'), content: Buffer.from(a.content), contentType: oneLine(a.contentType, 100) }));
   const info = await (await transport()).sendMail({
     from, to, subject: oneLine(m.subject), text: String(m.text ?? ''), attachments: att,
-    envelope: { from: from.address, to }, headers: { 'auto-submitted': 'auto-generated', ...(m.idempotencyKey ? { 'x-reportwright-idempotency-key': oneLine(m.idempotencyKey, 120), 'x-pagewright-idempotency-key': oneLine(m.idempotencyKey, 120) } : {}) },
+    envelope: { from: from.address, to }, headers: { 'auto-submitted': 'auto-generated', ...(m.idempotencyKey ? { 'x-reportwright-idempotency-key': oneLine(m.idempotencyKey, 120) } : {}) },
     // one Message-ID per logical mail: a repeat (should one ever happen) is the same message to the receiving servers
     ...(m.idempotencyKey ? { messageId: `<${crypto.createHash('sha256').update(String(m.idempotencyKey)).digest('hex').slice(0, 32)}@reportwright>` } : {}),
   });

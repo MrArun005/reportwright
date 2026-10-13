@@ -4,10 +4,10 @@ import type { Report, Item } from '@reportwright/engine';
 import { render, exportPdf, FontStore } from '@reportwright/engine';
 import { mountViewer, type ViewerOptions } from '@reportwright/viewer';
 import { mountDesigner } from '@reportwright/viewer/designer';
-import type { ReportWrightViewerProps, PagewrightViewerProps } from '@reportwright/react';
-import { ReportWrightViewer, PagewrightViewer } from '@reportwright/react';
-import { reportWrightViewer, pagewrightViewer } from '@reportwright/svelte';
-import { defineReportWrightElements, definePagewrightElements } from '@reportwright/angular';
+import type { ReportWrightViewerProps } from '@reportwright/react';
+import { ReportWrightViewer } from '@reportwright/react';
+import { reportWrightViewer } from '@reportwright/svelte';
+import { defineReportWrightElements } from '@reportwright/angular';
 
 const report: Report = {
   $schema: 'reportwright/report@1',
@@ -67,12 +67,6 @@ action.destroy?.();
 defineReportWrightElements();
 const el = document.createElement('reportwright-viewer');
 el.options = { report: 'invoice' };
-// the names from before the rename (Pagewright, deprecated in 0.9) still type-check
-const oldProps: PagewrightViewerProps = props;
-const sameComponent: typeof ReportWrightViewer = PagewrightViewer;
-pagewrightViewer(document.body, { server: 'x' }).destroy?.();
-definePagewrightElements();
-document.createElement('pagewright-viewer').options = { report: 'invoice' };
 const renamed: Report = { $schema: 'reportwright/report@1', sections: { body: { items: [] } } };
 
-void [typo, str, extra, fit, ecc, noSections, exportIt, def, props, oldProps, sameComponent, renamed];
+void [typo, str, extra, fit, ecc, noSections, exportIt, def, props, ReportWrightViewer, renamed];

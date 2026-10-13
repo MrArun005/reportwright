@@ -8,6 +8,3 @@ export interface ReportWrightAction<O> {
 export const reportWrightViewer: ReportWrightAction<ViewerOptions & { onReady?: (handle: ViewerHandle) => void; /** the viewer did not load (its element shows the message) */ onError?: (error: unknown) => void }>;
 export const reportWrightDesigner: ReportWrightAction<DesignerOptions & { onReady?: (handle: DesignerHandle) => void; onError?: (error: unknown) => void }>;
 
-/** @deprecated renamed ReportWrightAction */ export type PagewrightAction<O> = ReportWrightAction<O>;
-/** @deprecated renamed reportWrightViewer */ export const pagewrightViewer: typeof reportWrightViewer;
-/** @deprecated renamed reportWrightDesigner */ export const pagewrightDesigner: typeof reportWrightDesigner;

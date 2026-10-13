@@ -26,7 +26,7 @@ describe('HTML export: Tables view', () => {
   it('the script runs under the file\'s own CSP (its hash), data cannot close the script tag, no inline handlers', async () => {
     const m = await render(sorted(), { exportData: true, fontStore });
     m.regions[0].rows[1].cells[0].value = '</script><script>alert(1)</script>';
-    const html = await exportHtml(m, fontStore, { title: 'T' });
+    const html = await exportHtml(m, { fonts: fontStore, title: 'T' });
     const hash = crypto.createHash('sha256').update(DATA_SCRIPT).digest('base64');
     expect(html).toContain(`script-src 'sha256-${hash}'`);
     expect(html).toContain(`<script>${DATA_SCRIPT}</script>`);
@@ -36,7 +36,7 @@ describe('HTML export: Tables view', () => {
   });
   it('static: true leaves the view out', async () => {
     const m = await render(sorted(), { exportData: true, fontStore });
-    const html = await exportHtml(m, fontStore, { title: 'T', static: true });
+    const html = await exportHtml(m, { fonts: fontStore, title: 'T', static: true });
     expect(html).not.toContain('<script');
     expect(html).not.toContain('Content-Security-Policy');
   });

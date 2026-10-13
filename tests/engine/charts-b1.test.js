@@ -134,7 +134,7 @@ describe('the new chart options draw the same in PDF and HTML', () => {
       { type: 'chart', name: 'G', x: 0, y: 210, w: 200, h: 200, dataSet: 'Rows', chartType: 'gauge', gaugeShape: 'full', gaugeIndicator: 'pointer', series: [{ name: 'Total', value: '=Sum(Fields.amt)' }] },
     ], { data: { rows } });
     const model = await render(def, { exportData: true, fontStore });
-    const h = await exportHtml(model, fontStore, { title: 'T' }); const html = typeof h === 'string' ? h : new TextDecoder().decode(h);
+    const h = await exportHtml(model, { fonts: fontStore, title: 'T' }); const html = typeof h === 'string' ? h : new TextDecoder().decode(h);
     expect(html).toContain('1: 9%');
     expect(html).toContain('Trend line');
     const pdf = await exportPdf(model, fontStore, { title: 'T' });

@@ -28,13 +28,13 @@ Three facts work for us:
 ### Honest gaps
 
 - Fonts: Latin, Hindi, Arabic, Hebrew, Thai and CJK are bundled or added through `fonts-cjk`; other Indic scripts need an uploaded font.
-- SQL on the server: SQLite and MySQL released; PostgreSQL and SQL Server built, not released; Oracle, Snowflake and BigQuery built, not live-tested.
-- Importers exist for ActiveReports (`.rdlx-json`), SSRS (`.rdl`, `.rdlc`), JasperReports (`.jrxml`) and BIRT (`.rptdesign`). SSRS maps and Jasper/BIRT crosstabs are dropped on import (being fixed).
+- SQL on the server: SQLite and MySQL released; PostgreSQL and SQL Server built and live-tested, not released; Oracle experimental (LOB columns refused, some live tests skipped); BigQuery tested against an emulator; Snowflake built, not live-tested.
+- Importers exist for ActiveReports (`.rdlx-json`), SSRS (`.rdl`, `.rdlc`), JasperReports (`.jrxml`) and BIRT (`.rptdesign`). SSRS maps (including shapefile and SQL spatial layers) are imported and Jasper/BIRT crosstabs become matrices; SSRS custom report items and RDL 2005 regions are not converted.
 - Accounts, roles, per-report and per-folder permissions, OIDC and SAML sign-in, two-factor sign-in and an audit log are built. The audit hash chain is beta.
 - Storage can be shared (SQLite, PostgreSQL, MySQL, SQL Server, S3-compatible). Queue and scheduler use database leases; Redis is not used.
 - Embed bundle 2.6 MB; interactive HTML 8 MB.
 - Charts: more than 7 types (see FEATURES). PDF/A and PKCS#12 signatures are built.
-- Published on npm (`next` at 0.14.0-rc.6; see README). A live demo site exists. No community figures are recorded here.
+- Published on npm (`latest` 1.0.0; see README). A live demo site exists. No community figures are recorded here.
 
 ## The scorecard
 

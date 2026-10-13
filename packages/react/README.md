@@ -14,7 +14,7 @@ React is a peer dependency, and the components use your app's React (through `@r
 ## Install
 
 ```bash
-npm i @reportwright/react@next @reportwright/viewer@next @reportwright/fonts@next
+npm i @reportwright/react @reportwright/viewer @reportwright/fonts
 cp -r node_modules/@reportwright/fonts/public public/pw     # serve the fonts as static files
 ```
 

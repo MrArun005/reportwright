@@ -37,7 +37,7 @@ export async function renderFile(format: Format, def: any, data?: any, baseUrl?:
   const fonts = store();
   const title = def.name;
   let bytes: Uint8Array;
-  if (format === 'pdf') bytes = await exportPdf(model, fonts, { title, subset });
+  if (format === 'pdf') bytes = await exportPdf(model, { fonts, title, subset });
   else if (format === 'xlsx') bytes = await exportXlsx(model, { currency: def.currency, title, formulas: true, fontStore: fonts });
   else if (format === 'docx') bytes = await exportDocx(model, { title, lang: def.locale, fontStore: fonts });
   else bytes = await exportHtml(model, { fonts, title, subset, static: false, locale: def.locale, currency: def.currency });

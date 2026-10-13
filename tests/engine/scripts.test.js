@@ -157,7 +157,7 @@ describe('CJK', () => {
 describe('HTML export', () => {
   it('embeds the fallback font with its layout tables, so the browser shapes as the engine did', async () => {
     const model = await render(report([box('क्षत्रिय')]), { exportData: true, fontStore });
-    const html = await exportHtml(model, fontStore, { subset });
+    const html = await exportHtml(model, { fonts: fontStore, subset });
     const m = /font-family:"pw-NotoSansDevanagari-Regular";src:url\(data:font\/ttf;base64,([^)]+)\)/.exec(html);
     const font = Buffer.from(m[1], 'base64');
     expect(font.includes('GSUB')).toBe(true);

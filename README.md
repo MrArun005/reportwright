@@ -17,7 +17,7 @@
 
 ```bash
 mkdir pw-hello && cd pw-hello && npm init -y >/dev/null && npm pkg set type=module
-npm i @reportwright/engine@next @reportwright/fonts@next
+npm i @reportwright/engine @reportwright/fonts
 ```
 
 Save as `report.mjs` and run `node report.mjs`:
@@ -72,9 +72,9 @@ npm create reportwright@latest my-app
 Or use the packages in your own app (no server needed):
 
 ```bash
-npm i @reportwright/engine@next @reportwright/fonts@next      # render and export in Node or the browser
-npm i @reportwright/viewer@next @reportwright/fonts@next      # the viewer and designer in a web page
-npm i -D @reportwright/cli@next @reportwright/fonts@next      # `pw` on the command line
+npm i @reportwright/engine @reportwright/fonts      # render and export in Node or the browser
+npm i @reportwright/viewer @reportwright/fonts      # the viewer and designer in a web page
+npm i -D @reportwright/cli @reportwright/fonts      # `pw` on the command line
 ```
 
 Or run the full self-hosted server (designer, report storage, users, schedules, API) from this repository: see [Run it](#run-it).
@@ -90,7 +90,7 @@ Or run the full self-hosted server (designer, report storage, users, schedules, 
 ## 30-second example
 
 ```bash
-npm i -D @reportwright/cli@next @reportwright/fonts@next
+npm i -D @reportwright/cli @reportwright/fonts
 npx pw render reports/charts-showcase.pw.json -o charts.pdf     # in a clone of this repository: any report in reports/ with inline data
 ```
 
@@ -142,11 +142,21 @@ The full list, with what is not done yet, is in [docs/FEATURES.md](docs/FEATURES
 
 ## Benchmarks (honest summary)
 
-The deep benchmark runs on GitHub's `ubuntu-latest` runners against other PDF libraries and report engines, with every output checked (qpdf, MuPDF, pdf.js, veraPDF). Full tables, including every row where we lose: [`bench/deep/RESULTS.md` on the `bench-deep` branch](https://github.com/MrArun005/reportwright/blob/bench-deep/bench/deep/RESULTS.md) (run of 10 Oct 2026, engine `perf-startup@13fa2cb34`).
+Measured on the 1.0 code (`main@944e09eb`) on GitHub's `ubuntu-latest` runners (4 vCPU), every contestant interleaved in the same job, median of 5 runs after a warm-up, every output checked (qpdf, MuPDF, pdf.js, veraPDF, text). Time is wall time from process start to exit (warm invoice: in-process median). Comparison run [38317309719](https://github.com/MrArun005/reportwright/actions/runs/38317309719); full tables in its `qa-engines-bench-deep-results` and `qa-pdf-libs-bench-deep-results` artifacts.
 
-- **Where we win.** Among report engines (which lay pages out from a definition), ReportWright is first in 4 of 8 grouped-report rows and 2 of 6 plain-text rows (time or size). pdfmake, @react-pdf/renderer and Puppeteer were 1.4× to 11.8× slower than ReportWright in the earlier run and were not re-measured. As a PDF writer, `@reportwright/pdf` is first on PDF/A-2b, incremental metadata edits, form fill-and-flatten and signing.
-- **Where we lose.** QuestPDF (.NET) is faster on most report-engine rows: 1.1× to 2.0× on plain text, grouped reports at 100 to 1,000 rows, invoices and Unicode text. pdfmake is 1.05× faster on the PDF/A invoice. As a low-level writer, `@reportwright/pdf` is 2× to 6× slower than fpdf on raw drawing, and pdfcpu and pdfium are faster at merge, split, encrypt and text extraction.
-- **This release vs 0.13.1**, same machine: grouped reports 0.70× to 0.94× the time, Hindi/Arabic/CJK 0.70×, cold invoice 0.89×; warm invoice unchanged.
+| Report engines (run [38317309719](https://github.com/MrArun005/reportwright/actions/runs/38317309719)) | ReportWright | QuestPDF (.NET) | JasperReports 6.21 | pdfmake | Puppeteer |
+|---|---|---|---|---|---|
+| Grouped report, 100 rows | **271 ms** | 397 ms | 2,278 ms | 564 ms | 911 ms |
+| Grouped report, 1,000 rows | **399 ms** | 698 ms | 2,921 ms | 1,439 ms | 1,861 ms |
+| Grouped report, 10,000 rows | **1,132 ms** | 3,111 ms | 5,372 ms | 8,150 ms | 20.3 s |
+| Plain text, 100 pages | **354 ms** | 542 ms | — | 1,111 ms | 1,428 ms |
+| Invoice, cold (new process) | **188 ms** | 255 ms | — | 285 ms | 583 ms |
+| Invoice, warm (one process) | 9.0 ms | **4.6 ms** | — | 52 ms | 102 ms |
+| Hindi, Arabic, CJK | **186 ms** | 211 ms | — | output failed the check | 668 ms |
+
+- **Where we win.** First among report engines on grouped reports, plain text, the cold invoice, Unicode and PDF/A-2b (pdfmake 1.36× slower there). On Windows against SSRS (ReportViewer LocalReport, run [38312325290](https://github.com/MrArun005/reportwright/actions/runs/38312325290)): 250 ms vs 1,810 ms at 100 rows, 6.3 s vs 50.1 s at 100,000 rows. Bulk, 1,000 grouped-report files (same run): 158.9 files/s with the worker pool, 128.5 in one process; QuestPDF 41.5, JasperReports 30.3. At 1,000,000 rows (streamed, run [38312329287](https://github.com/MrArun005/reportwright/actions/runs/38312329287)): 48.0 s with parallel paint (1,560 MB) or 52.4 s at 718 MB without; 0.13.1 took 74.4 s.
+- **Where we lose.** QuestPDF re-renders a one-page invoice in a warm process in 4.6 ms against our 9.0 ms, and writes 1,000 separate invoices at 162.7 files/s against our 136.8 (pool) and 83.2 (one process). As a low-level writer, `@reportwright/pdf` is 2.1× to 3.3× slower than Go's fpdf and Rust's printpdf on small writes, 3.1× slower than pdfcpu at AES-256 encryption and 2.7× slower at merging 100 files; pdftotext and pdfium are faster at text extraction and splitting. On the rivals' own showcases fpdf's 200-page plain text is 6.4× faster than ours. ReportWright has no HTML/CSS input, so Puppeteer's HTML fidelity page cannot be reproduced.
+- **Server load** (run [38317241055](https://github.com/MrArun005/reportwright/actions/runs/38317241055)): steady 20 users p95 219 ms, 0 errors; a 20-minute soak at 10 users held RSS within ×1.04. See [docs/SERVER-LOAD.md](docs/SERVER-LOAD.md).
 
 ## Run it
 
@@ -164,7 +174,7 @@ PW_BASIC_AUTH=admin:change-me PW_API_KEYS=change-me npm start
 |---|---|
 | `PW_AUTH=users` (+ `PW_SESSION_SECRET`) | People with their own accounts and roles, or single sign-on (OIDC, SAML). See [Users and roles](#users-and-roles). |
 | `PW_BASIC_AUTH=user:password` | Everyone who has the shared password. They can do everything, SQL included. |
-| `PW_AUTH=proxy` | Everyone who reaches the app. Only behind a reverse proxy that signs people in (oauth2-proxy, Cloudflare Access, your SSO gateway) and that nothing can bypass. **`PW_PROXY_SECRET` is required in production** (16+ random characters; the server refuses to start without it): the proxy sends it as `x-pagewright-proxy-secret`, and a request that reaches the app port around the proxy is refused (401). ReportWright reads no identity header from the proxy: whoever comes through it is one trusted operator, as with `PW_BASIC_AUTH`. |
+| `PW_AUTH=proxy` | Everyone who reaches the app. Only behind a reverse proxy that signs people in (oauth2-proxy, Cloudflare Access, your SSO gateway) and that nothing can bypass. **`PW_PROXY_SECRET` is required in production** (16+ random characters; the server refuses to start without it): the proxy sends it as `x-reportwright-proxy-secret`, and a request that reaches the app port around the proxy is refused (401). ReportWright reads no identity header from the proxy: whoever comes through it is one trusted operator, as with `PW_BASIC_AUTH`. |
 | `PW_PUBLIC_READONLY=1` (with none of the above) | Anyone may open and render the saved reports, **including the rows their saved queries return**; nobody can change anything, run SQL of their own, or open the designer. |
 
 With `PW_EMBED_ORIGINS` and `PW_BASIC_AUTH`, report definitions (`GET /api/reports/<id>`, which hold SQL text and data-source headers) and sample data are readable without the password, for embedded viewers: keep secrets out of definitions, or use accounts (then only reports shared with `group:public` are). With `PW_AUTH=proxy` they need the proxy secret like everything else.
@@ -230,10 +240,10 @@ The viewer runs in a Shadow DOM, so the host page styles do not change it. Set `
 |---|---|---|
 | `PW_API_KEYS` | run time | Comma-separated keys for `/api/v1`. Send `Authorization: Bearer <key>` or `x-api-key`. **Required in production.** |
 | `PW_ALLOW_KEYLESS` | run time | `1` lets `/api/v1` answer without a key in production, read-only: `GET`s and `POST /api/v1/render` of a saved template, with no definition or data in the request, no signing, no batches or schedules. Anyone can then render every report. In development the API answers without a key, and refuses a keyless write that carries another site's `Origin`. |
-| `PW_WEBHOOK_SECRET` | run time | Signs webhook bodies: header `x-reportwright-signature: sha256=<HMAC-SHA256 hex>` (also sent as the deprecated `x-pagewright-signature`) |
+| `PW_WEBHOOK_SECRET` | run time | Signs webhook bodies: header `x-reportwright-signature: sha256=<HMAC-SHA256 hex>` |
 | `PW_BASE_URL` | run time | Public URL of this server. Relative data URLs in server renders, thumbnails, batches and schedules resolve against it, and the server's calls to itself go there. **Required in production** for reports with relative data URLs: the server never takes its own address from a request. In development the address Next listens on. |
 | `PW_FIXED_FETCH_HOSTS` | run time | `1` (default in production): a server-side data fetch must write its host out; parameters and expressions fill only the path and query. `0` (default in development) allows hosts made by expressions. |
-| `PW_PROXY_SECRET` | run time | With `PW_AUTH=proxy`: a secret (16+ characters) the reverse proxy sends as `x-reportwright-proxy-secret` (the deprecated `x-pagewright-proxy-secret` is still read). Requests without it are refused, so nothing can go around the proxy. Required in production. The server's own calls to itself send it too. |
+| `PW_PROXY_SECRET` | run time | With `PW_AUTH=proxy`: a secret (16+ characters) the reverse proxy sends as `x-reportwright-proxy-secret`. Requests without it are refused, so nothing can go around the proxy. Required in production. The server's own calls to itself send it too. |
 | `PW_DEV_HOSTS` | run time | Development only: more host names (comma-separated) a `next dev` server with no sign-in answers to, besides `localhost`, `127.0.0.1` and `::1`. |
 | `PW_BATCH_CONCURRENCY` | run time | Reports rendered at the same time in a batch (default 2) |
 | `PW_RENDER_WORKERS` | run time | Worker threads that do every server render and export (API, report links, batches, schedules, thumbnails). Default: CPU cores minus one, at most 8. `0` renders on the request thread (no pool). Each worker loads fonts and HarfBuzz once, and opens its own SQL connection pools. |
@@ -361,7 +371,7 @@ On the home page, **Import ActiveReports file** takes an ActiveReportsJS `.rdlx-
 - **XML** (inline or by URL, through the same guarded fetch and proxy as REST): `{ type: 'xml', url, namespaces: { o: 'urn:orders' } }`. A data set's `path` is an XPath to the row elements: `/a/b`, `//b`, `.`, `..`, `*`, `o:name`, `@attr`, `text()`, `[n]`, `[last()]`, `[@x='v']`, `[name='v']`; `$` takes the most repeated element. Fields come from the row's attributes and child elements, or a `path` XPath relative to the row (`../@id`, `Address/City`). A name without a prefix matches any namespace. The document is read without DTDs (no XXE, no entity expansion), with caps of 16 M characters, 128 levels and 250,000 elements.
 - **SOAP**: `{ type: 'soap', url, soapAction, soapVersion: '1.1' | '1.2', envelope }`. `{Parameters.x}` in the envelope is XML-escaped; the first element in the response Body is the data (an XML source); a fault is an error with its message. Not through the proxy (it only reads).
 - **OData**: `{ type: 'odata', url: '<service root>', entitySet, select, filters: [{ field, op, value, type }], orderby: [{ field, dir }], top, skip, expand, maxPages, types }`. Names must be identifiers and values become OData literals, so a parameter cannot change the query; an empty value leaves its filter out, a list is an OR. `@odata.nextLink` (and v2 `__next`) is followed on the same origin only, up to `maxPages` (default 10, at most 100). In the Designer, "Read $metadata" lists the entity sets and their properties.
-- **SQL** (SQLite and MySQL released; PostgreSQL, SQL Server, Oracle, Snowflake and BigQuery built, not released; see [docs/DATA-SQL.md](docs/DATA-SQL.md)): `{ type: 'sql', connection: 'main', query: 'select … where id = @accountId and region in (@regions)' }`. The connection comes from `PW_DB_MAIN`; a report never holds a host or a password. `@name` binds the report parameter `name` through the driver, so a value is never pasted into the SQL. A multi-value parameter becomes a list (`in (@regions)`); an empty list matches nothing (it becomes `NULL`, so `not in (@regions)` matches nothing too). Only one `SELECT` (or `WITH … SELECT`) statement runs, in a read-only transaction (SQLite: the file opened read-only), for at most 30 s and 100,000 rows. Server renders query the database directly. In the browser the viewer sends only the report id, the source name and the parameters to `/api/data/sql`, and the server runs **the query saved in that report**. A query sent with the request (a preview of unsaved work) runs only for a designer: one with accounts on, anyone behind `PW_BASIC_AUTH` or `PW_AUTH=proxy`, anyone in development; never on a production server where nobody signs in. The saved query runs only as a designer saved it (see [Run it](#run-it)). SQLite queries run on the server's main thread, so the 30 s limit does not stop them: keep SQLite for small local files.
+- **SQL** (SQLite and MySQL released; PostgreSQL and SQL Server built and live-tested, not released; Oracle experimental (LOB columns refused, some live tests skipped); BigQuery tested against an emulator; Snowflake built, not live-tested; see [docs/DATA-SQL.md](docs/DATA-SQL.md)): `{ type: 'sql', connection: 'main', query: 'select … where id = @accountId and region in (@regions)' }`. The connection comes from `PW_DB_MAIN`; a report never holds a host or a password. `@name` binds the report parameter `name` through the driver, so a value is never pasted into the SQL. A multi-value parameter becomes a list (`in (@regions)`); an empty list matches nothing (it becomes `NULL`, so `not in (@regions)` matches nothing too). Only one `SELECT` (or `WITH … SELECT`) statement runs, in a read-only transaction (SQLite: the file opened read-only), for at most 30 s and 100,000 rows. Server renders query the database directly. In the browser the viewer sends only the report id, the source name and the parameters to `/api/data/sql`, and the server runs **the query saved in that report**. A query sent with the request (a preview of unsaved work) runs only for a designer: one with accounts on, anyone behind `PW_BASIC_AUTH` or `PW_AUTH=proxy`, anyone in development; never on a production server where nobody signs in. The saved query runs only as a designer saved it (see [Run it](#run-it)). SQLite queries run on the server's main thread, so the 30 s limit does not stop them: keep SQLite for small local files.
 - **Pushed data**: the render API and batches can send the data in the request. It replaces the source with the same name.
 
 The sample endpoints `/api/sample/loans`, `/api/sample/loans/<account>` and `/api/sample/sales/<year>` serve fictional data.
@@ -389,9 +399,24 @@ ActiveReportsJS did not finish the 50,000-row reports within 10 minutes; ReportW
 
 **In progress on `main`:** server stability (SQLite isolation, login throttling, safe default report permissions, memory-aware render pool, logging and health checks), 21 silent wrong-result fixes against SSRS semantics, Designer and viewer accessibility and usability, a conditional formatting wizard, a visual SQL query builder and native Excel charts.
 
-**Not released:** SQL Server, PostgreSQL, Oracle, Snowflake and BigQuery data sources and stored procedures (Oracle, Snowflake and BigQuery are also not live-tested; see `docs/DATA-SQL.md`); the audit log's hash chain is beta. **Deferred:** running SSRS custom VB `Code`, and page-at-a-time streaming layout for millions of rows.
+**Not released:** SQL Server, PostgreSQL, Oracle, Snowflake and BigQuery data sources and stored procedures (Oracle is experimental, BigQuery is tested against an emulator only, Snowflake is built, not live-tested; see `docs/DATA-SQL.md`); the audit log's hash chain is beta. **Deferred:** running SSRS custom VB `Code`, and page-at-a-time streaming layout for millions of rows.
 
 **Breaking change:** `render()` keeps table data for Excel, CSV, Word, interactive HTML and accessible PDF only with `render(def, { exportData: true })`; the built-in server, CLI and viewer pass it. After upgrading, re-save SQL reports once in the Designer.
+
+## Stability and versioning
+
+From 1.0.0, ReportWright follows [semantic versioning](https://semver.org). All `@reportwright/*` packages share one
+version.
+
+- **What is covered:** exactly what [docs/PUBLIC-API.md](docs/PUBLIC-API.md) lists: the report JSON format, the
+  packages' exports and types, the CLI commands, flags and exit codes, the REST routes and headers, and the `PW_*`
+  settings. Names marked `@internal`, undocumented options and anything under `src/` are not covered.
+- **Breaking changes only in a major release**, each listed in the CHANGELOG with its replacement. Before removal a
+  feature is deprecated (typed `@deprecated`, a console warning or a note in the CHANGELOG) for at least one minor
+  release.
+- **Security fixes may change behaviour in a patch release** when that is what closes the hole (for example refusing
+  input that used to be accepted); the CHANGELOG says so.
+- Report files saved by any 1.x release open in every later 1.x release.
 
 ## Renamed from Pagewright
 
@@ -401,11 +426,9 @@ packages are deprecated), finished in 0.13.2. What did not change, so deployment
 - settings keep the `PW_` prefix (`PW_AUTH`, `PW_BASE_URL`, …), and the CLI is still `pw` (`reportwright` works too);
 - cookie names and storage table names, and report files keep the `.pw.json` extension.
 
-Deprecated, still working, removed in 1.0 (each is an alias of its ReportWright name):
+Removed in 1.0 (see the CHANGELOG's 1.0.0 section for each replacement): the `<pagewright-*>` tags, the
+`Pagewright*` / `pagewright*` component and function names, `window.Pagewright`, the `/embed/pagewright-*.js` files,
+the `x-pagewright-*` HTTP headers and the `pagewright_*` metrics.
 
-- `<pagewright-viewer>` / `<pagewright-designer>`, `PagewrightViewer`, `PagewrightDesigner`, `pagewrightViewer`,
-  `pagewrightDesigner`, `definePagewrightElements`, `window.Pagewright` and the `/embed/pagewright-viewer.js` loader
-  (each warns once in the console, except the React and Vue components, which are the same objects);
-- `"$schema": "pagewright/report@1"`, read as `reportwright/report@1`;
-- the `x-pagewright-*` HTTP headers, sent next to their `x-reportwright-*` names (the proxy secret is read under
-  either name), and the `pagewright_*` metrics, emitted next to the `reportwright_*` ones.
+Still read, and documented as part of 1.0: a saved report with `"$schema": "pagewright/report@1"` is the same format,
+read and normalised to `reportwright/report@1` (it is saved under the new name).
