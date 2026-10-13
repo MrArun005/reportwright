@@ -143,7 +143,7 @@ async function pdfOf(model, fontStore, opt) {
           for (const id of glyphs?.keys() || []) void f.getGlyph(id).advanceWidth;
           bytes = sub;
           psName = f.postscriptName || psName;
-        } catch (e) { opt.onWarning?.(`The font ${psName || key} is embedded whole: its subset could not be used (${/** @type {any} */ (e)?.message || e})`); }
+        } catch (e) { if (/** @type {any} */ (e)?.code === 'RW_SUBSET_WASM') throw e; /* the subsetter's wasm did not load: misconfigured, never silently full */ opt.onWarning?.(`The font ${psName || key} is embedded whole: its subset could not be used (${/** @type {any} */ (e)?.message || e})`); }
       }
       // a subset's name starts with a tag (ABCDEF+), which tells readers (and pdffonts) it is one
       const pf = await doc.embedFont(bytes, { subset: false, customName: bytes === full ? undefined : `${subsetTag(bytes)}+${psName || 'Font'}` });

@@ -1,6 +1,6 @@
 # Quick start (5 minutes, library only)
 
-No server, no account: the npm packages render reports in Node and in the browser. Node 20.9 or later.
+No server, no account: the npm packages render reports in Node and in the browser. Node 20.16 or later.
 
 ## 1. Install
 

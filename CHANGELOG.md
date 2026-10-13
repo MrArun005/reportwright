@@ -2,6 +2,37 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## 1.0.1 — unreleased
+
+Fixes from an early tester's report on 1.0.0. Thank you.
+
+### Changed
+- **HTML export subsets fonts by default** (`@reportwright/engine`'s `exportHtml`), as `exportPdf` and the CLI already
+  did: a 3-row report's file goes from ~904 KB to ~15 KB. `subset: false` embeds fonts in full as before; when
+  `@reportwright/fonts`' `harfbuzz-subset.wasm` cannot be loaded, fonts embed in full with a warning.
+- **A misconfigured subsetter throws** instead of silently embedding full fonts: `createSubsetter()` without a loader
+  is a `TypeError`, and a subsetter whose wasm does not load (or is not WebAssembly) makes `exportHtml`, `exportPdf`
+  and `exportPdfStream` reject with `harfbuzz-subset.wasm did not load (…)`. The engine's default subsetter and the
+  viewer's stay lenient (fonts in full, with a warning).
+- **`C` formats with no locale are en-US dollars** (`$1,234.50`), as the designer shows and the README says; 1.0.0
+  printed the number with no symbol. A report's `locale` or `currency` still wins; a locale with no country (`fr`)
+  still has no currency. Excel export follows.
+- **Node 20.16 or later** for every package (`engines`): `@reportwright/pdf` needs it; 1.0.0 said 20.9.
+
+### Fixed
+- `@reportwright/engine`'s type declarations no longer name `pdf-lib` (not a dependency): a project with
+  `skipLibCheck: false` got 13 TS2307 errors. CI now packs the packages, installs them in a new project and runs
+  `tsc --noEmit` with `skipLibCheck: false` over every typed entry (`scripts/check-package-types.mjs`).
+- `"use client"` is only in `@reportwright/react`'s entry, no longer in a shared viewer chunk (Vue, Svelte and Angular
+  builds warned about it).
+- The CLI says `1 page`, not `1 pages`, and no page count for CSV, Excel and JSON (`wrote x.csv (0 pages)`).
+- Docs: the README and ARCHITECTURE no longer say the PDF exporter uses pdf-lib; the viewer README says
+  `engine.worker.js` dynamically imports `engine.worker.bwip.js` (copy both), and gives measured bundle sizes (the
+  designer and the barcode library were already lazy chunks; see "Size").
+
+### Known (post-1.0, docs/ROADMAP.md)
+- PowerPoint export draws tables as separate text boxes, not native tables.
+
 ## 1.0.0 — unreleased
 
 The first stable release. From here on ReportWright follows semantic versioning; what is covered is listed in

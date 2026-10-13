@@ -101,7 +101,7 @@ const defaultSubsetter = () => (defaultSubset ||= createSubsetter(async () => {
     console.warn(`ReportWright: ${subsetMissing}`);
     throw e;
   }
-}));
+}, { lenient: true }));
 
 /** @type {Set<string>} */
 const warned = new Set();
@@ -208,7 +208,21 @@ export function exportPptx(model, options) {
   const opt = optionsOf('exportPptx', [...arguments], 'none');
   return modelFonts(model, opt).then(fontStore => exportPptxFull(model, { ...opt, fontStore })); // checked now, so a wrong argument throws
 }
-export { exportHtml } from '../../src/exporters/html.js';
+import { exportHtml as exportHtmlFull } from '../../src/exporters/html.js';
+/**
+ * Page model → a self-contained HTML file: exportHtml(model, { fonts, ...options }). Since 1.0.1 the embedded fonts are
+ * subset by default (harfbuzz-subset.wasm from @reportwright/fonts, as exportPdf and the CLI do; when it can't be loaded
+ * the full font is embedded, with a warning); `subset: false` embeds fonts in full, a function replaces the subsetter.
+ * @param {any} model @param {NonNullable<Parameters<typeof exportHtmlFull>[1]> & { subset?: false | NonNullable<Parameters<typeof exportHtmlFull>[1]>['subset'] }} [options]
+ * @returns {Promise<string>}
+ */
+export async function exportHtml(model, options) {
+  const opt = /** @type {any} */ (options);
+  const subset = opt?.subset === false ? undefined : opt?.subset || defaultSubsetter();
+  const html = await exportHtmlFull(model, opt && typeof opt === 'object' && !Array.isArray(opt) && typeof opt.load !== 'function' ? { ...opt, subset } : opt);
+  if (subsetMissing && subset === defaultSubset && model?.warnings && !model.warnings.includes(subsetMissing)) model.warnings.push(subsetMissing);
+  return html;
+}
 export { exportCsv } from '../../src/exporters/csv.js';
 export { needsExportData } from '../../src/exporters/regions.js';
 import { exportXlsx as exportXlsxFull } from '../../src/exporters/xlsx.js';

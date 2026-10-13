@@ -36,7 +36,7 @@ describe('B10 A1.4 pw render -f pdf streams', () => {
     fs.writeFileSync(file, JSON.stringify(def));
     const r = run('render', file, '-o', out);
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stderr).toMatch(/wrote .*ledger\.pdf \(\d+ pages, streamed/);
+    expect(r.stderr).toMatch(/wrote .*ledger\.pdf \(\d+ pages?, streamed/);
     const pdf = fs.readFileSync(out);
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(pdf.subarray(-6).toString()).toMatch(/%%EOF\s*$/);

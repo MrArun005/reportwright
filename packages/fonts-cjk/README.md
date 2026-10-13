@@ -94,5 +94,5 @@ RUN npx reportwright-fonts-cjk
 | `CJK_FONTS` | the files: upstream path, file name, SHA-256 |
 | CLI `reportwright-fonts-cjk [dir]` | `fetchCjkFonts` from the command line |
 
-Requires Node 20.9 or later (it uses the global `fetch`). Related: [`@reportwright/fonts`](https://github.com/MrArun005/reportwright/tree/main/packages/fonts) (the bundled
+Requires Node 20.16 or later (it uses the global `fetch`). Related: [`@reportwright/fonts`](https://github.com/MrArun005/reportwright/tree/main/packages/fonts) (the bundled
 fonts), [`@reportwright/engine`](https://github.com/MrArun005/reportwright/tree/main/packages/engine), [`@reportwright/viewer`](https://github.com/MrArun005/reportwright/tree/main/packages/viewer).

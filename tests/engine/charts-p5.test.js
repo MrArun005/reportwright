@@ -122,8 +122,8 @@ describe('row 21: stacks, ranges, smooth and step lines', () => {
 describe('row 22: axis control', () => {
   it('min, max and format', async () => {
     const { items } = await draw({ axes: { y: { min: 0, max: 200, format: 'C0' } } });
-    expect(textsOf(items)).toContain('200'); // C0 with no locale or currency set: no symbol
-    expect(textsOf(items)).not.toContain('250');
+    expect(textsOf(items)).toContain('$200'); // C0 with no locale or currency set: en-US dollars (1.0.1)
+    expect(textsOf(items)).not.toContain('$250');
   });
   it('a log axis has decades and warns on values <= 0', async () => {
     const { items, warnings } = await draw({ axes: { y: { log: true } }, series: [{ name: 'A', value: '=Sum(Fields.amt) * Fields.amt' }] });

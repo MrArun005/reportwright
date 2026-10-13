@@ -122,7 +122,7 @@ From `dist/viewer.d.ts` and `dist/designer.d.ts`.
 ## Browser support and limits
 
 - Modern evergreen browsers with ES modules, Web Workers and constructable stylesheets (an older browser without the
-  last gets a `<style>` element). Node 20.9+ for the build tooling (`engines`).
+  last gets a `<style>` element). Node 20.16+ for the build tooling (`engines`).
 - Without the worker (a bundler that does not copy it) the report renders on the main thread: it works, but large
   reports make the page janky.
 - Sorted or grouped exports in the browser hold every row in memory (about 1.3 KB a row measured): keep them under
@@ -144,15 +144,15 @@ The viewer renders in a Web Worker (`engine.worker.js`, one self-contained file 
 - **Vite 7**: set `worker: { format: 'es' }` in `vite.config.js`. Without it the build fails with
   `Invalid value "iife" for option "worker.format"`.
 - **esbuild** (plain bundling) does not follow `new Worker(new URL(...))`: copy the worker files next to your bundle:
-  `cp node_modules/@reportwright/viewer/dist/engine.worker*.js dist/`. `engine.worker.js` has no imports (its libraries are
-  inside it); `engine.worker.bwip.js` (barcodes) loads only when a report
-  needs it. Without it those reports render on the main thread, with the warning below.
+  `cp node_modules/@reportwright/viewer/dist/engine.worker*.js dist/`. `engine.worker.js` has no static imports (its libraries are
+  inside it); it dynamically imports `./engine.worker.bwip.js` (barcodes, a file next to it) only when a report
+  needs it, so copy both. Without it those reports render on the main thread, with the warning below.
 
 If the worker cannot load, the viewer still renders, on the main thread (slow and janky at 100k rows), and logs once
 `[reportwright] worker did not load (<reason>); rendering on the main thread`. `handle.usesWorker` tells you which one you got.
 
-Import it through your bundler (Vite, webpack, esbuild, Rollup, Next…). Its third-party libraries (pdf-lib,
-@pdf-lib/fontkit, bwip-js, fflate, bidi-js) are ordinary dependencies, pinned to the versions the tests ran
+Import it through your bundler (Vite, webpack, esbuild, Rollup, Next…). Its third-party libraries (@reportwright/pdf,
+@pdf-lib/fontkit, bwip-js, bidi-js) are ordinary dependencies, pinned to the versions the tests ran
 against, so the package itself holds only ReportWright's own readable code.
 
 ## Without a server (library only)
@@ -325,8 +325,14 @@ document.querySelector('#save-pdf').onclick = async () => {
 ## Size
 
 What a page downloads when the viewer mounts: **847 KB gzipped** (0.7.3: 877 KB), readable unminified code with
-source maps. Loaded only when used: other interface languages (about 20 KB gzipped each), PDF export (pdf-lib),
+source maps. Loaded only when used: other interface languages (about 20 KB gzipped each), PDF export (@reportwright/pdf),
 barcodes (bwip-js), Excel/HTML/CSV export, the designer. Most of the first load is the font engine (fontkit) the
 layout measures text with, and React. The package is larger unpacked (two builds: React inside, and React from your
 app at `@reportwright/viewer/react-peer`, plus source maps); only one build reaches your page. PDF export, fontkit,
 barcodes, zip and bidi come from the dependencies above, so your bundler can share them with the rest of your app.
+
+What a bundler writes is more than what a page loads: the lazy chunks are emitted too. Measured with esbuild (minified,
+code splitting) on 1.0.1: a viewer-only app (`import { mountViewer } from '@reportwright/viewer'`) has a 126 KB entry
+chunk and emits 4.2 MB in all: mounting fetches the React viewer (~960 KB), while the barcode library (~945 KB) is
+fetched only for a report with barcodes; the designer (~970 KB) is not in that build. With a framework wrapper it is
+emitted too (5.2 MB in all), as a lazy chunk fetched only when the designer component mounts.

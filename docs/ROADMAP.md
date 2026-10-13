@@ -34,6 +34,8 @@ Three facts work for us:
 - Storage can be shared (SQLite, PostgreSQL, MySQL, SQL Server, S3-compatible). Queue and scheduler use database leases; Redis is not used.
 - Embed bundle 2.6 MB; interactive HTML 8 MB.
 - Charts: more than 7 types (see FEATURES). PDF/A and PKCS#12 signatures are built.
+- PowerPoint export draws a table as separate text boxes (one per cell), not a native PowerPoint table: post-1.0 (reported by an early tester on 1.0.0).
+- Framework wrappers (`@reportwright/react`, `/vue`, `/svelte`, `/angular`) export the viewer and the designer from one module: the designer is a lazy chunk (never downloaded by a viewer-only page), but bundlers still emit it (~970 KB minified). Post-1.0: a `/designer` subpath per wrapper so a viewer-only app's build does not contain it.
 - Published on npm (`latest` 1.0.0; see README). A live demo site exists. No community figures are recorded here.
 
 ## The scorecard

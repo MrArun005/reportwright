@@ -1,3 +1,4 @@
+'use client';
 // @reportwright/react: the ReportWright viewer and designer as React components.
 // The viewer renders in a shadow root with the app's own React (@reportwright/viewer/react-peer); this only gives it a <div>.
 // It loads on mount (dynamic import), so server rendering never touches `window`.

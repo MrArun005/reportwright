@@ -85,6 +85,15 @@ describe('npm packages', () => {
     expect(small.length * 4).toBeLessThan(full.length);
   }, 60000);
 
+  it('1.0.1: every package needs Node 20.16+ (what @reportwright/pdf needs); "use client" only in @reportwright/react; no pdf-lib in the engine\'s types', () => {
+    for (const p of ['engine', 'fonts-cjk', 'cli', 'viewer', 'react', 'vue', 'svelte', 'angular', 'create-reportwright']) expect(json(`packages/${p}/package.json`).engines?.node, p).toBe('>=20.16');
+    const js = (d) => fs.readdirSync(path.join(root, d)).filter(f => f.endsWith('.js')).map(f => fs.readFileSync(path.join(root, d, f), 'utf8'));
+    for (const src of [...js('packages/viewer/dist'), ...js('packages/viewer/dist/peer')]) expect(src).not.toMatch(/^["']use client["']/);
+    expect(fs.readFileSync(path.join(root, 'packages/react/dist/index.js'), 'utf8')).toMatch(/^'use client';/);
+    const types = path.join(root, 'packages/engine/dist/types');
+    for (const f of fs.readdirSync(types, { recursive: true }).filter(f => String(f).endsWith('.d.ts'))) expect(fs.readFileSync(path.join(types, String(f)), 'utf8'), String(f)).not.toMatch(/["']pdf-lib["']/);
+  });
+
   it('the engine exports PowerPoint (exportPptx) with its types', async () => {
     const m = await import(path.join(root, 'packages/engine/dist/index.js'));
     const fonts = new m.FontStore((key) => fs.readFileSync(path.join(root, 'packages/fonts/public/fonts', m.fontFile(key))));

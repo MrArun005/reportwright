@@ -40,6 +40,6 @@ Not available in the API.
 
 - Each app has `report.pw.json` (the report) and `data.json` (its data, inline: no server needed).
 - The `@reportwright/*` packages are pinned to the version of `create-reportwright`.
-- Needs Node 20.9 or later.
+- Needs Node 20.16 or later.
 - To add the library to an app that exists: `npm i @reportwright/engine @reportwright/fonts` (render and export), or `npm i @reportwright/viewer @reportwright/fonts` (viewer and designer in a page), or `npm i -D @reportwright/cli @reportwright/fonts` (`pw`).
 - For the viewer in your own app, see [embedding-the-viewer](embedding-the-viewer.md).

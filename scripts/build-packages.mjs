@@ -60,7 +60,7 @@ write(`${E}/package.json`, {
   exports: { '.': { types: './index.d.ts', default: './dist/index.js' }, './report': { types: './report.d.ts' }, './schema.json': './schema.json', './pool': { types: './pool/index.d.ts', default: './pool/index.js' }, './package.json': './package.json' },
   types: './index.d.ts',
   files: ['dist', 'pool', 'examples', 'index.d.ts', 'report.d.ts', 'schema.json', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
-  engines: { node: '>=20.9' },
+  engines: { node: '>=20.16' },
   sideEffects: false,
   dependencies: deps(external),
   peerDependencies: { '@reportwright/fonts': pkg.version },
@@ -106,7 +106,7 @@ write(`${K}/package.json`, {
   types: './src/index.d.ts',
   exports: { '.': { types: './src/index.d.ts', default: './src/index.mjs' }, './fonts/*': './fonts/*', './package.json': './package.json' },
   files: ['src', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
-  engines: { node: '>=20.9' },
+  engines: { node: '>=20.16' },
   sideEffects: false,
 });
 fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, K, 'LICENSE')); fs.copyFileSync(path.join(root, 'THIRD-PARTY-NOTICES.md'), path.join(root, K, 'THIRD-PARTY-NOTICES.md')); docs(K);
@@ -135,13 +135,22 @@ write(`${C}/package.json`, {
   bin: { reportwright: 'dist/pw.mjs', pw: 'dist/pw.mjs' },
   files: ['dist', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
   sideEffects: false,
-  engines: { node: '>=20.9' },
+  engines: { node: '>=20.16' },
   dependencies: { ...deps(external), '@reportwright/fonts': pkg.version },
 });
 fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, C, 'LICENSE')); fs.copyFileSync(path.join(root, 'THIRD-PARTY-NOTICES.md'), path.join(root, C, 'THIRD-PARTY-NOTICES.md')); docs(C);
 
 // the API's types, from the JSDoc of everything entry.js exports (index.d.ts re-exports them with report.d.ts)
 tsc([`${E}/entry.js`, '--rootDir', '.', '--outDir', `${E}/dist/types`]);
+// pdf-lib is no dependency (only pdfWriter 'legacy' loads it, installed by the caller): its types in the JSDoc become
+// `any` in the published declarations, or a project with skipLibCheck false gets TS2307 (1.0.0 shipped 13 of them).
+// scripts/check-package-types.mjs (CI) type-checks the packed packages
+for (const f of fs.readdirSync(path.join(root, E, 'dist/types'), { recursive: true }).filter(f => f.endsWith('.d.ts'))) {
+  const file = path.join(root, E, 'dist/types', f);
+  const src = fs.readFileSync(file, 'utf8').replace(/(typeof )?import\(["']pdf-lib["']\)(\.\w+)?/g, 'any');
+  if (/["']pdf-lib["']/.test(src)) throw new Error(`${E}/dist/types/${f}: still names the module pdf-lib`);
+  fs.writeFileSync(file, src);
+}
 
 /* viewer */
 const V = 'packages/viewer';
@@ -150,6 +159,13 @@ if (!fs.existsSync(path.join(root, 'public/embed/esm-pkg/viewer.js'))) throw new
 // the builds that import the third-party libraries (scripts/build-embed.mjs): the same `external` list as the engine
 copy('public/embed/esm-pkg', `${V}/dist`);
 copy('public/embed/esm-pkg-peer', `${V}/dist/peer`);
+// no "use client" in the viewer's chunks (esbuild hoists it from a source module into a shared chunk, and Vue, Svelte
+// and Angular builds warn about it): @reportwright/react's entry carries it, the one React Server Components reads
+for (const d of [`${V}/dist`, `${V}/dist/peer`]) for (const f of fs.readdirSync(path.join(root, d)).filter(f => f.endsWith('.js'))) {
+  const file = path.join(root, d, f), src = fs.readFileSync(file, 'utf8');
+  // a comment in its place keeps the line numbers the source maps point at
+  if (/^["']use client["'];?\n/.test(src)) fs.writeFileSync(file, src.replace(/^["']use client["'];?/, '// "use client" is @reportwright/react\'s'));
+}
 // the two builds share every chunk that has no React in it (same content, same hashed name): keep one copy, and let
 // the peer build import it from ../ (half the unpacked size)
 {
@@ -179,7 +195,7 @@ write(`${V}/package.json`, {
   },
   types: './dist/viewer.d.ts',
   files: ['dist', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
-  engines: { node: '>=20.9' },
+  engines: { node: '>=20.16' },
   peerDependencies: { react: '>=18', 'react-dom': '>=18' },
   peerDependenciesMeta: { react: { optional: true }, 'react-dom': { optional: true } },
   sideEffects: true,
@@ -203,7 +219,7 @@ for (const [name, w] of Object.entries(WRAPPERS)) {
     exports: { '.': { types: './index.d.ts', default: './dist/index.js' } },
     types: './index.d.ts',
     files: ['dist', 'index.d.ts', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
-    engines: { node: '>=20.9' },
+    engines: { node: '>=20.16' },
     sideEffects: false,
     peerDependencies: { ...w.peers, '@reportwright/viewer': pkg.version },
     ...(w.optional ? { peerDependenciesMeta: Object.fromEntries(w.optional.map(n => [n, { optional: true }])) } : {}),
@@ -256,7 +272,7 @@ for (const P of ['packages/engine/dist', 'packages/cli/dist', 'packages/viewer/d
     description: 'npm create reportwright: a working ReportWright app (Node, React, Vue, Svelte or Angular) with a sample report, in one command.',
     bin: { 'create-reportwright': 'src/bin.mjs' },
     files: ['src', 'templates', 'README.md', 'CHANGELOG.md', 'LICENSE'],
-    engines: { node: '>=20.9' },
+    engines: { node: '>=20.16' },
   });
   fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, CR, 'LICENSE')); docs(CR);
 }

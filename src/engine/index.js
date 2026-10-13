@@ -586,7 +586,7 @@ function subreportId(raw, ctx) {
 export function baseContext(def, { params, now, timeZone, fnCount, clock }) {
   return {
     params, globals: { ExecutionTime: now, ReportName: def.name || '', PageNumber: 1, TotalPages: 1 },
-    dataSets: {}, fields: null, locale: def.locale, currency: def.currency, nonFinite: def.nonFinite, grouping: def.grouping, // neither set: en-US numbers, no currency symbol (expr/format.js)
+    dataSets: {}, fields: null, locale: def.locale, currency: def.currency, nonFinite: def.nonFinite, grouping: def.grouping, // neither set: en-US numbers, USD for "C" (expr/format.js)
     nullPropagation: def.nullPropagation === true, // Nothing: VB semantics unless the report asks for SQL nulls (expr/evaluate.js)
     // + - * and Sum on decimal values (SSRS Decimal: 0.1 + 0.2 = 0.3) unless the report asks for IEEE doubles, as Java and JavaScript compute (imported JasperReports and BIRT reports)
     doubles: def.arithmetic === 'double',

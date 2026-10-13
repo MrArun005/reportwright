@@ -49,6 +49,8 @@ jobs:
         run: node bin/pw.mjs test reports
       - name: npm packages, Socket-style scan (install scripts, eval, child_process, long lines, pinned deps, metadata)
         run: npm run build:packages && npm run scan:packages
+      - name: "npm packages' types in a new project (packed, installed, tsc --noEmit with skipLibCheck false, 0 errors)"
+        run: node scripts/check-package-types.mjs
       - name: create-reportwright, node template (a new app with this build's engine and fonts renders a PDF qpdf accepts)
         # qpdf only here: installed before vitest it would turn on tests/engine/parity-tiers.test.js (pinned to another pdftoppm)
         run: |
