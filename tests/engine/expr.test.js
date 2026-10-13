@@ -64,8 +64,10 @@ describe('formats', () => {
     expect(formatValue(7, 'D3', IN)).toBe('007');
     expect(formatValue(1234.5, '#,##0.00', IN)).toBe('1,234.50');
   });
-  it('assumes no currency when nothing is set: en-US numbers, no symbol', () => {
-    expect(formatValue(1234.5, 'C2')).toBe('1,234.50');
+  it('assumes en-US and USD when nothing is set (1.0.1: as the designer shows and the README says)', () => {
+    expect(formatValue(1234.5, 'C2')).toBe('$1,234.50');
+    expect(formatValue(1234.5, 'C2', { locale: null })).toBe('$1,234.50');
+    expect(formatValue(1234.5, 'C2', { currency: 'EUR' })).toBe('€1,234.50');
     expect(formatValue(1234567.891, 'N2')).toBe('1,234,567.89');
     expect(formatValue(1234.5, 'C2', { locale: 'en' })).toBe('1,234.50');
     expect(formatValue(1234.5, 'C2', { locale: 'de-DE' })).toMatch(/^1\.234,50\s€$/); // the culture's own currency

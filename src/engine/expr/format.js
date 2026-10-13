@@ -236,9 +236,9 @@ export const REGION_CURRENCY = { US: 'USD', IN: 'INR', GB: 'GBP', DE: 'EUR', FR:
   GR: 'EUR', JP: 'JPY', CN: 'CNY', CA: 'CAD', AU: 'AUD', NZ: 'NZD', CH: 'CHF', SG: 'SGD', AE: 'AED', SA: 'SAR', BR: 'BRL', MX: 'MXN', ZA: 'ZAR', KR: 'KRW',
   RU: 'RUB', ID: 'IDR', MY: 'MYR', PH: 'PHP', TH: 'THB', VN: 'VND', PK: 'PKR', BD: 'BDT', LK: 'LKR', NP: 'NPR', SE: 'SEK', NO: 'NOK', DK: 'DKK', PL: 'PLN',
   TR: 'TRY', IL: 'ILS', EG: 'EGP', NG: 'NGN', KE: 'KES', HK: 'HKD', TW: 'TWD' };
-/** @param {string|undefined} locale */
+/** @param {string|undefined|null} locale  none: en-US, so USD (1.0.1: as the designer shows and the README says) */
 export const currencyOf = (locale) => {
-  const l = locale || '';
+  const l = locale || 'en-US';
   if (CURRENCY_OF.has(l)) return CURRENCY_OF.get(l);
   const m = /^[a-z]{2,3}-(?:[A-Za-z]{4}-)?([A-Za-z]{2})$/i.exec(l);
   const c = m ? REGION_CURRENCY[m[1].toUpperCase()] : undefined;
@@ -251,8 +251,8 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /**
- * Format a value. Neutral defaults: no locale means en-US; no currency means the locale's own currency when the
- * locale names a country ("en-IN" → ₹, as a .NET culture does), else none, and "C" then shows the number alone.
+ * Format a value. Neutral defaults: no locale means en-US (and so USD); no currency means the locale's own currency
+ * when the locale names a country ("en-IN" → ₹, as a .NET culture does), else none ("fr"), and "C" then shows the number alone.
  * @param {any} value
  * @param {string|undefined|null} fmt
  * @param {{locale?: string, currency?: string, timeZone?: string, nonFinite?: string, grouping?: string, fmtMemo?: Map<string, Map<any, string>>}} [opt] fmtMemo: a render's memo of formatted dates
@@ -285,7 +285,7 @@ export function formatValue(value, fmt, opt = {}) {
     // No format: as VB CStr, up to 15 significant digits with the locale's decimal sign and no grouping (a year stays
     // 2026). Use N0/N2/C2 to group. A safe integer reads the same.
     if (!fmt) return Number.isSafeInteger(value) && !Object.is(value, -0) ? String(value) : general(value, 15, 'E', undefined, locale);
-    return numberFn(fmt, locale, opt.currency || currencyOf(opt.locale), opt.grouping)(value);
+    return numberFn(fmt, locale, opt.currency || currencyOf(locale), opt.grouping)(value);
   }
   if (typeof value === 'boolean') return value ? 'True' : 'False';
   if (typeof value === 'object') return plainText(value);

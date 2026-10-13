@@ -2811,7 +2811,7 @@ function convertReport(ar, cx, opts) {
     $schema: 'reportwright/report@1',
     name,
     locale: lang,
-    ...(currencyOf(lang) ? { currency: currencyOf(lang) } : {}), // the Language's country; none for a bare "fr"
+    ...(lang && currencyOf(lang) ? { currency: currencyOf(lang) } : {}), // the Language's country; none for a bare "fr"
     page: pinfo.page,
     parameters,
     dataSources,
