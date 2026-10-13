@@ -8,6 +8,7 @@ import { accountsOn, clearCookie, sessionClaims } from '@/server/session.js';
 import { sloOn, samlSloMessage, sloRequestId, samlUserFor, samlLogoutResponseUrl, clearLogoutCookies, publicBase } from '@/server/sso.js';
 import { endSessions } from '@/server/users.js';
 import { audit } from '@/server/audit.js';
+import { readForm } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 
@@ -43,7 +44,7 @@ async function handle(req, form) {
 
 export async function GET(req) { return handle(req, null); }
 export async function POST(req) {
-  if (Number(req.headers.get('content-length')) > 1024 * 1024) return Response.json({ error: 'Too large.' }, { status: 413 });
-  const f = await req.formData().catch(() => null);
+  let f;
+  try { f = await readForm(req, 1024 * 1024); } catch (e) { if (e.status === 413) return Response.json({ error: 'Too large.' }, { status: 413 }); f = null; }
   return handle(req, { SAMLRequest: String(f?.get('SAMLRequest') || ''), RelayState: String(f?.get('RelayState') || '') });
 }

@@ -8,6 +8,7 @@ import { endSessions, getUser } from '@/server/users.js';
 import { currentUser, clearCookie, sessionClaims, rotateDevice } from '@/server/session.js';
 import { sloOn, samlLogoutStart, oidcLogoutUrl, clearLogoutCookies } from '@/server/sso.js';
 import { audit } from '@/server/audit.js';
+import { readJsonOr } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 
@@ -17,7 +18,7 @@ export async function POST(req) {
   h.append('set-cookie', clearCookie(req));
   let redirect = null, slo = null;
   if (user && !user.internal) {
-    const body = await req.json().catch(() => null);
+    const body = await readJsonOr(req, null).catch(() => null); // signing out never fails on the body
     const everywhere = body?.everywhere === true;
     const after = await endSessions(user.email, { everywhere });
     const kept = after && !everywhere ? rotateDevice(req, after) : null;

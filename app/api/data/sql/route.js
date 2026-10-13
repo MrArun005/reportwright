@@ -9,6 +9,7 @@ import { runSql, runSavedSql } from '@/server/sql.js';
 import { principalOf, canDesign } from '@/server/perms.js';
 import { errorResponse } from '@/server/errors.js';
 import { audit, paramsHash } from '@/server/audit.js';
+import { readJsonOr, bodyError } from '@/server/body.js';
 
 const paramsHashOf = (q) => paramsHash({ q: String(q ?? '') });
 
@@ -17,7 +18,7 @@ export const runtime = 'nodejs';
 const bad = (error, status = 400) => Response.json({ error }, { status });
 
 export async function POST(req) {
-  const body = await req.json().catch(() => null);
+  let body; try { body = await readJsonOr(req, null); } catch (e) { return bodyError(e); }
   if (!body || typeof body !== 'object') return bad('Send a JSON body: { report, source, params }');
   const params = body.params ?? {};
   if (typeof params !== 'object' || Array.isArray(params)) return bad('"params" must be an object');

@@ -3,6 +3,7 @@ import { updateSchedule, deleteSchedule, getSchedule } from '@/server/schedules.
 import { audit } from '@/server/audit.js';
 import { designer, specOf } from '@/server/schedulePage.js';
 import { errorResponse } from '@/server/errors.js';
+import { readJson, DEF_BYTES } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 
@@ -11,7 +12,7 @@ export async function PATCH(req, { params }) {
   if (res) return res;
   try {
     const { id } = await params;
-    const body = await req.json();
+    const body = await readJson(req, DEF_BYTES);
     const cur = await getSchedule(id, p);
     if (!cur) return Response.json({ error: 'No such schedule.' }, { status: 404 });
     // only "enabled" toggles alone; anything else replaces the whole spec

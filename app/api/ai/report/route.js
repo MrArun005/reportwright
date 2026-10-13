@@ -7,6 +7,7 @@ import { fontStore } from '@/server/renderer.js';
 import { safeId } from '@/server/reports.js';
 import { principalOf, readReportFor, canDesign } from '@/server/perms.js';
 import { errorResponse } from '@/server/errors.js';
+import { readText } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // a draft with retries can take minutes
@@ -21,10 +22,8 @@ export async function POST(req) {
   if (!canDesign(await principalOf(req))) return err('Only designers can draft with AI (in production that needs a sign-in: PW_AUTH=users or PW_BASIC_AUTH).', 403);
   let body;
   try {
-    const text = await req.text();
-    if (text.length > MAX_BODY) return err('The request is larger than 1 MB.', 413);
-    body = JSON.parse(text);
-  } catch { return err('Send JSON: { prompt, sample?, url?, base? }', 400); }
+    body = JSON.parse(await readText(req, MAX_BODY));
+  } catch (e) { if (e.status === 413) return err('The request is larger than 1 MB.', 413); return err('Send JSON: { prompt, sample?, url?, base? }', 400); }
   try {
     // the report to change: unsaved from the designer (definition), or a saved one (base id)
     const base = body.definition ?? (body.base ? await readReportFor(await principalOf(req), safeId(String(body.base)), 'view') : null);

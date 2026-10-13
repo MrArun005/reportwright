@@ -5,6 +5,7 @@ import { getSettings, updateSettings, serverHtmlExport } from '@/server/settings
 import { audit } from '@/server/audit.js';
 import { serverStatus } from '@/server/status.js';
 import { errorResponse } from '@/server/errors.js';
+import { readJsonOr } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 
@@ -18,7 +19,7 @@ export async function PATCH(req) {
   const { user: me, res } = await requireRole(req, 'admin');
   if (res) return res;
   try {
-    const body = await req.json().catch(() => ({}));
+    const body = await readJsonOr(req, {});
     const before = await getSettings({ fresh: true });
     const after = await updateSettings(body, { by: me });
     const changed = Object.fromEntries(['require2fa', 'snapshotTtl', 'snapshotMaxMb', 'htmlExport'].filter(k => JSON.stringify(before[k]) !== JSON.stringify(after[k])).map(k => [k, after[k]]));

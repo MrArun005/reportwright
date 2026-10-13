@@ -9,6 +9,7 @@ import { attempt, clientAddress, netKey, normAccount } from '@/server/limits.js'
 import { publicBase } from '@/server/sso.js';
 import { audit } from '@/server/audit.js';
 import { devMode } from '@/server/config.js';
+import { readJsonOr, bodyError } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 const HOUR = 3600 * 1000;
@@ -38,7 +39,7 @@ async function work(req, email, base) {
 export async function POST(req) {
   if (!accountsOn()) return Response.json({ error: 'Accounts are off on this server (PW_AUTH is not "users").' }, { status: 404 });
   if (!mailOn()) return Response.json({ error: 'Password reset by email is not set up on this server. Ask an admin to reset your password.' }, { status: 404 });
-  const body = await req.json().catch(() => ({}));
+  let body; try { body = await readJsonOr(req, {}); } catch (e) { return bodyError(e); }
   let email;
   try { email = normEmail(body?.email); } catch (e) { return Response.json({ error: e.message }, { status: 400 }); }
   // per network: 20 an hour, then 429 (a flood from one place). Per account: at most 5 mails an hour; past that the
