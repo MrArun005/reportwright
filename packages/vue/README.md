@@ -14,7 +14,7 @@ Vue is a peer dependency; the viewer loads on mount (SSR-safe).
 ## Install
 
 ```bash
-npm i @reportwright/vue@next @reportwright/viewer@next @reportwright/fonts@next
+npm i @reportwright/vue @reportwright/viewer @reportwright/fonts
 cp -r node_modules/@reportwright/fonts/public public/pw     # serve the fonts as static files
 ```
 

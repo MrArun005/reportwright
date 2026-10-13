@@ -14,7 +14,7 @@ Plain JavaScript, so no compiler step and any Svelte version.
 ## Install
 
 ```bash
-npm i @reportwright/svelte@next @reportwright/viewer@next @reportwright/fonts@next
+npm i @reportwright/svelte @reportwright/viewer @reportwright/fonts
 cp -r node_modules/@reportwright/fonts/public public/pw     # serve the fonts as static files
 ```
 

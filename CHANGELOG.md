@@ -20,6 +20,8 @@ The first stable release. From here on ReportWright follows semantic versioning;
   a minified render worker, publish-then-verify releases, memory fixes for zebra tables and large sorts, and the
   release-gate fixes listed in the rc sections below.
 
+- **Benchmarks on the 1.0 code** (GitHub runs [38317309719](https://github.com/MrArun005/reportwright/actions/runs/38317309719), [38312325290](https://github.com/MrArun005/reportwright/actions/runs/38312325290), [38312329287](https://github.com/MrArun005/reportwright/actions/runs/38312329287)): first among report engines on grouped reports (271 ms at 100 rows, 1,132 ms at 10,000; QuestPDF 397 / 3,111 ms, JasperReports 2,278 / 5,372 ms), 6.1× to 7.9× faster than SSRS's LocalReport on Windows, 1,000,000 rows streamed in 52.4 s at 718 MB (0.13.1: 74.4 s). Losses: QuestPDF is faster on a warm one-page invoice (4.6 ms vs 9.0 ms) and on 1,000 separate invoices (162.7 vs 136.8 files/s); Go and Rust writers are 2× to 3× faster on small files.
+
 ### Breaking changes
 | Removed | Use instead |
 |---|---|

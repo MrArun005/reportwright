@@ -43,7 +43,7 @@ Pushed data (render and batch items) needs a designer or a service key (`docs/AP
 
 - SQL: `connection: 'main'` reads the server variable `PW_DB_MAIN`. A report never holds a host or a password. `@name` binds a report parameter, so values never go into the SQL text.
 - SQL rules: one `SELECT` (or `WITH … SELECT`), read-only transaction, 30 s, 100,000 rows (`docs/API.md`, `docs/CONFIG.md`).
-- Released SQL drivers per `docs/FEATURES.md`: SQLite and MySQL. `docs/FEATURES.md` marks PostgreSQL, SQL Server, Oracle, Snowflake and BigQuery as not released. (`README.md` lists them without that mark. See the open question in the index.)
+- Released SQL drivers: SQLite and MySQL. Not released: PostgreSQL and SQL Server (live-tested), Oracle (experimental: LOB columns refused, some live tests skipped), BigQuery (tested against an emulator), Snowflake (built, not live-tested). See `docs/DATA-SQL.md`, Release status.
 - Data URLs are fixed by default in production (`PW_FIXED_FETCH_HOSTS`): write the host out, and let parameters fill only the path and query.
 - A REST source may only GET from this server (or a public host through `useProxy`).
 - XML is read without DTDs. SOAP sends `{Parameters.x}` XML-escaped.

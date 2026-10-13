@@ -2,60 +2,47 @@
 
 All four are JavaScript. pdfmake and @react-pdf/renderer lay out a document from a description (like ReportWright's engine); jsPDF is a lower-level drawing API, so it is compared with ReportWright's own PDF writer, [`@reportwright/pdf`](https://www.npmjs.com/package/@reportwright/pdf).
 
-Median warm time · median peak memory. Bold is the fastest. "ReportWright rc" is engine branch `engine-pdf12@091f9b6fa`; "0.13.1" is the npm release.
+Median wall time · peak memory (warm invoice: in-process median). Bold is the fastest. ReportWright is the 1.0 code (`main@944e09eb`); everything below is GitHub run [38317309719](https://github.com/MrArun005/reportwright/actions/runs/38317309719) (ubuntu-latest, every contestant in the same job) unless noted.
 
 ## Report engines
 
-GitHub run [38108358599](https://github.com/MrArun005/reportwright/actions/runs/38108358599) (create-engines job, ubuntu-latest).
+| job | ReportWright | pdfmake 0.3 | @react-pdf/renderer |
+|---|---|---|---|
+| Grouped report, 100 rows | **271 ms · 94 MB** | 564 ms · 119 MB | 1236 ms · 162 MB |
+| Grouped report, 1,000 rows | **399 ms · 118 MB** | 1439 ms · 141 MB | 10.14 s · 360 MB |
+| Grouped report, 10,000 rows | **1132 ms · 192 MB** | 8150 ms · 330 MB | timeout |
+| Plain text, 10 pages | **188 ms · 99 MB** | 432 ms · 119 MB | 1124 ms · 158 MB |
+| Plain text, 100 pages | **354 ms · 142 MB** | 1111 ms · 159 MB | 6807 ms · 318 MB |
+| Invoice, single (new process) | **188 ms · 97 MB** | 285 ms · 103 MB | 405 ms · 150 MB |
+| Invoice, warm (50 in one process) | **9.0 ms** | 52 ms | 28 ms |
+| Unicode: Hindi, Arabic, CJK | **186 ms** | 212 ms, **output failed the check** | 333 ms, **output failed the check** |
+| PDF/A-2b invoice (veraPDF) | **187 ms · 97 MB** | 254 ms · 103 MB | no PDF/A option |
+| Images: 6 MP PNG + 24 MP JPEG | not measured (over the engine's 10 MB per-image cap) | **899 ms** · 592 MB | 1741 ms · 954 MB |
 
-Grouped report (rows):
-
-| rows | ReportWright rc | ReportWright 0.13.1 | pdfmake | @react-pdf/renderer |
-|---:|---|---|---|---|
-| 100 | **145 ms · 93 MB** | 288 ms · 172 MB | 388 ms · 118 MB | 967 ms · 165 MB |
-| 1,000 | **279 ms · 118 MB** | 532 ms · 208 MB | 1307 ms · 142 MB | 10.02 s · 357 MB |
-| 10,000 | **913 ms · 179 MB** | 1494 ms · 252 MB | 8.14 s · 333 MB | 644.77 s · 1584 MB |
-| 100,000 | **6.64 s · 300 MB** | 8.94 s · 325 MB | 73.20 s · 1951 MB | **crashed** (V8 out of memory at 2152 MB) |
-
-Plain text (pages):
-
-| pages | ReportWright rc | ReportWright 0.13.1 | pdfmake | @react-pdf/renderer |
-|---:|---|---|---|---|
-| 10 | **129 ms · 100 MB** | 231 ms · 178 MB | 463 ms · 121 MB | 1398 ms · 165 MB |
-| 100 | **413 ms · 144 MB** | 507 ms · 226 MB | 1464 ms · 158 MB | 11.28 s · 319 MB |
-| 1,000 | 1810 ms · 230 MB | **1699 ms · 320 MB** | 10.87 s · 489 MB | 115.88 s · 1830 MB |
-
-Other jobs, same run:
-
-| job | ReportWright rc | ReportWright 0.13.1 | pdfmake | @react-pdf/renderer |
-|---|---|---|---|---|
-| Invoice, warm (50 in one process) | 16.4 ms | **12.2 ms** | 81.1 ms | 46.0 ms |
-| Unicode: Hindi, Arabic, CJK | **111 ms** | 306 ms | 123 ms, **output failed the check** | 208 ms, **output failed the check** |
-| Images: 6 MP PNG + 24 MP JPEG | not measured (over the engine's 10 MB per-image cap) | — | 1266 ms · 591 MB | 2476 ms · 981 MB |
-
-Bulk, 1,000 files (GitHub run [38114383349](https://github.com/MrArun005/reportwright/actions/runs/38114383349), engine `engine-pdf12@9118d0f93`), files per second:
+Bulk, 1,000 files (GitHub run [38312325290](https://github.com/MrArun005/reportwright/actions/runs/38312325290), same code), files per second:
 
 | job | ReportWright, pool | ReportWright, one process | pdfmake |
 |---|---:|---:|---:|
-| report | **124.9** | 92.1 | 6.2 |
-| invoice | **89.2** | 58.1 | 11.1 |
-| plain | **82.4** | 55.1 | 3.6 |
-| unicode | **277.8** | 180.4 | 18.4 (output failed the check) |
+| report | **158.9** | 128.5 | 6.3 |
+| invoice | **136.8** | 83.2 | 11.1 |
+| PDF/A invoice | **111.7** | 73.0 | 11.0 |
+| plain | **87.3** | 60.0 | 3.4 |
+| unicode | **399.6** | 327.8 | 18.0 (output failed the check) |
 
-Where they win: pdfmake was 1.05× faster than ReportWright on the PDF/A invoice in the run published in [`bench/deep/RESULTS.md`](https://github.com/MrArun005/reportwright/blob/bench-deep/bench/deep/RESULTS.md) (runs 37982975209 + 38010821519), and pdfmake and @react-pdf/renderer both handle the large-image job the engine currently skips. The ReportWright worker pool uses 2.4× to 3.7× the memory of one process (348 to 541 MB on the bulk jobs).
+Where they win: pdfmake and @react-pdf/renderer both handle the large-image job the engine skips. On pdfmake's own showcase (30 orders with nested 5-line tables; run [38317309719](https://github.com/MrArun005/reportwright/actions/runs/38317309719)) pdfmake took 261 ms against our 455 ms. The ReportWright worker pool uses about 3× the memory of one process (416 to 497 MB on the bulk jobs).
 
 ## jsPDF vs @reportwright/pdf (low-level writers)
 
-GitHub run [38108358558](https://github.com/MrArun005/reportwright/actions/runs/38108358558) (create-writers job), `@reportwright/pdf` 0.1.0-beta.12 from npm.
+Same run (create-writers job), `@reportwright/pdf` 0.1.0-beta.15 from npm (the build released as 1.0.0), jsPDF 4.2.
 
 | job | @reportwright/pdf | jsPDF |
 |---|---|---|
-| Grouped report, 100 rows | **38.9 ms · 72 MB** | 96.0 ms · 103 MB |
-| Grouped report, 10,000 rows | **306 ms · 117 MB** | 903 ms · 233 MB |
-| Grouped report, 100,000 rows | **1991 ms · 179 MB** | 8244 ms · 983 MB |
-| Plain text, 1,000 pages | **1230 ms · 121 MB** | 2916 ms · 402 MB |
-| Invoice, single | **49.6 ms · 73 MB** | 106.3 ms · 109 MB |
-| Invoice, warm | **5.4 ms** | 36.9 ms |
-| Unicode | **48.8 ms · 87 MB** | 146.3 ms · 160 MB |
-| Images | **633 ms · 197 MB** | 2872 ms · 377 MB |
+| Grouped report, 100 rows | **159 ms · 72 MB** | 335 ms · 106 MB |
+| Grouped report, 1,000 rows | **240 ms · 79 MB** | 505 ms · 129 MB |
+| Grouped report, 10,000 rows | **614 ms · 116 MB** | 1861 ms · 241 MB |
+| Plain text, 100 pages | **420 ms · 110 MB** | 865 ms · 164 MB |
+| Invoice, single | **188 ms · 73 MB** | 319 ms · 111 MB |
+| Invoice, warm | **8.5 ms** | 55 ms |
+| Unicode | **181 ms · 88 MB** | 407 ms · 161 MB |
+| Images | **991 ms · 197 MB** | 4791 ms · 377 MB |
 

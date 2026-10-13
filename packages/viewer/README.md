@@ -15,7 +15,7 @@ The ReportWright report viewer in any web app (React is bundled inside, in a sha
 ## Install
 
 ```bash
-npm i @reportwright/viewer@next @reportwright/fonts@next
+npm i @reportwright/viewer @reportwright/fonts
 cp -r node_modules/@reportwright/fonts/public public/pw     # serve fonts/, harfbuzz-subset.wasm, icc/ as static files
 ```
 
@@ -158,7 +158,7 @@ against, so the package itself holds only ReportWright's own readable code.
 ## Without a server (library only)
 
 ```bash
-npm i @reportwright/viewer@next @reportwright/fonts@next
+npm i @reportwright/viewer @reportwright/fonts
 # serve the fonts as static files, e.g. from your app's public folder
 cp -r node_modules/@reportwright/fonts/public public/pw     # fonts/, harfbuzz-subset.wasm, icc/
 ```

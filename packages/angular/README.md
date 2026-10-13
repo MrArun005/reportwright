@@ -14,7 +14,7 @@ Custom elements need no Angular compiler step, so they work with any Angular ver
 ## Install
 
 ```bash
-npm i @reportwright/angular@next @reportwright/viewer@next @reportwright/fonts@next
+npm i @reportwright/angular @reportwright/viewer @reportwright/fonts
 ```
 
 Serve the fonts as static assets, e.g. in `angular.json` under `assets`:

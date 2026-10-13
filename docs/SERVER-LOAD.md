@@ -104,3 +104,32 @@ Run: https://github.com/MrArun005/reportwright/actions/runs/38161733350 (artifac
 
 Soak memory: 659 MB → 727 MB (×1.10, limit ×1.25). The server answered `livez` after every scenario. This run barely
 needed to refuse (the server kept up); the fast-refusal path itself is covered by `tests/engine/admission-arrival.test.js`.
+
+## 1.0 run (2026-10-12, GitHub Actions, 4-core runner, qa-load full tier)
+
+The 1.0 code (`main@944e09eb`), `next start` with accounts on, k6 closed loop that waits out `Retry-After`.
+Run: https://github.com/MrArun005/reportwright/actions/runs/38317241055 (artifact `qa-report`). 26 of 27 load checks
+and 20 of 22 stress checks passed; the two FAILs are test-design issues, explained below.
+
+| Scenario | Requests | OK p50 / p95 / p99 | Refused (429/503) | Errors |
+|---|---|---|---|---|
+| Warm-up, 2 users, mixed | 1,368 (68/s) | 28 / 43 / 65 ms | 0 | 0 |
+| Steady, 20 users, invoice | 7,187 (120/s) | 161 / 219 / 255 ms (p95 limit 800) | 0 | 0 |
+| Ramp 1 → 50 users, mixed | 12,882 (81/s) | 462 / 806 / 1,016 ms | 0 | 0 |
+| Soak, 3 × 400 s at 10 users, mixed | 51,683 / 53,499 / 55,759 | p95 120 → 116 → 110 ms (×0.92) | 0 | 0 |
+| Spike to 200 users, one key | 4,416 (63/s) | 2,727 / 3,970 / 5,652 ms | 0 | 0 |
+| Key B beside a 100-user flood of key A | 54 | 1,410 / 2,042 / 2,713 ms | 0 | 0 |
+| Flooding key A | 3,998 | 1,404 / 2,097 / 3,475 ms | 48 | 0 |
+
+Soak memory: RSS 827 MB → 857 MB (×1.04, limit ×1.25). The server answered `livez` after every scenario.
+
+- **Spike FAIL (test design).** The spike row expects at least one refusal, to prove overload is answered with 429/503.
+  The server kept up instead: 4,416 of 4,416 requests succeeded, the pool's interactive queue peaked at 6 (the per-key
+  limit is 24), so nothing was refused. The fairness row shows the refusal path working (48 × 429 to the flooding key,
+  none to key B). The spike needs more load per core to test what it means to test.
+- **1,000,000-row stream FAIL (test design).** `exportPdfStream` wrote all 21,740 pages with correct "Page N of M"
+  footers in 14.5 s at a peak RSS of 706 MB (base 213 MB, +493 MB). The check's bound of +300 MB was never measured
+  against a real run; the previous million-row run measured 746 MB total. Memory did not grow against that; the bound
+  is wrong, not the stream.
+- Other stress rows: a 100,000-row report written whole in 2.7 s at 414 MB; 10,000 renders in one process grew RSS by
+  27 MB (1.5 ms a render); parallel paint at 200,000 rows 5.2 s against 6.4 s without (×1.22, 972 MB against 310 MB).

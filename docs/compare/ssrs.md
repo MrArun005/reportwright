@@ -4,7 +4,7 @@ ReportWright reads SSRS / Report Builder `.rdl` and `.rdlc` (RDL 2008, 2010 and 
 
 ## Migrate, step by step
 
-1. Install the CLI: `npm i -D @reportwright/cli@next @reportwright/fonts@next`
+1. Install the CLI: `npm i -D @reportwright/cli @reportwright/fonts`
 2. Convert: `npx pw import Sales.rdl -o sales.pw.json` (or `.rdlc`). Or use **Import file** on the server home page, or `POST /api/reports/import` with `content-type: application/xml` ([API.md](../API.md#ssrs-import)).
 3. Set the connection: SQL Server data sources become `sql` sources but the connection string is not imported; set `PW_DB_<NAME>` on the server ([DATA-SQL.md](../DATA-SQL.md)). Query parameters bind to the report parameter they name.
 4. Import subreport and drill-through targets too; they are found by file name.
@@ -26,7 +26,9 @@ From [API.md, SSRS import](../API.md#ssrs-import):
 | Expressions | `Fields!x.Value`, `Parameters!p.Value`, `Globals!PageNumber` / `TotalPages`, scoped aggregates (`Sum(x, "Group")`, `RunningValue`, `RowNumber`, `CountRows`…) |
 | Other items | lines, rectangles, images (embedded, external, database), subreports and their parameters |
 | Actions | hyperlinks, drill-through with parameters, bookmarks, document map labels |
-| **Not supported** | maps (left out with a note), custom report items, RDL 2005 Table/Matrix/List (upgrade in Report Builder first); `<Code>` is kept as text and never run |
+| Maps | map items: embedded shapes, ESRI shapefile layers (the .shp/.dbf in the imported folder), SQL Server spatial data |
+| Custom code | simple `<Code>` functions (a `Function` with `ByVal` parameters whose body is one `Return` expression) become report functions; the rest is kept as text with a note, never run |
+| **Not supported** | custom report items, RDL 2005 Table/Matrix/List/Chart (upgrade in Report Builder first) |
 
 Tested on 32 Microsoft sample reports (`tests/fixtures/rdl/corpus`): all import, validate and render; 762 report items, none dropped.
 
@@ -34,13 +36,23 @@ The file is treated as untrusted: no `<!DOCTYPE>` or `<!ENTITY>`, size, nesting 
 
 ## Numbers
 
-SSRS itself is not in the benchmark (it needs a Report Server). The numbers below are ReportWright against the engines that are, on the same grouped report, 100 to 100,000 rows. Median time · peak memory, from [`bench/deep/RESULTS.md`](https://github.com/MrArun005/reportwright/blob/bench-deep/bench/deep/RESULTS.md) (GitHub runs 37982975209 + 38010821519; ours is engine `perf-startup@13fa2cb34`). Bold is the fastest.
+SSRS is measured as the ReportViewer LocalReport control (15.0, the SSRS rendering engine without a Report Server) on a GitHub `windows-latest` runner, same grouped report, both interleaved in one job (GitHub run [38312325290](https://github.com/MrArun005/reportwright/actions/runs/38312325290); ReportWright is the 1.0 code, `main@944e09eb`). Median time · peak memory; bold is the fastest. Not comparable with the Linux tables elsewhere.
+
+| rows | ReportWright | SSRS (LocalReport) |
+|---:|---|---|
+| 100 | **250 ms · 69 MB** | 1810 ms · 75 MB |
+| 1,000 | **394 ms · 86 MB** | 2413 ms · 76 MB |
+| 10,000 | **878 ms · 159 MB** | 6521 ms · 95 MB |
+| 100,000 | **6347 ms · 279 MB** | 50.12 s · 440 MB |
+
+ReportWright is 6.1× to 7.9× faster; SSRS uses less memory up to 10,000 rows.
+
+On Linux against the other engines (GitHub run [38317309719](https://github.com/MrArun005/reportwright/actions/runs/38317309719), ubuntu-latest):
 
 | rows | ReportWright | JasperReports | QuestPDF (.NET) | WeasyPrint |
 |---:|---|---|---|---|
-| 100 | 584 ms · 154 MB | 2638 ms · 194 MB | **361 ms · 141 MB** | 1215 ms · 84 MB |
-| 1,000 | 741 ms · 178 MB | 3370 ms · 196 MB | **562 ms · 156 MB** | 6493 ms · 236 MB |
-| 10,000 | **1450 ms · 249 MB** | 6274 ms · 274 MB | 2502 ms · 284 MB | 66.28 s · 1772 MB |
-| 100,000 | **8446 ms · 359 MB** | 14.47 s · 699 MB | 19.70 s · 1386 MB | out of memory |
+| 100 | **271 ms · 94 MB** | 2278 ms · 222 MB | 397 ms · 144 MB | 1424 ms · 84 MB |
+| 1,000 | **399 ms · 118 MB** | 2921 ms · 228 MB | 698 ms · 156 MB | 7480 ms · 236 MB |
+| 10,000 | **1132 ms · 192 MB** | 5372 ms · 284 MB | 3111 ms · 283 MB | 72.09 s · 1772 MB |
 
-Bulk, 1,000 report files (GitHub run [38114383349](https://github.com/MrArun005/reportwright/actions/runs/38114383349)): ReportWright 124.9 files/s with a worker pool, 92.1 files/s in one process; QuestPDF 38.7; JasperReports 30.0. On 1,000 single-page invoices QuestPDF wins: 163.8 files/s against our 89.2 (pool) and 58.1 (one process).
+Bulk, 1,000 report files (GitHub run [38312325290](https://github.com/MrArun005/reportwright/actions/runs/38312325290)): ReportWright 158.9 files/s with a worker pool, 128.5 files/s in one process; QuestPDF 41.5; JasperReports 30.3. On 1,000 single-page invoices QuestPDF wins: 162.7 files/s against our 136.8 (pool) and 83.2 (one process).
