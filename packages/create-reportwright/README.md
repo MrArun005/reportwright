@@ -1,5 +1,7 @@
 # create-reportwright
 
+Not published to npm yet: `npm create reportwright` returns 404, so the command below works only after the first release.
+
 A working ReportWright app in one command:
 
 ```bash

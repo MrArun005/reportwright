@@ -1,4 +1,4 @@
-// Builds dist-site/: the static live demo (no server). npm run build:site
+// Builds dist-site/: the static live demo (no server). npm run build:site (also builds site/examples/: scripts/build-examples.mjs)
 // Every URL in the site is relative, so dist-site works at any path on any static host.
 // PW_SITE_BASE (default /reportwright-demo/) and PW_SITE_ORIGIN only fill the canonical link.
 //
@@ -23,6 +23,8 @@ const base = (process.env.PW_SITE_BASE || '/reportwright-demo/').replace(/^\/?/,
 const siteOrigin = (process.env.PW_SITE_ORIGIN || 'https://mrarun005.github.io').replace(/\/$/, '');
 
 if (!process.argv.includes('--no-embed')) execFileSync(process.execPath, [path.join(root, 'scripts/build-embed.mjs')], { stdio: 'inherit' });
+// the migration examples (site/examples/, gitignored): every example is produced by the importer on an official sample
+if (!process.argv.includes('--no-examples')) execFileSync(process.execPath, [path.join(root, 'scripts/build-examples.mjs')], { stdio: 'inherit' });
 
 fs.rmSync(out, { recursive: true, force: true });
 fs.cpSync(path.join(root, 'site'), out, { recursive: true });
@@ -71,6 +73,7 @@ for (const file of fs.readdirSync(path.join(root, 'reports')).filter(f => f.ends
 // api/reports/ and serves this file; the designer reads the body as JSON whatever its content type.
 write('api/reports/index.html', reportList.sort((x, y) => x.name.localeCompare(y.name)));
 write('api/fonts', []);
+write('fonts/optional.json', []); // the viewer asks for the optional-fonts list; the static site has none (a 404 here is noise, not a failure)
 for (const y of [2024, 2025, 2026]) write(`api/sample/sales/${y}`, sampleSales(String(y)));
 for (const { id } of listSampleAccounts()) write(`api/sample/loans/${id}`, sampleLoan(id));
 // the stress report's row-count choices
