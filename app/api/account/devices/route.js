@@ -4,6 +4,7 @@
 import { requireRole } from '@/server/access.js';
 import { listDevices, removeDevice } from '@/server/users.js';
 import { audit } from '@/server/audit.js';
+import { readJsonOr, bodyError } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 
@@ -16,7 +17,7 @@ export async function GET(req) {
 export async function DELETE(req) {
   const { user: me, res } = await requireRole(req, 'viewer');
   if (res) return res;
-  const body = await req.json().catch(() => ({}));
+  let body; try { body = await readJsonOr(req, {}); } catch (e) { return bodyError(e); }
   if (typeof body?.id !== 'string' || !body.id) return Response.json({ error: 'Give the device id.' }, { status: 400 });
   if (!(await removeDevice(me.email, body.id))) return Response.json({ error: 'No such device.' }, { status: 404 });
   await audit('user.update', { req, actor: `user:${me.email}`, detail: { user: me.email, devices: 'one removed' } });

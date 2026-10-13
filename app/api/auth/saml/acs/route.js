@@ -4,14 +4,14 @@
 import { accountsOn } from '@/server/session.js';
 import { samlOn, samlAcs, publicBase, clearSsoCookie } from '@/server/sso.js';
 import { audit } from '@/server/audit.js';
+import { readForm } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 
 export async function POST(req) {
   if (!accountsOn() || !samlOn()) return Response.json({ error: 'SAML sign-in is not set up on this server.' }, { status: 404 });
   try {
-    if (Number(req.headers.get('content-length')) > 1024 * 1024) throw Object.assign(new Error('The SAML response is too large.'), { status: 413, code: 'response' });
-    const form = await req.formData();
+    const form = await readForm(req, 1024 * 1024).catch((e) => { throw e.status === 413 ? Object.assign(new Error('The SAML response is too large.'), { status: 413, code: 'response' }) : e; });
     const next = await samlAcs(req, String(form.get('SAMLResponse') || ''));
     return new Response(null, { status: 303, headers: { location: next, 'cache-control': 'no-store' } });
   } catch (e) {

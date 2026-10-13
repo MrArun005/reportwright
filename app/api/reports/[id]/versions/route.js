@@ -3,6 +3,7 @@ import { listVersions, readReport, writeReport, safeId } from '@/server/reports.
 import { principalOf, checkReport, stampDefinition, withReport, stableCheck } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
 import { errorResponse } from '@/server/errors.js';
+import { readJson } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 
@@ -18,7 +19,7 @@ export async function POST(req, { params }) {
   try {
     const id = safeId((await params).id);
     const p = await principalOf(req);
-    const { version } = await req.json();
+    const { version } = await readJson(req);
     const def = await withReport(id, async () => {
       await stableCheck(() => checkReport(p, id, 'edit'));
       const d = await readReport(`${id}@${version}`);

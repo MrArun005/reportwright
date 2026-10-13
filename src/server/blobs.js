@@ -11,6 +11,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { store } from './storage/index.js';
+import { readBodyCapped } from './body.js';
 
 /** @typedef {{ key: string, size: number, at: string }} BlobInfo */
 /**
@@ -185,7 +186,8 @@ function s3Blobs(spec) {
         if (token) lu.searchParams.set('continuation-token', token);
         const r = await call('GET', lu);
         if (!r.ok) throw new Error(`S3 LIST: HTTP ${r.status}`);
-        const xml = await r.text();
+        // one page is at most 1,000 keys (~300 kB): a store that answers more is refused, not buffered
+        const xml = new TextDecoder().decode(await readBodyCapped(r, 16 * 1048576));
         for (const m of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
           const key = /<Key>([^<]*)<\/Key>/.exec(m[1])?.[1]?.replace(/&amp;/g, '&') || '';
           out.push({ key: base ? key.slice(base.length + 1) : key, size: Number(/<Size>(\d+)<\/Size>/.exec(m[1])?.[1] || 0), at: /<LastModified>([^<]*)<\/LastModified>/.exec(m[1])?.[1] || '' });

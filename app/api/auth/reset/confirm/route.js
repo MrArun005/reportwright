@@ -6,12 +6,13 @@ import { checkCredential } from '@/server/limits.js';
 import { audit } from '@/server/audit.js';
 import { notifyAccount } from '@/server/mail.js';
 import { errorResponse } from '@/server/errors.js';
+import { readJsonOr, bodyError } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 
 export async function POST(req) {
   if (!accountsOn()) return Response.json({ error: 'Accounts are off on this server (PW_AUTH is not "users").' }, { status: 404 });
-  const body = await req.json().catch(() => ({}));
+  let body; try { body = await readJsonOr(req, {}); } catch (e) { return bodyError(e); }
   try {
     const email = await checkCredential({ kind: 'reset', req }, () => useReset(body?.token, body?.password));
     await audit('auth.reset', { req, actor: `user:${email}`, detail: { sessions: 'ended' } });

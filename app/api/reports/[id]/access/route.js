@@ -5,6 +5,7 @@ import { principalOf, reportAccessInfo, setReportAccess, folderParam, withReport
 import { audit } from '@/server/audit.js';
 import { withLock } from '@/server/storage/index.js';
 import { errorResponse } from '@/server/errors.js';
+import { readJsonOr } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 const fail = (e) => errorResponse(e);
@@ -17,7 +18,7 @@ export async function GET(req, { params }) {
 export async function PUT(req, { params }) {
   try {
     const id = safeId((await params).id);
-    const body = await req.json().catch(() => null);
+    const body = await readJsonOr(req, null);
     if (!body || typeof body !== 'object') return Response.json({ error: 'Send { folder?, inherit?, grants? }' }, { status: 400 });
     const p = await principalOf(req);
     const patch = {};

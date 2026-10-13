@@ -9,6 +9,7 @@ import { checkCredential } from '@/server/limits.js';
 import { audit } from '@/server/audit.js';
 import { notifyAccount } from '@/server/mail.js';
 import { errorResponse } from '@/server/errors.js';
+import { readJsonOr } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 
@@ -19,7 +20,7 @@ export async function POST(req) {
     const u = st ? await getUser(st.e) : null;
     // the password step is still this account's: not disabled, no password change or sign-out since
     if (!st || !u || u.disabled || (u.sessionVersion || 0) !== st.v) return Response.json({ error: 'The sign-in took too long. Sign in again.' }, { status: 401, headers: { 'set-cookie': clearMfa(req) } });
-    const body = await req.json().catch(() => ({}));
+    const body = await readJsonOr(req, {});
     const need = secondFactor(u, await getSettings({ fresh: true }));
     let user = u, codes = null;
     const via = await checkCredential({ kind: 'mfa', account: u.email, req }, async () => {

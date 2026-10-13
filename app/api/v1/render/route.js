@@ -11,6 +11,7 @@ import { audit } from '@/server/audit.js';
 import { throughSnapshot } from '@/server/snapshots.js';
 
 import { outputHeaders, rwHeaders } from '@/server/headers.js';
+import { readJson, pushedDataBytes } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 
@@ -29,7 +30,7 @@ export async function POST(req) {
     const { principal, res } = await apiPrincipal(req, { quiet: true }); // report.render below is this call's event
     if (res) { ticket.forget(); return res; }
     ticket.bind(principal); // a caller over the limit hears 429/503 before anything is read
-    const body = await req.json().catch(() => { throw Object.assign(new Error('Send a JSON body'), { status: 400 }); });
+    const body = await readJson(req, pushedDataBytes());
     const encrypt = pdfEncryptOptions(body.pdf); // 400 on a bad shape, before loading anything
     // the cheap refusals here, before a render takes a place in the queue; the worker checks all of it again
     if (body.template && typeof body.template === 'object' && !canDesign(principal)) throw Object.assign(new Error('Only a designer can render a definition sent in the request. Render a saved template by its id.'), { status: 403 });

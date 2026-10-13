@@ -9,6 +9,7 @@ import { audit } from '@/server/audit.js';
 import { notifyAccount } from '@/server/mail.js';
 import { unlockLogin } from '@/server/limits.js';
 import { errorResponse } from '@/server/errors.js';
+import { readJsonOr } from '@/server/body.js';
 
 export const runtime = 'nodejs';
 
@@ -21,7 +22,7 @@ export async function PATCH(req, { params }) {
   if (res) return res;
   try {
     const email = await target(params);
-    const body = await req.json().catch(() => ({}));
+    const body = await readJsonOr(req, {});
     const patch = {};
     for (const k of ['role', 'password', 'disabled', 'groups', 'allowSso']) if (body[k] !== undefined) patch[k] = body[k];
     if (body.resetTwoFactor === true) patch.resetTwoFactor = true;
