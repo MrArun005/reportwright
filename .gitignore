@@ -15,6 +15,7 @@ packages/*/LICENSE
 *.tgz
 packages/*/package.json
 dist-site/
+site/examples/
 pw-worker/
 public/fonts/cjk/
 packages/*/CHANGELOG.md

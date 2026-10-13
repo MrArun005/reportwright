@@ -105,6 +105,9 @@ describe('statement check (Oracle, Snowflake, BigQuery)', () => {
     expect(snowflakeConfig('snowflake://u:p@xy12345.eu-west-1/SALES/PUBLIC?warehouse=WH&role=READER')).toMatchObject({ account: 'xy12345.eu-west-1', username: 'u', password: 'p', database: 'SALES', schema: 'PUBLIC', warehouse: 'WH', role: 'READER' });
     expect(bigqueryConfig('bigquery://my-proj?keyFile=/k.json&location=EU&maxBytes=5000')).toEqual({ projectId: 'my-proj', keyFilename: '/k.json', location: 'EU', maxBytes: 5000 });
     expect(bigqueryConfig('bigquery://p').maxBytes).toBe(10e9);
+    // endpoint: only when set (the emulator in CI); real BigQuery gets no apiEndpoint
+    expect(bigqueryConfig('bigquery://p?endpoint=http://127.0.0.1:9050')).toMatchObject({ projectId: 'p', apiEndpoint: 'http://127.0.0.1:9050' });
+    expect(bigqueryConfig('bigquery://p')).not.toHaveProperty('apiEndpoint');
   });
 });
 
@@ -114,13 +117,14 @@ function oracleMock({ type = 1, rows = [], meta = [{ name: 'A', dbType: { name: 
   const answers = { session_privs: [{ P: 'CREATE SESSION' }], ...probe };
   const conn = {
     callTimeout: 0,
-    async getStatementInfo(t) { log.push(['info', t]); return { statementType: type }; },
+    async getStatementInfo(t) { log.push(['info', t]); return { statementType: type, metaData: meta }; },
     async execute(t, v, o) {
       if (o?.maxRows) log.push(['probe', t]);
       const asked = Object.keys(answers).find(k => new RegExp(k === 'PUBLIC' ? "grantee = 'PUBLIC' AND privilege = 'EXECUTE'" : `from ${k}\\b`, 'i').test(t));
       if (o?.maxRows) return { rows: asked ? answers[asked] : [] }; // the login probe
       log.push(['execute', t, v]);
       if (!o?.resultSet) return {};
+      log.push(['options', o]);
       if (hang) await new Promise((_, rej) => { conn.break = async () => { log.push(['break']); rej(Object.assign(new Error('cancelled'), { code: 'NJS-123' })); }; });
       let i = 0;
       return { metaData: meta, resultSet: { async getRows(k) { const b = rows.slice(i, i + k); i += k; return b; }, async close() { log.push(['close']); } } };
@@ -135,12 +139,22 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
   it('the server parse must say SELECT; it runs READ ONLY and is rolled back', async () => {
     let log = oracleMock({ rows: [{ A: 1 }, { A: 2 }] });
     expect(await runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t where b = @b' }, { b: 3 })).toEqual([{ A: 1 }, { A: 2 }]);
-    expect(log.filter(x => x[0] !== 'probe').map(x => x[0])).toEqual(['info', 'execute', 'execute', 'close', 'rollback', 'release']);
+    expect(log.filter(x => x[0] !== 'probe' && x[0] !== 'options').map(x => x[0])).toEqual(['info', 'execute', 'execute', 'close', 'rollback', 'release']);
+    // the batch read is one round trip per batch: fetchArraySize is a batch, not one row (one row a trip was seconds for 50 rows)
+    expect(log.find(x => x[0] === 'options')[1].fetchArraySize).toBeGreaterThan(1);
+    // bypass 3 (closed): a prefetch would fetch rows before the metadata and width checks run
+    expect(log.find(x => x[0] === 'options')[1].prefetchRows).toBe(0);
+    expect(log.find(x => x[0] === 'options')[1].fetchArraySize).toBeLessThanOrEqual(10);
     // the grant check is a positive list over the user, its roles and PUBLIC; READ on a DIRECTORY counts
     expect(log.find(x => x[0] === 'probe' && /all_tab_privs/.test(x[1]) && /'PUBLIC' FROM dual/.test(x[1]))?.[1]).toMatch(/DIRECTORY/);
+    // PUBLIC's grants on Oracle's own objects are the install default, of any privilege (SYS grants PUBLIC DELETE on some
+    // dictionary tables); PUBLIC on a user's own object is still refused. Live proof: tests/live/oracle.live.test.js
+    expect(log.find(x => x[0] === 'probe' && /all_tab_privs/.test(x[1]))?.[1]).toMatch(/grantee = 'PUBLIC' AND NVL\(type, 'PACKAGE'\) <> 'DIRECTORY'\s+AND table_schema IN \(SELECT username FROM all_users WHERE oracle_maintained = 'Y'\)/);
     const main = log.filter(x => x[0] !== 'probe');
     expect(main[1][1]).toBe('SET TRANSACTION READ ONLY');
     expect(main[2].slice(1)).toEqual(['select a from t where b = :1', [3]]);
+    // the text that was validated is the text that runs: no rewrite, no wrapper between the parse and the execute
+    expect(log.find(x => x[0] === 'info')[1]).toBe(main[2][1]);
     log = oracleMock({ type: 3 }); // not a SELECT (the server says so, whatever the text looks like)
     await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t' }, {})).rejects.toThrow(/one SELECT/);
     expect(log.some(x => x[0] === 'execute')).toBe(false);
@@ -167,16 +181,45 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
     limits.rows = 10;
     await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t' }, {})).rejects.toThrow(/more than 10 rows/);
     Object.assign(limits, keep);
+    // bypass 1 (closed): a CLOB was read through its locator, whose length is known only by reading it. LOB types are
+    // refused from the statement's metadata, before any row or byte of the value is read
     let read = false;
     const lob = { length: 50_000_000, type: 'clob', getData: async () => { read = true; return 'x'; } };
     oracleMock({ rows: [{ C: lob }], meta: [{ name: 'C', dbType: { name: 'DB_TYPE_CLOB' } }] });
     limits.bytes = 1048576;
-    await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select c from t' }, {})).rejects.toThrow(/MB/);
+    await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select c from t' }, {})).rejects.toThrow(/CLOB.*cannot read|cannot read/);
+    expect(read).toBe(false);
+    for (const t of ['DB_TYPE_NCLOB', 'DB_TYPE_BLOB']) {
+      oracleMock({ rows: [{ C: lob }], meta: [{ name: 'C', dbType: { name: t }, dbTypeName: t }] });
+      await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select c from t' }, {}), t).rejects.toThrow(/cannot read/);
+    }
     expect(read).toBe(false);
     for (const t of ['DB_TYPE_LONG', 'DB_TYPE_XMLTYPE', 'DB_TYPE_OBJECT', 'DB_TYPE_JSON']) {
       oracleMock({ rows: [{ L: 'x' }], meta: [{ name: 'L', dbType: { name: t }, dbTypeName: t }] });
       await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select l from t' }, {}), t).rejects.toThrow(/cannot read/);
     }
+  });
+  // bypass 2 (closed): a batch of 10 rows was fetched whatever the width; a row too wide for 10 in the cap is refused before a fetch
+  // validation differential (closed): the column types come from the parse of the exact text; a LOB column is refused
+  // before the statement runs (no resultSet is opened, so no row or byte of the value is ever read)
+  it('refuses a LOB column from the parse of the exact text, before the statement runs', async () => {
+    const lob = { getData: async () => { throw new Error('read'); } };
+    const log = oracleMock({ rows: [{ C: lob }], meta: [{ name: 'C', dbType: { name: 'DB_TYPE_NCLOB' }, dbTypeName: 'NCLOB' }] });
+    await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select c from t' }, {})).rejects.toThrow(/cannot read/);
+    expect(log.filter(x => x[0] === 'execute').map(x => x[1])).toEqual(['SET TRANSACTION READ ONLY']); // the query never ran
+  });
+  // read-time cap (closed): a value that grew after any length was learned is counted on the bytes that arrive
+  it('counts the bytes actually received: a value that grew past the cap is refused when read', async () => {
+    oracleMock({ rows: [{ W: 'x'.repeat(2 * 1048576) }], meta: [{ name: 'W', dbType: { name: 'DB_TYPE_VARCHAR' }, byteSize: 10 }] });
+    limits.bytes = 1048576;
+    await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select w from t' }, {})).rejects.toThrow(/more than 1 MB/);
+    Object.assign(limits, keep);
+  });
+  it('refuses rows too wide for a batch under the cap, before any row is fetched', async () => {
+    const log = oracleMock({ rows: [{ W: 'w' }], meta: [{ name: 'W', dbType: { name: 'DB_TYPE_VARCHAR' }, byteSize: 32767 }] });
+    limits.bytes = 100000; // 2 x 32767 + 64 per cell x 10 rows is more than this
+    await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select w from t' }, {})).rejects.toThrow(/too wide/);
+    limits.bytes = keep.bytes;
   });
   it('wide rows come in small batches: a batch is never far past the cap', async () => {
     const asked = [];
@@ -184,7 +227,9 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
     const orig = mocks.oracle.createPool;
     mocks.oracle.createPool = async (...a) => { const p = await orig(...a); const c = await p.getConnection(); const ex = c.execute.bind(c); c.execute = async (...x) => { const r = await ex(...x); if (r.resultSet) { const g = r.resultSet.getRows; r.resultSet.getRows = (k) => { asked.push(k); return g(k); }; } return r; }; return { getConnection: async () => c }; };
     limits.bytes = 1048576;
+    limits.rows = 1000; // CI sets PW_SQL_MAX_ROWS=50; this test reads 300
     expect(await runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select w from t' }, {})).toHaveLength(300);
+    Object.assign(limits, keep);
     expect(Math.max(...asked)).toBeLessThanOrEqual(4); // 1 MB / 4 / ~64 kB a row
     void log;
   });
@@ -285,14 +330,14 @@ describe('Snowflake (mocked snowflake-sdk, not live-tested)', () => {
 });
 
 /** A BigQuery client: the dry run says `type` and `bytes`; the job pages through `rows`. */
-function bigqueryMock({ type = 'SELECT', bytes = 1000, rows = [] } = {}) {
+function bigqueryMock({ type = 'SELECT', bytes = 1000, rows = [], noBytes = false } = {}) {
   const log = { jobs: [], cancelled: 0 };
   mocks.bigquery = {
     make: (cfg) => ({
       cfg,
       async createQueryJob(o) {
         log.jobs.push(o);
-        if (o.dryRun) return [{ metadata: { statistics: { totalBytesProcessed: String(bytes), query: { statementType: type } } } }];
+        if (o.dryRun) return [{ metadata: { statistics: { ...(noBytes ? {} : { totalBytesProcessed: String(bytes) }), query: { statementType: type } } } }];
         return [{
           cancel: async () => { log.cancelled++; },
           async getQueryResults({ pageToken, maxResults }) { const i = Number(pageToken || 0); const next = i + maxResults < rows.length ? { pageToken: String(i + maxResults) } : null; return [rows.slice(i, i + maxResults), next]; },
@@ -307,7 +352,7 @@ describe('BigQuery (mocked @google-cloud/bigquery, not live-tested)', () => {
   it('a dry run first: SELECT only, and the bytes it would scan within maxBytes; the job is capped too', async () => {
     let log = bigqueryMock({ rows: [{ a: 1, d: { value: '2024-01-02' } }] });
     expect(await runSql({ connection: env('bq', 'bigquery://proj?maxBytes=5000'), query: 'select a, d from t where b = @b and c = @c' }, { b: 1, c: null })).toEqual([{ a: 1, d: '2024-01-02' }]);
-    expect(log.jobs[0]).toMatchObject({ dryRun: true, useLegacySql: false, params: [1, null], types: ['INT64', 'STRING'] });
+    expect(log.jobs[0]).toMatchObject({ dryRun: true, useLegacySql: false, params: ['1', null], types: ['INT64', 'STRING'] });
     expect(log.jobs[1]).toMatchObject({ maximumBytesBilled: '5000' });
     expect(log.jobs[1].jobTimeoutMs).toBeGreaterThan(0);
     for (const t of ['SCRIPT', 'INSERT', 'CREATE_TABLE_AS_SELECT', 'CALL', null]) {
@@ -318,6 +363,14 @@ describe('BigQuery (mocked @google-cloud/bigquery, not live-tested)', () => {
     log = bigqueryMock({ bytes: 20e9 });
     await expect(runSql({ connection: env('bq', 'bigquery://proj'), query: 'select 1 as a' }, {})).rejects.toThrow(/would read 20 GB/);
     expect(log.jobs).toHaveLength(1);
+  });
+  it('a dry run with no byte count: refused on real BigQuery, run on an emulator endpoint (the emulator reports none)', async () => {
+    let log = bigqueryMock({ noBytes: true });
+    await expect(runSql({ connection: env('bq', 'bigquery://proj'), query: 'select 1 as a' }, {})).rejects.toThrow(/did not say how much/);
+    expect(log.jobs).toHaveLength(1);
+    log = bigqueryMock({ noBytes: true });
+    expect(await runSql({ connection: env('bq', 'bigquery://proj?endpoint=http://127.0.0.1:9050'), query: 'select 1 as a' }, {})).toEqual([]);
+    expect(log.jobs).toHaveLength(2);
   });
   it('a slow first page: 504 on time, and the job is cancelled', async () => {
     const log = bigqueryMock();

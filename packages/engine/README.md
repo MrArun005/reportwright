@@ -41,7 +41,7 @@ The JavaScript engines are further behind: pdfmake 2.7× to 11× slower, @react-
 ## Install
 
 ```bash
-npm i @reportwright/engine @reportwright/fonts
+npm i @reportwright/engine@next @reportwright/fonts@next
 ```
 
 `@reportwright/fonts` is a peer dependency: it holds the fonts, the HarfBuzz text shaper, the PDF font subsetter and the PDF/A colour profile.

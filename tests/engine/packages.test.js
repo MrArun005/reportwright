@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { findContinuations } from '../../scripts/line-continuations.mjs';
 
 const root = path.join(import.meta.dirname, '..', '..');
 const node = (...args) => execFileSync(process.execPath, args, { cwd: root, encoding: 'utf8', stdio: 'pipe' });
@@ -34,6 +35,22 @@ describe('npm packages', () => {
         }
       }
       expect(json(`packages/${pk}/package.json`).files).toContain('dist');
+    }
+  });
+
+  it('the paint worker imports the engine from the package entry (one engine copy); no dist file needs patching after the build', () => {
+    const w = fs.readFileSync(path.join(root, 'packages/engine/dist/pdfstreamworker.js'), 'utf8');
+    expect(w).toMatch(/import \{ __streamPaint \} from "\.\/index\.js"/);
+    expect(w.length).toBeLessThan(20000); // the worker only, no bundled engine
+    expect(fs.readFileSync(path.join(root, 'packages/engine/dist/index.js'), 'utf8')).toMatch(/__streamPaint/);
+    expect(fs.readFileSync(path.join(root, 'packages/viewer/dist/designer.d.ts'), 'utf8')).toMatch(/onSave\?: \(definition: import\(["']@reportwright\/engine\/report["']\)\.Report\)/);
+    for (const pk of ['engine', 'cli', 'viewer']) {
+      const dir = path.join(root, 'packages', pk, 'dist');
+      for (const f of fs.readdirSync(dir, { recursive: true }).filter(f => /\.m?js$/.test(f))) {
+        const src = fs.readFileSync(path.join(dir, f), 'utf8');
+        expect(src, `${pk}/dist/${f}`).not.toMatch(/from ["']\.\.?\/(engine|exporters|src)\//);
+        expect(findContinuations(src), `${pk}/dist/${f}`).toEqual([]);
+      }
     }
   });
 

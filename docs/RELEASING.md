@@ -95,7 +95,7 @@ it is missing; the `latest` job always needs it, because `npm dist-tag` has no t
 
 1. Bump `version` in the root `package.json`, add the CHANGELOG entry, then run `npm run build:packages`,
    `npx vitest run tests/engine/packages.test.js` and `npm run scan:packages` (all green). Commit and push.
-2. On GitHub: Releases > Draft a new release > tag `v<version>` on `main` > Publish release. The workflow builds,
+2. On GitHub: Releases > Draft a new release > tag `v<version>` on `main` > Publish release. Today `publish.yml` runs on any published release (`on: release: published`); PR #14 (`fix/publish-only-version-tags`, open) restricts it to `v*` tags. Until that merges, publish only from a `v*` tag. The workflow builds,
    tests, scans and publishes. Or start it from Actions > Publish to npm > Run workflow.
 3. Once the repository is public: check each package on npmjs.com shows "Provenance", then on socket.dev after it rescans
    (a few minutes). While the repository is private this step does not apply.

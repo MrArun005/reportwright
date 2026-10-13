@@ -215,12 +215,10 @@ import { exportXlsx as exportXlsxFull } from '../../src/exporters/xlsx.js';
 import { exportDocx as exportDocxFull } from '../../src/exporters/docx.js';
 import { exportPptx as exportPptxFull } from '../../src/exporters/pptx.js';
 export { pageToSvg } from '../../src/exporters/svg.js';
-import { exportPdfStream as exportPdfStreamFull, createPdfStream, paintPage, paintEnv } from '../../src/exporters/pdfstream.js';
-import { latin1 } from '../../src/exporters/pdfpaint.js';
+import { exportPdfStream as exportPdfStreamFull } from '../../src/exporters/pdfstream.js';
 import { spillSorter, canSpill } from '../../src/exporters/spill.js';
-import { reband, CAPPED } from '../../src/engine/paged.js';
-/** @internal Not part of the public API (no semver promise): the paint worker (dist/pdfstreamworker.js) uses this bundle's painter, not a copy of the engine. */
-export const __streamPaint = { createPdfStream, paintPage, paintEnv, latin1, reband, CAPPED };
+/** @internal Not part of the public API (no semver promise): the paint worker (dist/pdfstreamworker.js) imports it from this bundle, not a copy of the engine. */
+export { __streamPaint } from '../../src/exporters/streampaint.js';
 /** @internal Not part of the public API (no semver promise): the paged plan exportPdfStream and the Office streams use. */
 export { planPaged } from '../../src/engine/paged.js';
 

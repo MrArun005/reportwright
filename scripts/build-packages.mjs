@@ -8,7 +8,7 @@ import { build } from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { fixDist } from './line-continuations.mjs';
+import { splitContinuations, findContinuations } from './line-continuations.mjs';
 const root = path.join(import.meta.dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 // runtime dependencies are pinned to the exact version installed here (the one the tests ran against)
@@ -16,6 +16,16 @@ const deps = (names) => Object.fromEntries(names.map(n => [n, JSON.parse(fs.read
 const copy = (from, to) => fs.cpSync(path.join(root, from), path.join(root, to), { recursive: true });
 const tsc = (args) => execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--allowJs', '--declaration', '--emitDeclarationOnly', '--noCheck', '--skipLibCheck',
   '--jsx', 'react-jsx', '--module', 'esnext', '--moduleResolution', 'bundler', '--target', 'es2022', ...args], { cwd: root, stdio: 'inherit' });
+/** esbuild, then each .js written with its lineLimit line continuations already joined (scripts/line-continuations.mjs:
+ * an AST rewrite of esbuild's in-memory output, before anything is on disk) */
+async function bundle(opts) {
+  const r = await build({ ...opts, write: false });
+  for (const f of r.outputFiles) {
+    fs.mkdirSync(path.dirname(f.path), { recursive: true });
+    fs.writeFileSync(f.path, /\.m?js$/.test(f.path) ? splitContinuations(f.text) : f.contents);
+  }
+  return r;
+}
 const REPO = 'https://github.com/MrArun005/reportwright';
 /** The fields every package.json carries (Socket and npm read them): repository with its folder, homepage, bugs… */
 const meta = (dir, keywords) => ({
@@ -36,19 +46,13 @@ const external = ['@pdf-lib/fontkit', 'bwip-js', 'bidi-js', '@reportwright/pdf']
 fs.rmSync(path.join(root, E, 'dist'), { recursive: true, force: true });
 fs.rmSync(path.join(root, E, 'public'), { recursive: true, force: true }); // fonts moved to @reportwright/fonts
 // no source map: the bundle is readable (not minified), and the map was ~0.8 MB of a 2 MB package
-await build({ entryPoints: [path.join(root, E, 'entry.js')], bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', minify: false, sourcemap: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, E, 'dist/index.js'), external, logLevel: 'warning', mainFields: ['module', 'main'] });
-// the streaming PDF's paint worker (exportPdfStream with parallel): its own file next to dist/index.js, which starts it;
-// it imports the engine from that bundle (one copy of the engine in the package)
-{
-  // LF only: a Windows checkout (core.autocrlf) has CRLF line ends, and the replacements below match LF lines
-  const w = fs.readFileSync(path.join(root, 'src/exporters/pdfstreamworker.js'), 'utf8').replace(/\r\n/g, '\n')
-    .replace("import { render, FontStore } from '../engine/index.js';", "import { render, FontStore, __streamPaint } from './index.js';")
-    .replace("import { reband, CAPPED } from '../engine/paged.js';\n", '')
-    .replace("import { createPdfStream, paintPage, paintEnv } from './pdfstream.js';", 'const { createPdfStream, paintPage, paintEnv, latin1, reband, CAPPED } = __streamPaint;')
-    .replace("import { latin1 } from './pdfpaint.js';\n", '');
-  if (/from '\.\.?\/(engine|pdf)/.test(w)) throw new Error('pdfstreamworker.js: its imports changed; update build-packages.mjs');
-  write(`${E}/dist/pdfstreamworker.js`, w);
-}
+await bundle({ entryPoints: [path.join(root, E, 'entry.js')], bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', minify: false, sourcemap: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, E, 'dist/index.js'), external, logLevel: 'warning', mainFields: ['module', 'main'] });
+// the streaming PDF's paint worker (exportPdfStream with parallel): its own file next to dist/index.js, which starts it.
+// Its one engine import (src/exporters/streampaint.js) is external and resolves to ./index.js, so the package holds one
+// copy of the engine and the worker paints with the bundle's painter
+const streamPaint = path.join(root, 'src/exporters/streampaint.js');
+await bundle({ entryPoints: [path.join(root, 'src/exporters/pdfstreamworker.js')], bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', minify: false, sourcemap: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, E, 'dist/pdfstreamworker.js'), external, logLevel: 'warning',
+  plugins: [{ name: 'engine-entry', setup: (b) => b.onResolve({ filter: /\/streampaint\.js$/ }, (a) => (path.join(a.resolveDir, a.path) === streamPaint ? { path: './index.js', external: true } : undefined)) }] });
 write(`${E}/package.json`, {
   name: '@reportwright/engine', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
   ...meta(E, ['pdf', 'pdf-a', 'excel', 'xlsx', 'docx', 'pptx', 'report-engine', 'jasperreports', 'ssrs', 'rdl']),
@@ -116,7 +120,7 @@ const serverStub = { name: 'server-stub', setup: (b) => {
   b.onResolve({ filter: /\/src\/server\// }, (a) => ({ path: a.path, namespace: 'server-stub' }));
   b.onLoad({ filter: /.*/, namespace: 'server-stub' }, () => ({ contents: "throw new Error('this is a server command: run it with node bin/pw.mjs in the ReportWright app folder');" }));
 } };
-await build({ entryPoints: [path.join(root, 'bin/pw.mjs')], bundle: true, format: 'esm', platform: 'node', target: 'node22', minify: false, sourcemap: 'linked', sourcesContent: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, C, 'dist/cli.mjs'), external: [...external, '@reportwright/fonts'], plugins: [serverStub], logLevel: 'warning' });
+await bundle({ entryPoints: [path.join(root, 'bin/pw.mjs')], bundle: true, format: 'esm', platform: 'node', target: 'node22', minify: false, sourcemap: 'linked', sourcesContent: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, C, 'dist/cli.mjs'), external: [...external, '@reportwright/fonts'], plugins: [serverStub], logLevel: 'warning' });
 // pw.mjs turns on Node's compile cache before it loads the bundle, so a second run skips compiling it (about 10 ms of
 // a cold start): in a folder only this user can read (packages/engine/pool/compile-cache.js), never the shared temp folder
 {
@@ -157,19 +161,11 @@ copy('public/embed/esm-pkg-peer', `${V}/dist/peer`);
     fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/(["'])\.\/(chunk-[\w-]+\.js)\1/g, (m, q, c) => (same.has(c) ? `${q}../${c}${q}` : m)));
   }
 }
-// types from the JSDoc of the two entries; their signatures use only their own typedefs, so no imports are followed
+// types from the JSDoc of the two entries (packages/viewer/tsconfig.types.json: onSave's report type resolves to the engine's)
 const T = path.join(root, V, 'dist/.types');
-tsc(['src/embed/index.js', 'src/embed/designer.js', '--noResolve', '--outDir', path.relative(root, T)]);
+execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '-p', path.join(root, V, 'tsconfig.types.json')], { cwd: root, stdio: 'inherit' });
 fs.renameSync(path.join(T, 'index.d.ts'), path.join(root, V, 'dist/viewer.d.ts'));
 fs.renameSync(path.join(T, 'designer.d.ts'), path.join(root, V, 'dist/designer.d.ts'));
-// onSave's parameter is the report definition: the one signature that names another package (the engine's report type), so
-// it is written after the emit (--noResolve turns the JSDoc import into any)
-{
-  const dts = path.join(root, V, 'dist/designer.d.ts');
-  const typed = fs.readFileSync(dts, 'utf8').replace('onSave?: (definition: any) => unknown;', "onSave?: (definition: import('@reportwright/engine/report').Report) => unknown;");
-  if (!typed.includes("import('@reportwright/engine/report').Report")) throw new Error('the designer onSave type did not match the emit');
-  fs.writeFileSync(dts, typed);
-}
 fs.rmSync(T, { recursive: true, force: true });
 write(`${V}/package.json`, {
   name: '@reportwright/viewer', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
@@ -227,8 +223,13 @@ for (const [name, w] of Object.entries(WRAPPERS)) {
     if (fs.readdirSync(dir).some(f => /\.m?js$/.test(f) && fs.readFileSync(path.join(dir, f), 'utf8').includes('./pdfstreamworker.js'))) fs.writeFileSync(path.join(dir, 'pdfstreamworker.js'), stub);
   }
 }
-// no backslash line continuation in a string in what npm publishes (lineLimit makes them): fails the build if one is left
-for (const P of ['packages/engine/dist', 'packages/cli/dist', 'packages/viewer/dist']) fixDist(path.join(root, P));
+// no backslash line continuation in a string in what npm publishes (bundle() and build-embed.mjs join them): a check, nothing is rewritten
+for (const P of ['packages/engine/dist', 'packages/cli/dist', 'packages/viewer/dist']) {
+  for (const f of fs.readdirSync(path.join(root, P), { recursive: true }).filter(f => /\.m?js$/.test(f))) {
+    const left = findContinuations(fs.readFileSync(path.join(root, P, f), 'utf8'));
+    if (left.length) throw new Error(`${P}/${f}: a backslash line continuation in a string at ${left.join(', ')}`);
+  }
+}
 /* create-reportwright: `npm create reportwright`, zero dependencies; its templates are examples/<name> with the shared
    report.pw.json and data.json copied in (the imports that read them one folder up are rewritten to the app's own copy) */
 {
