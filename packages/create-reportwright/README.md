@@ -21,4 +21,4 @@ It asks for a template, or pass it: `npm create reportwright@latest my-app -- --
 Each app has `report.pw.json` (the report) and `data.json` (its data, inline: no server). The `@reportwright/*`
 packages are pinned to this package's version. The target folder must be new or empty.
 
-Zero dependencies; Node 20.9 or later. MIT.
+Zero dependencies; Node 20.16 or later. MIT.

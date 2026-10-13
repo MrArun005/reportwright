@@ -31,7 +31,7 @@ We own the engine. We pay no per-domain license.
 
 The engine takes a report definition and data. It returns a **page model**: a list of pages. Each page is a flat list of draw commands (text, rect, line, path, image, link) at absolute positions, in points.
 
-Every output reads the same page model. The viewer draws it as SVG. The PDF exporter draws it with pdf-lib. So the viewer and the PDF always agree.
+Every output reads the same page model. The viewer draws it as SVG. The PDF exporter writes it with @reportwright/pdf (pdf-lib only for the opt-in `pdfWriter: 'legacy'`, installed by the caller). So the viewer and the PDF always agree.
 
 This decision has three consequences:
 
@@ -57,7 +57,7 @@ flowchart LR
     P --> PM[(Page model · display list)]
   end
   PM --> V[Viewer · SVG pages]
-  PM --> PDF[PDF · pdf-lib + fontkit]
+  PM --> PDF[PDF · @reportwright/pdf + fontkit]
   PM --> HTML[HTML export]
   L --> XL[Excel / CSV · data-shaped]
 ```
@@ -251,7 +251,7 @@ Charts and barcodes also produce only `path`, `rect`, `line` and `text`. So ever
 | Output | How | Phase |
 |---|---|---|
 | Viewer | One SVG per page, in a virtualized list. Same font files through `@font-face`. | 1 |
-| PDF | pdf-lib + fontkit. Subset-embedded fonts, vector shapes, links, outline from bookmarks. | 1 |
+| PDF | @reportwright/pdf + fontkit. Subset-embedded fonts, vector shapes, links, outline from bookmarks. | 1 |
 | Server PDF | `/api/render/pdf` runs the engine in Node. | 3 |
 | HTML | One self-contained file, one absolute-positioned block per page. | 3 |
 | Excel | ExcelJS in **data mode**: one sheet per table, typed cells, number formats, group outline levels. | 3 |

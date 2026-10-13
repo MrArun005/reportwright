@@ -111,7 +111,7 @@ Exit codes: 0 ok; 1 a test failed, the pages differ or `pw compare` found a diff
 
 ## Requirements and limits
 
-- Node 20.9 or later. Install `@reportwright/fonts` next to the CLI.
+- Node 20.16 or later. Install `@reportwright/fonts` next to the CLI.
 - `pw render -f pdf -o file` streams a flowing table, so memory stays flat on large reports (see the engine's
   [streaming notes](https://github.com/MrArun005/reportwright/tree/main/packages/engine#streaming-pdf-for-large-reports)); other formats render the whole model in memory.
 - Bulk import reads at most `--max-files` files (2000) of at most `--max-bytes` each (16 MB). BIRT libraries

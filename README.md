@@ -308,7 +308,7 @@ The e2e suites need a server that lets them in. `scripts/restart.sh` is the one 
 
 ```
 src/engine/      pure JS engine: expressions, data, text, items, paginator   (no React, no DOM)
-src/exporters/   page model → PDF (pdf-lib + HarfBuzz subsetting), SVG, Excel, HTML, CSV
+src/exporters/   page model → PDF (@reportwright/pdf + HarfBuzz subsetting), SVG, Excel, HTML, CSV
 src/viewer/      React viewer + Web Worker client
 src/designer/    React designer (Zustand + immer)
 src/embed/       entry for the embeddable viewer bundle

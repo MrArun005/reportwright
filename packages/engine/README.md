@@ -232,7 +232,7 @@ format: `import type { Report } from '@reportwright/engine/report'`; JSON Schema
 
 ## Runtime support
 
-- **Node** 20.9 or later (`engines`). The SSRF guard pins the checked address on Node 20.16+ / 22.3+.
+- **Node** 20.16 or later (`engines`). The SSRF guard pins the checked address on Node 20.16+ / 22.3+.
 - **Browsers**: the package is ES modules built for ES2022, for modern evergreen browsers through a bundler. In a
   browser, pass `defaultFontStore({ fontsUrl })` (see the quick start). Sorted or grouped exports hold their rows in
   memory there (keep them under about 100,000 rows).
