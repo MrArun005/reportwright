@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Unzip, UnzipInflate } from 'fflate';
+import zlib from 'node:zlib';
 import { principalOf } from '@/server/perms.js';
 import { arrive } from '@/server/pool.js';
 import { errorResponse } from '@/server/errors.js';
@@ -34,32 +34,44 @@ async function readCapped(req) {
 }
 
 /**
- * A zip's report entries, counting the bytes actually inflated (a zip's own sizes can lie): the entry count, each
- * entry's size and the total are checked as the data arrives, before anything past a limit is kept.
+ * A zip's report entries, read from its central directory and inflated by zlib with maxOutputLength, so no entry can
+ * grow past what is left of the limits however its headers lie (zlib stops before allocating more). Only stored and
+ * deflated entries are read; anything else is refused.
  */
 function unzipBounded(bytes) {
+  const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const damaged = () => httpError(400, 'The zip is damaged');
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65535); i--) if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw damaged();
+  const count = buf.readUInt16LE(eocd + 10), cdOff = buf.readUInt32LE(eocd + 16);
+  if (count > ASSESS_LIMITS.maxFiles) throw httpError(413, `the zip has more than ${ASSESS_LIMITS.maxFiles} files`);
   const out = {};
-  let n = 0,
-    total = 0;
-  const uz = new Unzip((file) => {
-    if (file.name.endsWith('/')) return;
-    if (++n > ASSESS_LIMITS.maxFiles) throw httpError(413, `the zip has more than ${ASSESS_LIMITS.maxFiles} files`);
-    const keep = KEEP.test(file.name);
-    const chunks = [];
-    let size = 0;
-    file.ondata = (err, chunk, final) => {
-      if (err) throw httpError(400, 'The zip is damaged');
-      size += chunk.length;
-      total += chunk.length;
-      if (total > ASSESS_LIMITS.maxTotal) throw httpError(413, 'the zip unpacks to more than the assessment limit');
-      if (keep && size > ASSESS_LIMITS.maxBytes) throw httpError(413, `a file in the zip is larger than ${ASSESS_LIMITS.maxBytes} bytes`);
-      if (keep) chunks.push(chunk);
-      if (final && keep) out[file.name] = Buffer.concat(chunks);
-    };
-    file.start();
-  });
-  uz.register(UnzipInflate);
-  uz.push(bytes, true);
+  let p = cdOff, total = 0;
+  for (let k = 0; k < count; k++) {
+    if (p + 46 > buf.length || buf.readUInt32LE(p) !== 0x02014b50) throw damaged();
+    const method = buf.readUInt16LE(p + 10), csize = buf.readUInt32LE(p + 20);
+    const nlen = buf.readUInt16LE(p + 28), xlen = buf.readUInt16LE(p + 30), clen = buf.readUInt16LE(p + 32), lho = buf.readUInt32LE(p + 42);
+    const name = buf.toString('utf8', p + 46, p + 46 + nlen);
+    p += 46 + nlen + xlen + clen;
+    if (name.endsWith('/') || !KEEP.test(name)) continue;
+    if (lho + 30 > buf.length || buf.readUInt32LE(lho) !== 0x04034b50) throw damaged();
+    const start = lho + 30 + buf.readUInt16LE(lho + 26) + buf.readUInt16LE(lho + 28);
+    if (start + csize > buf.length) throw damaged();
+    const data = buf.subarray(start, start + csize);
+    const room = Math.min(ASSESS_LIMITS.maxBytes, ASSESS_LIMITS.maxTotal - total);
+    let raw;
+    if (method === 0) raw = data;
+    else if (method === 8) {
+      try { raw = zlib.inflateRawSync(data, { maxOutputLength: room + 1 }); } catch (e) {
+        if (e?.code === 'ERR_BUFFER_TOO_LARGE' || /maxOutputLength|buffer/i.test(String(e?.message))) raw = null; else throw damaged();
+      }
+    } else throw httpError(400, 'The zip uses a compression method other than deflate');
+    if (!raw || raw.length > room)
+      throw httpError(413, raw === null || raw.length > ASSESS_LIMITS.maxTotal - total ? `a file in the zip is larger than ${ASSESS_LIMITS.maxBytes} bytes or the zip unpacks to more than the assessment limit` : `a file in the zip is larger than ${ASSESS_LIMITS.maxBytes} bytes`);
+    total += raw.length;
+    out[name] = raw;
+  }
   return out;
 }
 
