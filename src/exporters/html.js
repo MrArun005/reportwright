@@ -45,7 +45,7 @@ async function htmlOf(model, fontStore, opt) {
   for (const [key, cps] of used) {
     let bytes = fontStore.bytes.get(key);
     if (!bytes) continue;
-    if (opt.subset) { try { bytes = await opt.subset(bytes, cps, layout.has(key) ? { layout: true } : undefined); } catch { /* full font */ } }
+    if (opt.subset) { try { bytes = await opt.subset(bytes, cps, layout.has(key) ? { layout: true } : undefined); } catch (e) { if (/** @type {any} */ (e)?.code === 'RW_SUBSET_WASM') throw e; /* the subsetter's wasm did not load: misconfigured, never silently full */ /* this font could not be subset: the full font */ } }
     faces.push(`@font-face{font-family:"${fontFamilyCss(key)}";src:url(data:font/ttf;base64,${b64(bytes)}) format("truetype")}`);
   }
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); // text content only (attributes use attr())

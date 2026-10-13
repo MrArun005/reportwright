@@ -24,7 +24,8 @@ const optional = () => (optP ||= Promise.resolve(standalone || fetch(`${fontsBas
 export const fontsBase = () => fontsUrl || `${assetBase}/fonts/`;
 /** A file next to the fonts folder (harfbuzz-subset.wasm, icc/…): ../ of fontsUrl, else the server's root. */
 const besideFonts = (file) => (fontsUrl ? new URL(`../${file}`, new URL(fontsUrl, typeof location !== 'undefined' ? location.href : undefined)).href : `${assetBase}/${file}`);
-export const subsetter = createSubsetter(async () => (await fetch(besideFonts('harfbuzz-subset.wasm'))).arrayBuffer());
+// lenient: a fonts folder without the wasm still exports, with fonts in full (an explicit createSubsetter throws instead)
+export const subsetter = createSubsetter(async () => (await fetch(besideFonts('harfbuzz-subset.wasm'))).arrayBuffer(), { lenient: true });
 
 let worker = null;
 let workerBroken = false;

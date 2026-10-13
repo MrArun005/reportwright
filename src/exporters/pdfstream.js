@@ -550,7 +550,7 @@ export function createPdfStream(sink, opt) {
         zfile = await deflate(bytes);
         perFont.set(ck, { bytes, psName, zfile });
         if (perFont.size > SUBSET_CACHE_PER_FONT) perFont.delete(perFont.keys().next().value);
-      } catch (e) { opt.onWarning?.(`The font ${f.postscriptName || key} is embedded whole: its subset could not be used (${/** @type {any} */ (e)?.message || e})`); }
+      } catch (e) { if (/** @type {any} */ (e)?.code === 'RW_SUBSET_WASM') throw e; /* the subsetter's wasm did not load: misconfigured, never silently full */ opt.onWarning?.(`The font ${f.postscriptName || key} is embedded whole: its subset could not be used (${/** @type {any} */ (e)?.message || e})`); }
     }
     const cff = 'CFF ' in f.directory.tables || 'CFF2' in f.directory.tables;
     const base = `${bytes === full ? '' : `${subsetTag(bytes)}+`}${String(psName || 'Font').replace(/[^A-Za-z0-9_.-]/g, '')}`;

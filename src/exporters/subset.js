@@ -134,13 +134,27 @@ function renameForWeight(tables, weight) {
 
 let liftoffTried = false; // the process's first subsetter compile on the main thread set --liftoff-only (L1)
 
-/** @param {() => Promise<ArrayBuffer|Uint8Array>} loadWasm */
-export function createSubsetter(loadWasm) {
+/** The error code of a subsetter whose harfbuzz-subset.wasm did not load: the exporters rethrow it instead of embedding fonts in full. */
+const SUBSET_WASM_ERROR = 'RW_SUBSET_WASM';
+
+/**
+ * @param {() => Promise<ArrayBuffer|Uint8Array>|ArrayBuffer|Uint8Array} loadWasm  the bytes of harfbuzz-subset.wasm
+ * @param {{ lenient?: boolean }} [opts]  lenient (the engine's default subsetter and the viewer's): when the wasm does
+ *   not load, fonts embed in full (the caller warns); otherwise the export throws, never silently many times larger
+ */
+export function createSubsetter(loadWasm, opts = {}) {
+  if (typeof loadWasm !== 'function') throw new TypeError('createSubsetter(loadWasm): loadWasm must be a function that returns the bytes of harfbuzz-subset.wasm, such as () => fs.promises.readFile(new URL(subsetWasmUrl)) with subsetWasmUrl from @reportwright/fonts');
   /** @type {Promise<any>|null} */
   let hbP = null;
   const hb = () => (hbP ||= (async () => {
-    const bytes = await loadWasm();
-    const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    let u8;
+    try {
+      const bytes = await loadWasm();
+      u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(/** @type {ArrayBuffer} */ (bytes));
+      if (u8[0] !== 0 || u8[1] !== 0x61 || u8[2] !== 0x73 || u8[3] !== 0x6d) throw new Error(`got ${u8.byteLength} bytes that are not WebAssembly`);
+    } catch (e) {
+      throw Object.assign(new Error(`createSubsetter: harfbuzz-subset.wasm did not load (${/** @type {any} */ (e)?.message || e}); check the loader passed to createSubsetter, or pass subset: false to embed fonts in full`), { code: SUBSET_WASM_ERROR, cause: e });
+    }
     // Node: compiled synchronously, which V8 does lazily (each function when first called). The async compile also
     // optimizes the whole module in the background, and a cold process then waited ~140 ms for it before its first
     // PDF was written (measured: 1-page invoice export 175 ms → 35 ms). Browsers keep the async compile (a large
@@ -176,7 +190,7 @@ export function createSubsetter(loadWasm) {
    * @returns {Promise<Uint8Array>}
    */
   return async function subset(font, codePoints, opt = {}) {
-    const x = await hb();
+    const x = await hb().catch((e) => { throw opts.lenient ? new Error(e.message) : e; });
     const heap = () => new Uint8Array(x.memory.buffer);
     const variable = sfntTables(font).has('fvar'); // a variable font is renamed for the weight it is cut at
     const input = x.hb_subset_input_create_or_fail();
