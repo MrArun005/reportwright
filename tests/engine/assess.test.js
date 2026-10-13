@@ -189,3 +189,51 @@ describe('POST /api/reports/assess', () => {
     expect(bad.status).toBe(400);
   }, 30000);
 });
+
+describe('POST /api/reports/assess: untrusted uploads stay bounded', () => {
+  const post = async (body, headers = {}) => (await import('../../app/api/reports/assess/route.js')).POST(
+    new Request('http://localhost/api/reports/assess', { method: 'POST', body, headers, duplex: 'half' }));
+
+  it('a zip whose headers understate an entry is refused by the bytes actually inflated', async () => {
+    const { zipSync } = await import('fflate');
+    const big = new Uint8Array(20 * 1024 * 1024); // 20 MB of zeros: a few KB compressed, over the 8 MB per-file cap
+    const zip = zipSync({ 'bomb.rdl': big }, { level: 9 });
+    // lie: rewrite every uncompressed-size field (local header +22, central directory +24) to 10 bytes
+    const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    for (let i = 0; i + 4 <= zip.length; i++) {
+      const sig = dv.getUint32(i, true);
+      if (sig === 0x04034b50) dv.setUint32(i + 22, 10, true);
+      if (sig === 0x02014b50) dv.setUint32(i + 24, 10, true);
+    }
+    const fd = new FormData();
+    fd.append('files', new File([zip], 'lying.zip'));
+    const res = await post(fd);
+    expect([400, 413]).toContain(res.status); // refused either way: damaged sizes or the inflated-bytes cap
+    // an honest zip of the same entry is refused by the per-file cap counted while inflating
+    const fd2 = new FormData();
+    fd2.append('files', new File([zipSync({ 'big.rdl': big }, { level: 9 })], 'honest.zip'));
+    const res2 = await post(fd2);
+    expect(res2.status).toBe(413);
+    expect((await res2.json()).error).toMatch(/larger than/);
+  }, 30000);
+
+  it('a body with no content-length is cut off at the cap, not buffered whole', async () => {
+    let sent = 0;
+    const chunk = new Uint8Array(1024 * 1024);
+    const stream = new ReadableStream({
+      pull(c) { if (sent >= 60) { c.close(); return; } sent++; c.enqueue(chunk); }, // 60 MB offered, generated lazily
+    });
+    const res = await post(stream, { 'content-type': 'multipart/form-data; boundary=x' });
+    expect(res.status).toBe(413);
+    expect(sent).toBeLessThan(60); // stopped reading once past the cap
+  }, 30000);
+
+  it('a usage file over 16 MB is refused', async () => {
+    const fd = new FormData();
+    fd.append('files', new File(['<Report/>'], 'a.rdl'));
+    fd.append('usage', new File([new Uint8Array(17 * 1024 * 1024)], 'usage.csv'));
+    const res = await post(fd);
+    expect(res.status).toBe(413);
+  }, 30000);
+});
+
