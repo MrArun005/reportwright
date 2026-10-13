@@ -22,3 +22,8 @@ packages/*/CHANGELOG.md
 packages/engine/schema.json
 packages/fonts-cjk/fonts
 packages/create-reportwright/templates
+!packages/vscode/package.json
+!packages/vscode/LICENSE
+packages/vscode/out
+packages/vscode/node_modules
+packages/vscode/*.vsix
