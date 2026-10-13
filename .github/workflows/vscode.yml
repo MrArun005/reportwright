@@ -1,0 +1,38 @@
+name: VS Code extension
+on:
+  push:
+    paths: ['packages/vscode/**', 'packages/engine/**', 'src/engine/**', 'src/exporters/**', 'src/importers/**', 'tests/fixtures/**', 'scripts/embed-options.mjs', 'public/**', '.github/workflows/vscode.yml']
+  pull_request:
+    paths: ['packages/vscode/**', 'packages/engine/**', 'src/engine/**', 'src/exporters/**', 'src/importers/**', 'tests/fixtures/**', 'scripts/embed-options.mjs', 'public/**', '.github/workflows/vscode.yml']
+  workflow_dispatch:
+jobs:
+  extension:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: packages/vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # the engine is bundled from this repository's source, so the root dependencies are needed too
+      - run: npm ci --no-audit --no-fund
+        working-directory: ${{ github.workspace }}
+      - run: npm install --no-audit --no-fund
+      - name: Build the extension (engine, viewer, fonts, schema)
+        run: npm run build
+      - name: Type check
+        run: npm run compile
+      - name: Extension tests (headless VS Code under xvfb)
+        run: xvfb-run -a npm test
+        timeout-minutes: 8
+      - name: Package the .vsix
+        run: npx vsce package --no-dependencies --out reportwright-vscode.vsix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reportwright-vscode-vsix
+          path: packages/vscode/reportwright-vscode.vsix
+          if-no-files-found: error
