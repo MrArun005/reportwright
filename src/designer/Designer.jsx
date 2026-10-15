@@ -273,27 +273,48 @@ function IssuesButton({ T }) {
   const issues = useDesignIssues();
   const [open, setOpen] = useState(false);
   useEffect(() => { if (!issues.length) setOpen(false); }, [issues.length]);
-  // the list opens under its button: moved left or right as far as it takes to stay inside the window (8 px margin)
+  // the list opens under its button (fixed, so the scrolling bar it sits in does not clip it), moved left or right as
+  // far as it takes to stay inside the canvas column (8 px margin): it never covers the Inspector or the left panel
   const listRef = useRef(null);
+  const wrapRef = useRef(null);
   useLayoutEffect(() => {
     const el = listRef.current;
     if (!el) return undefined;
     const place = () => {
-      el.style.translate = '0px';
-      const r = el.getBoundingClientRect(), vw = document.documentElement.clientWidth;
-      const dx = r.right > vw - 8 ? vw - 8 - r.right : r.left < 8 ? 8 - r.left : 0;
-      el.style.translate = `${Math.round(dx)}px`;
+      const vw = document.documentElement.clientWidth, col = el.closest('.dcenter')?.getBoundingClientRect();
+      const btn = wrapRef.current?.querySelector('.issues-btn')?.getBoundingClientRect();
+      if (!btn) return;
+      const lo = Math.max(8, col ? col.left + 8 : 8), hi = Math.min(vw - 8, col ? col.right - 8 : vw - 8);
+      el.style.maxWidth = `${Math.max(160, hi - lo)}px`;
+      el.style.top = `${Math.round(btn.bottom + 6)}px`;
+      const w = el.getBoundingClientRect().width;
+      el.style.left = `${Math.round(Math.max(lo, Math.min(btn.left, hi - w)))}px`;
     };
     place();
     window.addEventListener('resize', place);
-    return () => window.removeEventListener('resize', place);
+    window.addEventListener('scroll', place, true); // the bar scrolled sideways, or the page
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
   }, [open, issues.length]);
+  // closes on a click outside it and on Escape (focus goes back to its button)
+  useEffect(() => {
+    if (!open) return undefined;
+    const outside = (e) => { if (!e.composedPath().includes(wrapRef.current)) setOpen(false); };
+    const esc = (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      e.preventDefault();
+      setOpen(false);
+      wrapRef.current?.querySelector('.issues-btn')?.focus();
+    };
+    document.addEventListener('pointerdown', outside, true);
+    window.addEventListener('keydown', esc, true);
+    return () => { document.removeEventListener('pointerdown', outside, true); window.removeEventListener('keydown', esc, true); };
+  }, [open]);
   if (!issues.length) return <span className="hint" data-testid="issues-none">{T('ux_noIssues')}</span>;
   return (
-    <span className="issues-wrap">
+    <span className="issues-wrap" ref={wrapRef}>
       <button type="button" className="btn sm issues-btn" aria-expanded={open} onClick={() => setOpen(v => !v)} data-testid="issues">{T('ux_issues', { n: issues.length })}</button>
       {open && <ul className="issues-list" data-testid="issues-list" ref={listRef}>
-        {issues.map((i, k) => <li key={k}><button type="button" className="linklike" onClick={() => { if (i.id) api.getState().select({ kind: 'items', ids: [i.id] }); }}>{issueLine(T, i)}</button></li>)}
+        {issues.map((i, k) => <li key={k}><button type="button" className="linklike" onClick={() => { if (i.id) api.getState().select({ kind: 'items', ids: [i.id] }); setOpen(false); }}>{issueLine(T, i)}</button></li>)}
       </ul>}
     </span>
   );

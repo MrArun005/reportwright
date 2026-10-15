@@ -694,8 +694,8 @@ a.cell-name:hover { color: var(--accent); }
 .issue-tag { position: absolute; right: -10px; top: -10px; width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; background: var(--danger); color: var(--panel); font: var(--fw-strong) var(--fs-2xs)/1 var(--ui); z-index: 5; }
 .issues-wrap { position: relative; }
 .issues-btn { color: var(--danger); border-color: var(--danger-line); background: var(--danger-soft); }
-.issues-list { position: absolute; z-index: 40; top: calc(100% + 6px); inset-inline-start: 0; width: min(420px, calc(100vw - 32px)); max-height: 320px; overflow: auto; margin: 0; padding: 8px 12px 8px 26px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-dialog); display: grid; gap: 4px; font-size: var(--fs-sm); }
-.issues-list .linklike { text-align: start; }
+.issues-list { position: fixed; z-index: 40; top: 0; left: 0; width: min(420px, calc(100vw - 32px)); max-height: 320px; overflow: auto; margin: 0; padding: 8px 12px 8px 26px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-dialog); display: grid; gap: 4px; font-size: var(--fs-sm); white-space: normal; }
+.issues-list .linklike { text-align: start; vertical-align: top; }
 .align-bar { display: inline-flex; align-items: center; gap: 2px; padding: 0 6px; border-inline: 1px solid var(--line); }
 .align-bar .btn.icon { width: 26px; }
 /* the left rail: compact insert tiles (three a row) so the data panel shows without scrolling */
