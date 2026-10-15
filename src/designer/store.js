@@ -557,6 +557,13 @@ export async function copySelection() {
   return items.length;
 }
 let memClip = null;
+/** Ctrl+X (#14): copy the selected items, then delete them (one undo step). @returns {Promise<number>} how many */
+export function cutSelection() {
+  if (S().sel.kind !== 'items') return Promise.resolve(0);
+  const n = copySelection(); // the in-memory copy is made before the items go
+  deleteSelection();
+  return n;
+}
 const clipOf = (text) => { try { const d = JSON.parse(text); return d?.kind === CLIP && Array.isArray(d.items) ? d : null; } catch { return null; } };
 /**
  * Paste items: from the text of a paste event (e.clipboardData: no permission prompt, N36), else the copy made in this

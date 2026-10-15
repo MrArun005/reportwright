@@ -877,6 +877,8 @@ a.cell-name:hover { color: var(--accent); }
 .dbar .saved { display: inline-flex; align-items: center; gap: 6px; padding-inline: 6px; font-size: var(--fs-xs); line-height: 1.2; }
 .dbar .saved i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
 .dbar .saved.dirty i { background: var(--warn); }
+/* a message (Nothing to paste, a save error) stays on one line: it never makes the bar taller (#14); the title has it all */
+.dbar > .err { flex: 0 1 auto; min-width: 0; max-width: 40ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tb-group { flex: none; display: grid; justify-items: center; gap: 2px; padding-inline: 8px; border-inline-start: 1px solid var(--line-2); }
 .tb-items { display: flex; align-items: center; gap: 2px; }
 .tb-cap { font-size: 9.5px; line-height: 1; text-transform: uppercase; letter-spacing: var(--track-caps); color: var(--faint); font-weight: var(--fw-medium); }

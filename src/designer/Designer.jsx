@@ -4,7 +4,7 @@ import { declareDocumentStyles } from '../embed/styles.js';
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from './ui.jsx';
 import Link from 'next/link';
-import { useDesigner, useDesignerStore, newDesignerStore, activateStore, DesignerStore, insertItem, insertSpot, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems, alignItems, selectedBand, selectAllItems } from './store.js';
+import { useDesigner, useDesignerStore, newDesignerStore, activateStore, DesignerStore, insertItem, insertSpot, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems, alignItems, selectedBand, selectAllItems, cutSelection } from './store.js';
 import Canvas, { MIME_TOOL, useDesignIssues, issueLine } from './Canvas.jsx';
 import Inspector from './Inspector.jsx';
 import DataPanel, { loadSample } from './DataPanel.jsx';
@@ -294,7 +294,7 @@ function isTyping(e) {
 }
 
 const SHORTCUTS = [
-  ['⌘/Ctrl S', 'sc_save'], ['⌘/Ctrl Z', 'sc_undo'], ['⇧⌘/Ctrl Z, ⌘/Ctrl Y', 'sc_redo'], ['⌘/Ctrl C / V', 'sc_copy'],
+  ['⌘/Ctrl S', 'sc_save'], ['⌘/Ctrl Z', 'sc_undo'], ['⇧⌘/Ctrl Z, ⌘/Ctrl Y', 'sc_redo'], ['⌘/Ctrl C / X / V', 'sc_copy'],
   ['⌘/Ctrl A', 'selectAll'], ['⌘/Ctrl D', 'sc_duplicate'], ['Delete / Backspace', 'sc_delete'], ['← ↑ → ↓', 'c132_nudge1'], ['⇧ ← ↑ → ↓', 'c132_nudge10'],
   ['⇧ Click', 'sc_toggle'], ['Drag', 'sc_marquee'], ['Alt + Drag', 'sc_guides'],
   ['Esc', 'sc_clear'], ['?', 'sc_help'],
@@ -416,6 +416,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
       if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); st().redo(); return; }
       if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelection(); return; }
       if (mod && e.key.toLowerCase() === 'c') { if (st().sel.kind === 'items') { e.preventDefault(); copySelection(); } return; }
+      if (mod && e.key.toLowerCase() === 'x') { if (st().sel.kind === 'items') { e.preventDefault(); cutSelection(); } return; } // #14
       // Ctrl+A: the items of the band (the selected one, the selected item's, else the body), not the page's text (#6)
       if (mod && !e.altKey && e.key.toLowerCase() === 'a') { if (!rootRef.current?.querySelector('.dialog')) { e.preventDefault(); selectAllItems(); } return; }
       if (mod && e.key.toLowerCase() === 'v') return; // the paste event below: its clipboard needs no permission (N36)
@@ -486,7 +487,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
           <input className="name" value={def.name || ''} aria-label={T('reportName')} readOnly={readOnly} onChange={e => st().apply(d => { d.name = e.target.value; }, 'name')} />
           {!readOnly && <span className={`saved${saved ? '' : ' dirty'}`} data-testid="save-state"><i aria-hidden="true" />{saving ? T('saving') : saved ? T('saved') : T('unsaved')}</span>}
         </div>
-        {saveError && <span className="err">{saveError}</span>}
+        {saveError && <span className="err" role="status" title={saveError}>{saveError}</span>}
         <div className="spacer" />
         <TbGroup label={T('b2_file')}>
           {!embed && <button className="tb-btn" onClick={() => setDialog('history')} title={T('historyHint')} aria-label={T('history')}><Icon name="history" /></button>}
