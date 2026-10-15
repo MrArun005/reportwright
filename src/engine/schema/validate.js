@@ -495,6 +495,7 @@ function itemRefs(it, warnings, fields, params, exprErrors) {
 const constNumber = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && /^=?\s*-?\d+(\.\d+)?\s*$/.test(v) ? Number(v.replace('=', '')) : null);
 /** Mistakes in an item or a cell visual that print something other than meant, or nothing. @param {any} x @param {string} who @param {string[]} out */
 function visualIssues(x, who, out) {
+  if (x.type === 'barcode' && (x.value == null || (typeof x.value === 'string' && !x.value.trim()))) out.push(`${who} has no value: nothing is printed`);
   if (x.type === 'iconset') {
     const lo = constNumber(x.lower), hi = constNumber(x.upper);
     if (lo != null && hi != null && hi < lo) out.push(`${who}: the high threshold (${hi}) is below the low one (${lo}), so the middle icon never shows`);

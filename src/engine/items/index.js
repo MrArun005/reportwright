@@ -1346,6 +1346,10 @@ register('barcode', {
     const who = item.name || `Barcode at (${item.x}, ${item.y})`; // an unnamed item is named by its type and place
     const r = evalSafe(item.value ?? '', ctx, lc, who);
     const text = r.err ? '' : textOf(r.v, st, ctx, lc);
+    if (!text && !r.err) { // once per item (warn keeps one of each message), not once per row
+      const v = typeof item.value === 'string' ? item.value.trim() : item.value;
+      lc.warn(v == null || v === '' ? `${who} has no value: nothing is printed` : `${who}: the value (${String(v).slice(0, 60)}) is empty in some rows; no barcode is printed there`);
+    }
     const size = Number(st.fontSize) || 8;
     const show = item.showText !== false;
     const th = show ? size * 1.4 : 0;
