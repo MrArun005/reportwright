@@ -619,7 +619,8 @@ export async function paintItemSvg(shape, def, sample, api = activeStore()) { //
   await loadModelFonts({ pages: [{ items }] });
   // the drawn width: a matrix grows with its data past its box (the issues pane compares it with the page)
   const w = items.reduce((m, i) => { const r = (Number(i.x) || 0) + (Number(i.w) || 0); return Number.isFinite(r) && r > m ? r : m; }, shape.w); // no spread: a 100k-row table has millions of items
-  return { html: pageToSvg({ items }, shape.w, h, { background: false }), h, w };
+  // drawn at that width: a matrix wider than its box is not cut off (the pivot wizard's preview scales it to fit)
+  return { html: pageToSvg({ items }, w, h, { background: false }), h, w };
 }
 
 /** Draw chart-like items with the real engine and the sample data, so the design looks like the output. */
@@ -647,7 +648,7 @@ function LivePreview({ item, scale }) {
   }, [key, sample, def.styles, def.parameters]);
   if (!svg) return <div className="box"><span className="hint">{ITEMS[item.type].label}</span></div>;
   if (svg.error) return <div className="box"><span className="err">{svg.error}</span></div>;
-  return <div className="box live" style={{ overflow: 'visible' }}><SvgHtml as="div" style={{ width: item.w * scale, height: svg.h * scale }} html={svg.html} /></div>;
+  return <div className="box live" style={{ overflow: 'visible' }}><SvgHtml as="div" style={{ width: (svg.w || item.w) * scale, height: svg.h * scale }} html={svg.html} /></div>;
 }
 
 /** A linked report part, drawn by the engine from its library with this instance's property values. */
@@ -668,7 +669,7 @@ function PartPreview({ item, scale }) {
   }, [key, sample]); // eslint-disable-line react-hooks/exhaustive-deps
   const tag = <span className="nest-tag">{ITEMS.part.label} · {p?.label || item.part}</span>;
   if (!src || !svg || svg.error) return <div className="box reuse-box"><span className={svg?.error ? 'err' : 'hint'}>{svg?.error || `${item.library} / ${item.part}`}</span>{tag}</div>;
-  return <div className="box live reuse-part" style={{ overflow: 'visible' }}><SvgHtml as="div" style={{ width: src.w * scale, height: svg.h * scale }} html={svg.html} />{tag}</div>;
+  return <div className="box live reuse-part" style={{ overflow: 'visible' }}><SvgHtml as="div" style={{ width: (svg.w || src.w) * scale, height: svg.h * scale }} html={svg.html} />{tag}</div>;
 }
 
 /**
