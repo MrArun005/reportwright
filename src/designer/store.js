@@ -496,6 +496,14 @@ export function deleteSelection() {
   S().select({ kind: 'report' });
 }
 
+/** Ctrl+A (#6): select every item of the selected band, or of the selected item's band; nothing selected: the body. */
+export function selectAllItems() {
+  const { def, sel } = S();
+  const ids = (secOf(def, selectedBand(def, sel))?.items || []).map(i => i.id);
+  if (ids.length) S().select({ kind: 'items', ids });
+  return ids.length;
+}
+
 export function cloneWithIds(it, used) {
   const c = JSON.parse(JSON.stringify(it));
   const fix = (x) => { x.id = rid(); x.name = uniqueName(used, String(x.name || 'Item').replace(/\d+$/, '')); (x.items || []).forEach(fix); };
