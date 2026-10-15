@@ -189,7 +189,7 @@ register('textbox', {
 /* ---------------------------------------------------------------- rich text */
 register('richtext', {
   label: 'Rich text',
-  defaults: () => ({ type: 'richtext', w: 240, h: 48, value: '<p>Rich <b>text</b> with <i>styles</i> and {Globals.PageNumber}</p>', canGrow: true, style: {} }),
+  defaults: () => ({ type: 'richtext', w: 240, h: 48, value: '<p>Rich <b>text</b> with <i>styles</i> in {Globals.ReportName}</p>', canGrow: true, style: {} }),
   props: [
     { key: 'value', label: 'HTML (p, b, i, u, s, sup, sub, br, ul/ol/li, a, h1–h6, span style; {Fields.x})', type: 'html', category: 'Data' },
     { key: 'htmlFromData', label: 'Field values are HTML (trusted data only)', type: 'bool', category: 'Data' },
