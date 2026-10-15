@@ -307,6 +307,12 @@ export function addItem(type, section, x, y, extra = {}, parentId = null) {
   return id;
 }
 
+/** The band a selection is in: the selected band, the band of the (first) selected item or cell, else the body. */
+export function selectedBand(def, sel) {
+  if (sel?.kind === 'section' && secOf(def, sel.section)) return sel.section;
+  const id = sel?.kind === 'items' ? sel.ids?.[0] : sel?.kind === 'cell' ? sel.id : null;
+  return (id && findItem(def, id)?.section) || 'body';
+}
 /** Items that only go in a body section (or a content report's placeholder), never in a page header or footer. */
 export const BODY_ONLY = new Set(['table', 'matrix', 'subreport']);
 /** The y below a list of items (8 pt gap, on a 4 pt step); 0 for none. */
@@ -533,8 +539,11 @@ const CLIP = 'pagewright/items@1'; // kept after the rename: copy and paste betw
 export async function copySelection() {
   const { sel, def } = S();
   if (sel.kind !== 'items') return 0;
-  const items = sel.ids.map(id => findItem(def, id)?.item).filter(Boolean);
-  const text = JSON.stringify({ kind: CLIP, items });
+  const fs = sel.ids.map(id => findItem(def, id)).filter(Boolean);
+  const items = fs.map(f => f.item);
+  // the band they come from (items of one band, none inside a container): a paste there cascades, elsewhere it fits (#13)
+  const from = fs.length && fs.every(f => !f.parent && f.section === fs[0].section) ? fs[0].section : undefined;
+  const text = JSON.stringify({ kind: CLIP, items, from });
   try { await navigator.clipboard.writeText(text); } catch { /* clipboard blocked: keep the in-memory copy */ }
   memClip = text;
   return items.length;
@@ -552,14 +561,22 @@ export function pasteItems(section = 'body', text = null) {
   const ids = [];
   st.getState().apply((d) => {
     const used = allNames(d);
-    for (const it of data.items) {
-      const c = cloneWithIds(it, used);
-      if (c.type === 'table' && !isBodyKey(section)) continue;
-      offsetCopy(secOf(d, section).items, c);
-      secOf(d, section).items.push(c);
-      growToFit(d, { section, parent: null, item: c });
-      ids.push(c.id);
+    const band = secOf(d, section);
+    const copies = data.items.map(it => cloneWithIds(it, used)).filter(c => !(c.type === 'table' && !isBodyKey(section)));
+    for (const c of copies) for (const k of ['x', 'y']) if (!Number.isFinite(c[k])) c[k] = 0; // pasted JSON is not trusted
+    const hOf = (c) => (Number.isFinite(c.h) ? c.h : 0), wOf = (c) => (Number.isFinite(c.w) ? c.w : 0);
+    // the same band: 12 pt right and down (N37). Another band (or one not known, where the copies would not fit): at the
+    // top of its free space, moved up as far as needed to fit, keeping their places relative to each other (#13)
+    const fits = copies.every(c => c.y + PASTE_OFFSET + hOf(c) <= (band.height || 0));
+    if (data.from === section || (data.from === undefined && fits)) {
+      for (const c of copies) { offsetCopy(band.items, c); band.items.push(c); }
+    } else if (copies.length) {
+      const top = Math.min(...copies.map(c => c.y)), tall = Math.max(...copies.map(c => c.y + hOf(c))) - top;
+      const y0 = Math.max(0, Math.min(belowItems(band.items), (band.height || 0) - tall));
+      const room = bodyWidth(d, section);
+      for (const c of copies) { c.y = round(y0 + c.y - top); c.x = round(clamp(c.x, 0, Math.max(0, room - wOf(c)))); band.items.push(c); }
     }
+    for (const c of copies) { growToFit(d, { section, parent: null, item: c }); ids.push(c.id); }
   });
   if (ids.length) st.getState().select({ kind: 'items', ids });
   return ids.length;

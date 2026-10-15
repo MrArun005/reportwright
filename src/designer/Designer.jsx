@@ -4,7 +4,7 @@ import { declareDocumentStyles } from '../embed/styles.js';
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from './ui.jsx';
 import Link from 'next/link';
-import { useDesigner, useDesignerStore, newDesignerStore, activateStore, DesignerStore, insertItem, insertSpot, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems, alignItems } from './store.js';
+import { useDesigner, useDesignerStore, newDesignerStore, activateStore, DesignerStore, insertItem, insertSpot, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems, alignItems, selectedBand } from './store.js';
 import Canvas, { MIME_TOOL, useDesignIssues, issueLine } from './Canvas.jsx';
 import Inspector from './Inspector.jsx';
 import DataPanel, { loadSample } from './DataPanel.jsx';
@@ -434,7 +434,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
     const onPaste = (e) => {
       if ((embed && !ours(e)) || isTyping(e) || st().tab !== 'design') return;
       e.preventDefault();
-      if (!pasteItems(st().sel.kind === 'section' ? st().sel.section : 'body', e.clipboardData?.getData('text/plain'))) {
+      if (!pasteItems(selectedBand(st().def, st().sel), e.clipboardData?.getData('text/plain'))) {
         st().setUi({ saveError: t(lang, 'b9_nothingToPaste') }); setTimeout(() => st().setUi({ saveError: null }), 3000);
       }
     };
