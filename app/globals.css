@@ -912,9 +912,10 @@ a.cell-name:hover { color: var(--accent); }
 .dleft .tool:hover { background: var(--accent-soft); border-color: var(--accent); }
 .dleft .tool svg { width: 16px; height: 16px; }
 /* canvas: the page centred on the desk, rulers along the top and beside each band */
-.dcenter { grid-template-rows: auto minmax(0, 1fr) auto; background: var(--desk); }
+.dcenter { grid-template-rows: auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); background: var(--desk); }
 /* one row of a fixed height: the align buttons that come with a selection never push the canvas down (c132) */
-.cbar { gap: 8px 16px; padding: 6px 16px; height: 40px; box-sizing: border-box; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; background: var(--panel); }
+/* the column is the canvas's width, not the toolbar's: a long toolbar scrolls, the page never slides under the Inspector (#1b) */
+.cbar { min-width: 0; gap: 8px 16px; padding: 6px 16px; height: 40px; box-sizing: border-box; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; background: var(--panel); }
 .cbar > * { flex: none; white-space: nowrap; }
 .cbar .select { height: 28px; }
 .cscroll { padding: 24px 40px 80px 56px; }
