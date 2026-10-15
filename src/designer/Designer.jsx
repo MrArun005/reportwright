@@ -96,7 +96,11 @@ function LeftRail({ T, readOnly, embed }) {
   const body = useRef(null);
   const [at, setAt] = useState('tools');
   const tabs = [!readOnly && ['tools', 'b2_toolbox', 'tools'], embed?.panels?.data !== false && ['data', 'b2_data', 'data'], ['outline', 'b2_outline', 'outline']].filter(Boolean);
+  // a clicked tab stays current through its smooth scroll (and when its section cannot reach the top): the scroll spy
+  // takes over again when the author scrolls (wheel, touch, keys, the scrollbar)
+  const picked = useRef(false);
   const go = (id) => {
+    picked.current = true;
     const el = body.current?.querySelector(`[data-rail="${id}"]`);
     if (el) {
       body.current.scrollTo({ top: el.offsetTop - body.current.offsetTop, behavior: 'smooth' });
@@ -107,12 +111,16 @@ function LeftRail({ T, readOnly, embed }) {
   };
   const spy = () => {
     const b = body.current;
-    if (!b) return;
+    if (!b || picked.current) return;
     let cur = tabs[0]?.[0];
-    for (const [id] of tabs) { const el = b.querySelector(`[data-rail="${id}"]`); if (el && el.offsetTop - b.offsetTop <= b.scrollTop + 24) cur = id; }
-    if (b.scrollTop + b.clientHeight >= b.scrollHeight - 2) cur = tabs[tabs.length - 1][0];
+    const top = (id) => { const el = b.querySelector(`[data-rail="${id}"]`); return el ? el.offsetTop - b.offsetTop : Infinity; };
+    for (const [id] of tabs) if (top(id) <= b.scrollTop + 24) cur = id;
+    // scrolled to the end: a last section too short to reach the top counts once it fills the upper half
+    const last = tabs[tabs.length - 1][0];
+    if (b.scrollTop + b.clientHeight >= b.scrollHeight - 2 && top(last) <= b.scrollTop + b.clientHeight / 2) cur = last;
     setAt(cur);
   };
+  const userScroll = () => { picked.current = false; };
   return (
     <>
       <nav className="rail" aria-label={T('b2_panels')}>
@@ -122,7 +130,7 @@ function LeftRail({ T, readOnly, embed }) {
           </button>
         ))}
       </nav>
-      <div className="rail-body" ref={body} onScroll={spy}>
+      <div className="rail-body" ref={body} onScroll={spy} onWheel={userScroll} onTouchStart={userScroll} onPointerDown={userScroll} onKeyDown={userScroll}>
         {!readOnly && <section data-rail="tools"><Toolbox T={T} hide={embed?.toolbox?.hide} /><PartsPanel /></section>}
         {embed?.panels?.data !== false && <section data-rail="data"><DataPanel /></section>}
         {readOnly && <PartsPanel />}
