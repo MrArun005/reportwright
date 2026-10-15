@@ -1313,7 +1313,10 @@ for (const [type, label, defaults] of [
     layout(item, lc) {
       const ctx = lc.ctxFor(item);
       if (hidden(item, ctx, lc)) return { height: 0, units: [] };
-      const items = paintVisual({ ...item, type }, { x: item.x, y: 0, w: item.w, h: item.h }, ctx, lc, lc.base, item.name);
+      // in a detail cell or a list row (one row of a region): compare with the region's other rows, as a cell visual does
+      // (a bar's maximum is the column's largest value), not with this row alone (every bar full)
+      const oneRow = ctx.aggIndex == null && ctx.region?.rows && ctx.aggRows?.length === 1 && ctx.aggRows[0] === ctx.fields;
+      const items = paintVisual({ ...item, type }, { x: item.x, y: 0, w: item.w, h: item.h }, oneRow ? { ...ctx, aggIndex: 0 } : ctx, lc, lc.base, item.name);
       return { height: item.h, units: [{ top: 0, height: item.h, items }] };
     },
   });
