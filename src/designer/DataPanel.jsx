@@ -11,7 +11,7 @@ import SqlBuilder from './SqlBuilder.jsx';
 import { buildSql } from './sqlBuild.js';
 import { resolveParameters } from '@/engine/index.js';
 import { functionTable } from '@/engine/expr/evaluate.js';
-import { Dialog, Field, TextInput, Select, Check } from './ui.jsx';
+import { Dialog, Field, TextInput, Select, Check, useDirty } from './ui.jsx';
 import { t } from '@/i18n/index.js';
 import { origin } from '@/viewer/engineClient.js';
 import { reportFetch } from '@/viewer/dataFetch.js';
@@ -290,6 +290,7 @@ function SourceDialog({ index, onClose }) {
   const orig = index != null ? def.dataSources[index] : null;
   const [s, setS] = useState(() => ({ name: '', type: 'rest', method: 'GET', url: '', useProxy: false, ...(orig || {}), headersText: orig?.headers ? JSON.stringify(orig.headers, null, 2) : '', dataText: orig?.data != null ? (typeof orig.data === 'string' ? orig.data : JSON.stringify(orig.data, null, 2)) : '',
     nsText: Object.entries(orig?.namespaces || {}).map(([k, v]) => `${k}=${v}`).join('\n'), argsText: (orig?.args || []).map(x => `${x.name} = ${x.param}`).join('\n') }));
+  const dirty = useDirty(s); // Escape or a click outside asks before dropping these changes
   const xmlish = s.type === 'xml' || s.type === 'soap';
   const fetched = FETCHED_TYPES.includes(s.type);
   let err = !NAME.test(s.name) ? 'The name must start with a letter and hold only letters, digits and _' : !uniqueIn(def.dataSources, s.name, index) ? 'Another source has this name' : null;
@@ -385,7 +386,7 @@ function SourceDialog({ index, onClose }) {
     useDesigner.getState().apply(d => { d.dataSources.splice(index, 1); }); onClose(); loadSample();
   };
   return (
-    <Dialog wide className={s.type === 'sql' && s.builder ? 'qb-wide' : ''} title={orig ? `Data source ${orig.name}` : 'New data source'} onClose={onClose}
+    <Dialog wide className={s.type === 'sql' && s.builder ? 'qb-wide' : ''} title={orig ? `Data source ${orig.name}` : 'New data source'} onClose={onClose} dirty={dirty}
       footer={<>{orig && <button className="btn danger" style={{ marginRight: 'auto' }} onClick={del}>Delete</button>}<button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!!err} onClick={save}>Save</button></>}>
       <div className="grid2">
         <Field label="Name"><TextInput value={s.name} onChange={v => setS({ ...s, name: v })} autoFocus /></Field>
@@ -482,6 +483,7 @@ function DataSetDialog({ index, onClose, onSaved }) {
   const orig = index != null ? def.dataSets[index] : null;
   // every key of the data set is kept (relation and anything this dialog has no control for), not only the ones shown
   const [d, setD] = useState(() => ({ name: '', source: def.dataSources?.[0]?.name, path: '$', fields: [], sort: [], ...(orig ? JSON.parse(JSON.stringify(orig)) : {}) }));
+  const dirty = useDirty(d);
   const [detect, setDetect] = useState({ state: 'idle' });
   // a new data set's path is a guess until the author types one: Detect then takes the obvious list ($.lines), not the root
   const [pathTyped, setPathTyped] = useState(!!orig);
@@ -603,7 +605,7 @@ function DataSetDialog({ index, onClose, onSaved }) {
   const sortOpts = (by) => (by && !fieldOpts.some(o => o.value === by) ? [...fieldOpts, { value: by, label: by }] : fieldOpts);
   const relPath = d.relation?.path ?? '$';
   return (
-    <Dialog wide title={orig ? T('dsTitle', { name: orig.name }) : T('dsNew')} onClose={onClose}
+    <Dialog wide title={orig ? T('dsTitle', { name: orig.name }) : T('dsNew')} onClose={onClose} dirty={dirty}
       footer={<>{orig && <button className="btn danger" style={{ marginInlineEnd: 'auto' }} onClick={del}>{T('delete')}</button>}<button className="btn" onClick={onClose}>{T('cancel')}</button><button className="btn primary" disabled={!!err} onClick={save}>{T('save')}</button></>}>
       <div className="grid2">
         <Field label={T('name')}><TextInput value={d.name} onChange={v => setD({ ...d, name: v })} autoFocus /></Field>

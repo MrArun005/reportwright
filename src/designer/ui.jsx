@@ -99,17 +99,42 @@ export function Check({ label, checked, onChange }) {
   return <label className="check"><input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} />{label}</label>;
 }
 
-export function Dialog({ title, children, onClose, footer, wide, className = '' }) {
+/** Deep equality of form values: key order and keys set to undefined do not count. */
+export function sameValue(a, b) {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null || Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) return a.length === b.length && a.every((x, i) => sameValue(x, b[i]));
+  const keys = (o) => Object.keys(o).filter(k => o[k] !== undefined);
+  const ka = keys(a), kb = keys(b);
+  return ka.length === kb.length && ka.every(k => Object.prototype.hasOwnProperty.call(b, k) && sameValue(a[k], b[k]));
+}
+
+/** True once a dialog's form value differs from what it opened with (Dialog's `dirty`). */
+export function useDirty(value) {
+  const [first] = useState(() => value);
+  return !sameValue(first, value);
+}
+
+/**
+ * A modal dialog. Escape and a click outside close it; with `dirty` (unsaved changes) they ask first. The footer's
+ * own Cancel button closes without asking.
+ */
+export function Dialog({ title, children, onClose, footer, wide, className = '', dirty = false }) {
   const ref = useRef(null);
+  const T = useT();
+  const ask = useRef(null);
+  ask.current = () => { if (!dirty || window.confirm(T('dlg_discard'))) onClose(); };
   useEffect(() => {
     // CodeMirror uses Escape to close its suggestions. Escape typed in another designer on the page is not ours.
     const inOther = (e) => { const mine = ref.current?.closest('.designer'); return e.composedPath().some(n => n !== mine && n?.classList?.contains('designer')); };
-    const k = (e) => { if (e.key === 'Escape' && !e.defaultPrevented && !inOther(e)) onClose(); };
+    // a dialog opened over this one (a nested editor) takes its own Escape
+    const under = () => { const all = (ref.current?.closest('.designer') || document).querySelectorAll('.scrim'); return all.length > 1 && all[all.length - 1] !== ref.current; };
+    const k = (e) => { if (e.key === 'Escape' && !e.defaultPrevented && !e.isComposing && !inOther(e) && !under()) ask.current(); };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
-  }, [onClose]);
+  }, []);
   return (
-    <div className="scrim" ref={ref} onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="scrim" ref={ref} onPointerDown={(e) => { if (e.target === e.currentTarget) ask.current(); }}>
       <div className={`dialog${wide ? ' wide' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <header>{title}</header>
         <div className="dbody">{children}</div>

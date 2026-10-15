@@ -181,6 +181,7 @@ export default {
     qb_editSql: "Edit as SQL",
     qb_rows: "{n} rows (the first 20 shown)",
     ux_a11yPageRole: "page",
+    dlg_discard: "Discard your changes?",
   },
   hi: {
     ux_draftStale: "{when} के बिना सहेजे बदलाव इस ब्राउज़र में रखे गए थे, लेकिन उसके बाद रिपोर्ट फिर से सहेजी गई। इन्हें बहाल करके सहेजने से वह नया संस्करण बदल जाएगा।",
@@ -361,6 +362,7 @@ export default {
     qb_editSql: "SQL के रूप में संपादित करें",
     qb_rows: "{n} पंक्तियाँ (पहली 20 दिखाई गईं)",
     ux_a11yPageRole: "पृष्ठ",
+    dlg_discard: "अपने बदलाव छोड़ दें?",
   },
   es: {
     ux_draftStale: "Se guardaron en este navegador cambios sin guardar de {when}, pero el informe se volvió a guardar después. Restaurarlos y guardar reemplaza ese guardado más reciente.",
@@ -541,6 +543,7 @@ export default {
     qb_editSql: "Editar como SQL",
     qb_rows: "{n} filas (se muestran las primeras 20)",
     ux_a11yPageRole: "página",
+    dlg_discard: "¿Descartar los cambios?",
   },
   fr: {
     ux_draftStale: "Des modifications non enregistrées du {when} ont été gardées dans ce navigateur, mais le rapport a été enregistré depuis. Les restaurer puis enregistrer remplace cet enregistrement plus récent.",
@@ -721,6 +724,7 @@ export default {
     qb_editSql: "Modifier en SQL",
     qb_rows: "{n} lignes (les 20 premières affichées)",
     ux_a11yPageRole: "page",
+    dlg_discard: "Abandonner vos modifications ?",
   },
   de: {
     ux_draftStale: "Nicht gespeicherte Änderungen vom {when} wurden in diesem Browser behalten, aber der Bericht wurde danach erneut gespeichert. Wiederherstellen und Speichern ersetzt diese neuere Fassung.",
@@ -901,6 +905,7 @@ export default {
     qb_editSql: "Als SQL bearbeiten",
     qb_rows: "{n} Zeilen (die ersten 20 gezeigt)",
     ux_a11yPageRole: "Seite",
+    dlg_discard: "Ihre Änderungen verwerfen?",
   },
   ja: {
     ux_draftStale: "{when} の未保存の変更がこのブラウザーに保存されていましたが、その後レポートが再度保存されました。復元して保存すると、その新しい保存が置き換えられます。",
@@ -1081,6 +1086,7 @@ export default {
     qb_editSql: "SQL として編集",
     qb_rows: "{n} 行 (先頭 20 行を表示)",
     ux_a11yPageRole: "ページ",
+    dlg_discard: "変更を破棄しますか？",
   },
   zh: {
     ux_draftStale: "此浏览器中保留了 {when} 的未保存更改，但报表在那之后又被保存过。恢复并保存将替换那次较新的保存。",
@@ -1261,6 +1267,7 @@ export default {
     qb_editSql: "以 SQL 编辑",
     qb_rows: "{n} 行（显示前 20 行）",
     ux_a11yPageRole: "页",
+    dlg_discard: "放弃您的更改？",
   },
   "pt-BR": {
     ux_draftStale: "Alterações não salvas de {when} foram mantidas neste navegador, mas o relatório foi salvo novamente depois. Restaurá-las e salvar substitui esse salvamento mais recente.",
@@ -1441,6 +1448,7 @@ export default {
     qb_editSql: "Editar como SQL",
     qb_rows: "{n} linhas (as primeiras 20 mostradas)",
     ux_a11yPageRole: "página",
+    dlg_discard: "Descartar suas alterações?",
   },
   ar: {
     ux_draftStale: "احتُفظ في هذا المتصفح بتغييرات غير محفوظة من {when}، لكن التقرير حُفظ مرة أخرى بعدها. استعادتها ثم الحفظ يستبدل ذلك الحفظ الأحدث.",
@@ -1621,5 +1629,6 @@ export default {
     qb_editSql: "التحرير كـ SQL",
     qb_rows: "{n} صفوف (تُعرض أول 20)",
     ux_a11yPageRole: "صفحة",
+    dlg_discard: "هل تريد تجاهل تغييراتك؟",
   },
 };
