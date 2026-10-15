@@ -295,6 +295,8 @@ export function addItem(type, section, x, y, extra = {}, parentId = null) {
     if (parent) {
       parent.items.push(it);
       if (it.y + it.h > parent.h) parent.h = Math.ceil(it.y + it.h);
+      // the container grew: its own container and its band grow with it, not over the next band (#1b)
+      for (let pf = findItem(d, parent.id); pf; pf = pf.parent ? findItem(d, pf.parent.id) : null) growToFit(d, pf);
     } else {
       const sec = secOf(d, section);
       sec.items.push(it);
