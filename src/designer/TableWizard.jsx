@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { useDesigner, addItem, bodyWidth, findItem } from './store.js';
 import { loadSample, noSourceKey } from './DataPanel.jsx';
 import { paintItemSvg } from './Canvas.jsx';
-import { tableFor, matrixFor, labelOf, sumFieldFor } from './tableGen.js';
+import { tableFor, matrixFor, labelOf, sumFieldFor, relationGuess, parentFilter } from './tableGen.js';
 import { Dialog, Field, Select, Check } from './ui.jsx';
 import { t } from '@/i18n/index.js';
 import { ITEMS } from '@/engine/items/index.js';
@@ -29,7 +29,17 @@ export default function TableWizard() {
   const parent = wiz?.parentId ? findItem(def, wiz.parentId)?.item : null;
   const width = Math.max(120, Math.round((parent ? parent.w : bodyWidth(def, wiz?.section || 'body')) - (wiz?.x || 0)));
 
-  const [c, setC] = useState(() => ({ dataSet: wiz?.dataSet || def.dataSets?.[0]?.name, layout: wiz?.type === 'matrix' ? 'matrix' : 'list', groupBy: '', fields: null, mRows: '', mCols: '', mValue: null }));
+  // the list the table goes in (the nearest one bound to a data set): a table of another data set in it shows every
+  // row of that data set in each list row, unless a filter keeps it to the list's current row (Parent.x)
+  const listDs = (() => {
+    let hit = wiz?.parentId ? findItem(def, wiz.parentId) : null;
+    while (hit && !(hit.item.type === 'list' && hit.item.dataSet)) hit = hit.parent?.id ? findItem(def, hit.parent.id) : null;
+    return hit ? (def.dataSets || []).find(d => d.name === hit.item.dataSet) || null : null;
+  })();
+  // in a list: by default, a data set that links to the list's rows
+  const firstDs = wiz?.dataSet || (listDs && (def.dataSets || []).find(d => d.name !== listDs.name && relationGuess(listDs, d))?.name) || def.dataSets?.[0]?.name;
+
+  const [c, setC] = useState(() => ({ dataSet: firstDs, rel: null, layout: wiz?.type === 'matrix' ? 'matrix' : 'list', groupBy: '', fields: null, mRows: '', mCols: '', mValue: null }));
   const set = (patch) => setC(x => ({ ...x, ...patch }));
   useEffect(() => { if (!sample?.dataSets && !sample?.loading) loadSample(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -44,6 +54,12 @@ export default function TableWizard() {
   const groupGuess = [...text].filter(f => !rows.length || (card(f) > 1 && card(f) < Math.max(3, rows.length * 0.6))).sort((a, b) => card(a) - card(b))[0]?.name || text[0]?.name || '';
   const groupBy = c.groupBy || groupGuess;
   const mRows = c.mRows || groupBy, mCols = c.mCols || text.find(f => f.name !== mRows)?.name || '', mValue = c.mValue ?? sumFieldFor(fields, rows); // never an id: '' counts rows
+
+  // a nested data set (relation) is kept to the list's row by the engine; two flat ones need the filter
+  const showRel = !!(listDs && ds && ds.name !== listDs.name && ds.relation?.parent !== listDs.name);
+  const guess = showRel ? relationGuess(listDs, ds) : null;
+  const rel = c.rel || { on: !!guess, child: guess?.child || '', parent: guess?.parent || '' };
+  const setRel = (patch) => set({ rel: { ...rel, ...patch } });
 
   const itemFor = (layout, w) => (layout === 'matrix'
     ? (mRows && mCols ? matrixFor(ds, { rows: mRows, columns: mCols, value: mValue, agg: mValue ? 'Sum' : 'Count', width: w, sample: rows, currency: def.currency }) : null)
@@ -68,6 +84,7 @@ export default function TableWizard() {
 
   const insert = () => {
     const { type, x, y, ...props } = itemFor(c.layout, width);
+    if (showRel && rel.on && rel.child && rel.parent) props.filters = [...(props.filters || []), ...parentFilter(rel)];
     addItem(type, wiz.section || 'body', wiz.x || 0, wiz.y || 0, props, wiz.parentId);
     close();
   };
@@ -85,10 +102,20 @@ export default function TableWizard() {
       </>}>
       <div className="cw-body">
         <section className="cw-side" aria-label="Data for the table">
-          <Field label="Data set"><Select value={c.dataSet} options={(def.dataSets || []).map(d => d.name)} onChange={v => set({ dataSet: v, fields: null, groupBy: '', mRows: '', mCols: '', mValue: null })} /></Field>
+          <Field label="Data set"><Select value={c.dataSet} options={(def.dataSets || []).map(d => d.name)} onChange={v => set({ dataSet: v, fields: null, groupBy: '', mRows: '', mCols: '', mValue: null, rel: null })} /></Field>
           {sample?.loading && <span className="hint">Calling the API…</span>}
           {noSourceKey(def) && <span className="hint" role="status" data-testid="no-source">{t(lang, noSourceKey(def))}</span>}
           {sample?.error && <span className="err">{sample.error}</span>}
+          {showRel && <div role="group" aria-label="Rows for each list row" data-testid="parent-filter" style={{ display: 'grid', gap: 4 }}>
+            <Check label={`Show only the rows of the list's current row (${listDs.name})`} checked={rel.on} onChange={v => setRel({ on: v })} />
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Select aria-label="Field of this table" data-testid="parent-filter-child" value={rel.child} allowEmpty options={fields.map(f => f.name)} onChange={v => setRel({ child: v || '', on: !!(v && rel.parent) })} />
+              <span>= Parent.</span>
+              <Select aria-label="Field of the list" data-testid="parent-filter-parent" value={rel.parent} allowEmpty options={(listDs.fields || []).map(f => f.name)} onChange={v => setRel({ parent: v || '', on: !!(v && rel.child) })} />
+            </div>
+            {rel.on && (!rel.child || !rel.parent) && <span className="hint">Pick the field of {ds.name} that holds the list row's key, and that key.</span>}
+            {!rel.on && <span className="hint">{guess ? '' : 'No linking field found. '}Each list row shows every row of {ds.name}.</span>}
+          </div>}
           {c.layout !== 'matrix' && <>
             {c.layout !== 'list' && <Field label="Group by"><Select value={groupBy} options={text.map(f => f.name)} onChange={v => set({ groupBy: v })} /></Field>}
             <div role="group" aria-label="Columns">
