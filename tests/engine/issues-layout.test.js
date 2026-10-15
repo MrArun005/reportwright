@@ -47,3 +47,33 @@ describe('overlaps across containers (#1a)', () => {
     expect(kinds(check(one(near)))).toEqual([['overlap', 'B', 'A']]);
   });
 });
+
+describe('the body against the page height (#30)', () => {
+  it('an item that starts past the room a page has for the body: once, with how many more', () => {
+    const is = check(one([tb('Top', 0, 0), tb('Textbox3', 0, 900), tb('Textbox4', 0, 950)]));
+    const b = is.find((i) => i.kind === 'below');
+    expect(b).toMatchObject({ name: 'Textbox3', y: 900, room: 700, more: 1 });
+    expect(is.filter((i) => i.kind === 'below' || i.kind === 'past')).toHaveLength(1);
+  });
+  it('an item across the page line moves to the next page; one taller than the page is cut', () => {
+    expect(check(one([tb('Low', 0, 690)])).find((i) => i.kind === 'past')).toMatchObject({ bottom: 710, room: 700 });
+    expect(check(one([tb('Tall', 0, 0, 100, 900)])).find((i) => i.kind === 'tall')).toMatchObject({
+      height: 900,
+      room: 700,
+    });
+  });
+  it('a table taller than the page is fine (its rows go on); one below the page is not', () => {
+    const t = { id: 'T', name: 'T', type: 'table', x: 0, y: 0, w: 200, h: 900 };
+    expect(kinds(check(one([t])))).toEqual([]);
+    expect(kinds(check(one([{ ...t, y: 720, h: 40 }])))).toEqual([['below', 'T', null]]);
+  });
+  it('a page header and footer that leave little room', () => {
+    const def = one([tb('A', 0, 0)]);
+    def.sections.pageHeader.height = 400;
+    def.sections.pageFooter.height = 300;
+    expect(check(def).find((i) => i.kind === 'room')).toMatchObject({ header: 400, footer: 300, room: 70 });
+  });
+  it('a body that fits: nothing', () => {
+    expect(kinds(check(one([tb('A', 0, 0), tb('B', 0, 670)])))).toEqual([]);
+  });
+});

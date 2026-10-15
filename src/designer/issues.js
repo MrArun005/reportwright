@@ -3,6 +3,7 @@
 // or table whose drawn width runs past the printable width moves its last columns to another page), and expressions
 // that read fields the data set does not have. Pure: the canvas passes the drawn widths of live items (extents).
 import { fieldIssues } from './fieldCheck.js';
+import { resolvePage } from '../engine/units.js';
 
 const overlap = (a, b) => a.x < b.x + b.w - 0.5 && b.x < a.x + a.w - 0.5 && a.y < b.y + b.h - 0.5 && b.y < a.y + a.h - 0.5;
 const contains = (o, i) => i.x >= o.x - 0.5 && i.y >= o.y - 0.5 && i.x + i.w <= o.x + o.w + 0.5 && i.y + i.h <= o.y + o.h + 0.5;
@@ -12,7 +13,7 @@ const THIN = new Set(['line']); // a rule across a box is meant to overlap it
  * @param {any} def the report
  * @param {{ key: string, items: any[], width: number }[]} bands every band with its items and printable width
  * @param {Record<string, { w: number }>} [extents] drawn widths of live items (a matrix grows with its data), by item id
- * @returns {{ id: string | null, name: string, kind: 'overlap' | 'loose' | 'wide' | 'field', other?: string, width?: number, room?: number, field?: string, suggest?: string | null }[]}
+ * @returns {{ id: string | null, name: string, kind: 'overlap' | 'loose' | 'wide' | 'field' | 'below' | 'past' | 'tall' | 'room' | 'shared', other?: string, width?: number, room?: number, field?: string, suggest?: string | null, y?: number, bottom?: number, height?: number, header?: number, footer?: number, band?: string, orient?: string }[]}
  */
 export function designIssues(def, bands, extents = {}) {
   const out = [];
@@ -39,6 +40,7 @@ export function designIssues(def, bands, extents = {}) {
     walkList(b.items, b.width, sets[0]?.name || null);
     overlaps(b.items, out);
   }
+  if (!def?.master) pageIssues(def, out);
   return out;
 }
 
@@ -77,6 +79,58 @@ function overlaps(items, out) {
     }
     out.push({ id: b.it.id, name: b.it.name, kind: 'overlap', other: a.it.name });
   }
+}
+
+/** Items that grow and continue on the next page (a table's rows): their designed height says little about the page. */
+const GROWS = new Set(['table', 'matrix', 'list', 'subreport', 'richtext', 'toc', 'overflow', 'part', 'placeholder']);
+
+/**
+ * Body sections against their page (#30, #16): an item past the room a page has for the body, a page header and footer
+ * that leave little room, a section whose page is wider or narrower than the report's but that uses the shared header
+ * or footer (laid out at the report's width). The engine's geometry (src/engine/index.js) in short.
+ * @param {any} def @param {any[]} out
+ */
+function pageIssues(def, out) {
+  const s = def?.sections || {};
+  const many = Array.isArray(s.body);
+  const bodies = many ? s.body : [s.body || {}];
+  const base = resolvePage(def?.page || {});
+  if (base.pageless) return;
+  /** @param {string} k */
+  const shared = (k) => (s[k]?.height ? s[k] : null);
+  /** @param {any} b @param {string} k */
+  const own = (b, k) => {
+    const o = b?.[k];
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return shared(k);
+    return o.hidden || !(Number(o.height) > 0) ? null : o;
+  };
+  bodies.forEach((b, i) => {
+    if (!b || typeof b !== 'object') return;
+    const pg = b.page ? resolvePage({ ...(def.page || {}), ...b.page }) : base;
+    if (pg.pageless) return;
+    const label = many ? b.name || `Section ${i + 1}` : null; // the body: issueLine names it in the UI language
+    const hdr = own(b, 'pageHeader'), ftr = own(b, 'pageFooter');
+    const hH = Number(hdr?.height) || 0, fH = Number(ftr?.height) || 0;
+    const page = pg.height - pg.margins.top - pg.margins.bottom;
+    const room = page - hH - fH;
+    if (room < page / 3) out.push({ id: null, name: label, kind: 'room', header: Math.round(hH), footer: Math.round(fH), room: Math.round(room) });
+    else {
+      // what does not fit the first page: an item taller than a page is cut (each one said); the rest moves on to a
+      // later page, said once per section (a long static layout is fine, but should not be a surprise)
+      const late = [];
+      for (const it of b.items || []) {
+        if (!it || typeof it !== 'object' || it.hidden === true) continue;
+        const y = Number(it.y) || 0, h = Number(it.h) || 0, grows = GROWS.has(it.type);
+        if (!grows && h > room + 0.5) out.push({ id: it.id, name: it.name, kind: 'tall', height: Math.round(h), room: Math.round(room), section: label });
+        else if (y + (grows ? 0 : h) > room + 0.5) late.push({ it, y, h });
+      }
+      late.sort((p, q) => p.y - q.y);
+      const f = late[0];
+      if (f) out.push(f.y >= room - 0.5
+        ? { id: f.it.id, name: f.it.name, kind: 'below', y: Math.round(f.y), room: Math.round(room), section: label, more: late.length - 1 }
+        : { id: f.it.id, name: f.it.name, kind: 'past', bottom: Math.round(f.y + f.h), room: Math.round(room), section: label, more: late.length - 1 });
+    }
+  });
 }
 
 /**

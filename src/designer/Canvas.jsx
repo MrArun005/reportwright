@@ -44,6 +44,13 @@ export function issueLine(T, i) {
   if (i.kind === 'overlap') return T('ux_issueOverlap', { name: i.name, other: i.other });
   if (i.kind === 'wide') return T('ux_issueWide', { name: i.name, width: i.width, room: i.room });
   if (i.kind === 'loose') return T('ux_issueLoose', { name: i.name, other: i.other });
+  // a report with one body section: issues.js names it null, said here in the UI language
+  if (i.section === null || (i.kind === 'room' && i.name === null)) i = { ...i, section: i.section ?? T('ux_theBody'), name: i.name ?? T('ux_theBody') };
+  const more = i.more ? T('ux_issueMore', { n: i.more }) : '';
+  if (i.kind === 'below') return T('ux_issueBelow', { name: i.name, y: i.y, room: i.room, section: i.section }) + more;
+  if (i.kind === 'past') return T('ux_issuePast', { name: i.name, bottom: i.bottom, room: i.room, section: i.section }) + more;
+  if (i.kind === 'tall') return T('ux_issueTall', { name: i.name, height: i.height, room: i.room, section: i.section });
+  if (i.kind === 'room') return T('ux_issueRoom', { name: i.name, header: i.header, footer: i.footer, room: i.room });
   if (i.kind === 'check') return i.text;
   return i.suggest ? T('ux_issueFieldSuggest', { name: i.name, field: i.field, suggest: i.suggest }) : T('ux_issueField', { name: i.name, field: i.field });
 }
