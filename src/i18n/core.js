@@ -16,8 +16,21 @@ export function lookups(STRINGS, LANGUAGES) {
     return (table(lang)[key] ?? STRINGS.en[key] ?? key).split(/\{(\w+)\}/);
   }
 
+  const rules = new Map();
+  /** The plural category ("one", "other", …) of a count in a language (Intl.PluralRules; "other" when it cannot tell). */
+  function pluralOf(lang, n) {
+    const l = pickLang(lang), x = Number(n);
+    if (!Number.isFinite(x)) return 'other';
+    try {
+      if (!rules.has(l)) rules.set(l, new Intl.PluralRules(l));
+      return rules.get(l).select(x);
+    } catch { return x === 1 ? 'one' : 'other'; }
+  }
+
   /** A UI string; `{name}` placeholders are filled from vars. A key missing in a language falls back to English. */
   function t(lang, key, vars) {
+    // a count: `<key>_one` holds the singular ("{n} row"), used when the language's plural rule says "one" for n
+    if (vars?.n != null && (table(lang)[`${key}_one`] ?? STRINGS.en[`${key}_one`]) != null && pluralOf(lang, vars.n) === 'one') key = `${key}_one`;
     const s = table(lang)[key] ?? STRINGS.en[key] ?? key;
     return vars ? s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? '')) : s;
   }

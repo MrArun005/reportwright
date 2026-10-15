@@ -651,7 +651,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     model && {
       id: 'stats', group: 'stats',
       node: <span className="stat vstats" title={usingWorker() ? 'Rendered in a Web Worker' : 'Rendered on the main thread'}>
-        {T('pagesRows', { pages: total, rows: Object.values(model.stats.rows).reduce((a, b) => a + b, 0), ms: model.stats.ms })}{usingWorker() ? ' · worker' : ''}
+        {T('pagesRows', { pages: total === 1 ? T('pageOne') : T('pageMany', { n: total }), rows: T('dsRows', { n: Object.values(model.stats.rows).reduce((a, b) => a + b, 0) }), ms: model.stats.ms })}{usingWorker() ? ' · worker' : ''}
       </span>,
     },
     {

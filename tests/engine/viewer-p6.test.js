@@ -23,7 +23,7 @@ describe('UI languages', () => {
     expect(pickLang('xx')).toBe('en');
     expect(pickLang(undefined)).toBe('en');
     expect(t('xx', 'parameters')).toBe('Parameters');
-    expect(t('hi', 'pagesRows', { pages: 2, rows: 3, ms: 4 })).toBe('2 पृष्ठ · 3 पंक्तियाँ · 4 ms');
+    expect(t('hi', 'pagesRows', { pages: t('hi', 'pageMany', { n: 2 }), rows: t('hi', 'dsRows', { n: 3 }), ms: 4 })).toBe('2 पृष्ठ · 3 पंक्तियाँ · 4 ms');
     expect(dirOf('hi')).toBe('ltr');
     expect(dirOf('ar')).toBe('rtl');
     expect(dirOf('ar-EG')).toBe('rtl');

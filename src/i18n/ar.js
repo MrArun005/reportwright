@@ -93,7 +93,7 @@ export default {
   exporting: 'جارٍ التصدير…', viewReport: 'عرض التقرير', didNotRun: 'لم يعمل التقرير.', fontsDidNotLoad: 'تعذّر تحميل بعض الخطوط ({fonts}). يُعرض النص بخط بديل. تحقّق من أن مجلد الخطوط متاح عبر fontsUrl.', true: 'نعم', false: 'لا',
   commaSeparated: 'قيم مفصولة بفواصل',
   selectAll: 'تحديد الكل', nullValue: 'Null (بلا قيمة)',
-  pagesRows: '{pages} صفحة · {rows} صف · {ms} مللي ثانية', warnings: '{n} تحذير',
+  pagesRows: '{pages} · {rows} · {ms} مللي ثانية', warnings: '{n} تحذير',
   back: 'رجوع', drillDepth: 'مستوى التعمق {n}', liveHint: 'تُطبَّق التغييرات فور اختيارها.',
   print: 'طباعة', printing: 'جارٍ التحضير…', fullScreen: 'ملء الشاشة', exitFullScreen: 'الخروج من ملء الشاشة',
   viewMode: 'طريقة العرض', single: 'صفحة واحدة', continuous: 'متصل', galley: 'صفحة طويلة',

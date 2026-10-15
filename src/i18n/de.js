@@ -93,7 +93,7 @@ export default {
   exporting: 'Wird exportiert…', viewReport: 'Bericht anzeigen', didNotRun: 'Der Bericht wurde nicht ausgeführt.', fontsDidNotLoad: 'Einige Schriften konnten nicht geladen werden ({fonts}). Der Text wird in einer Ersatzschrift gezeigt. Prüfen Sie, ob der Schriftordner unter fontsUrl erreichbar ist.', true: 'Wahr', false: 'Falsch',
   commaSeparated: 'Werte, durch Kommas getrennt',
   selectAll: 'Alle auswählen', nullValue: 'Null (kein Wert)',
-  pagesRows: '{pages} Seiten · {rows} Zeilen · {ms} ms', warnings: '{n} Warnung(en)',
+  pagesRows: '{pages} · {rows} · {ms} ms', warnings: '{n} Warnung(en)',
   back: 'Zurück', drillDepth: 'Drilldown-Ebene {n}', liveHint: 'Änderungen gelten sofort bei der Auswahl.',
   print: 'Drucken', printing: 'Wird vorbereitet…', fullScreen: 'Vollbild', exitFullScreen: 'Vollbild beenden',
   viewMode: 'Ansicht', single: 'Einzelseite', continuous: 'Fortlaufend', galley: 'Fahne',

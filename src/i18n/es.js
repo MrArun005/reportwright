@@ -93,7 +93,7 @@ export default {
   exporting: 'Exportando…', viewReport: 'Ver informe', didNotRun: 'El informe no se ejecutó.', fontsDidNotLoad: 'Algunas fuentes no se cargaron ({fonts}). El texto usa una fuente de respaldo. Compruebe que la carpeta de fuentes está en fontsUrl.', true: 'Sí', false: 'No',
   commaSeparated: 'Valores separados por comas',
   selectAll: 'Seleccionar todo', nullValue: 'Nulo (sin valor)',
-  pagesRows: '{pages} páginas · {rows} filas · {ms} ms', warnings: '{n} advertencia(s)',
+  pagesRows: '{pages} · {rows} · {ms} ms', warnings: '{n} advertencia(s)',
   back: 'Atrás', drillDepth: 'Nivel de detalle {n}', liveHint: 'Los cambios se aplican al elegirlos.',
   print: 'Imprimir', printing: 'Preparando…', fullScreen: 'Pantalla completa', exitFullScreen: 'Salir de pantalla completa',
   viewMode: 'Modo de vista', single: 'Una página', continuous: 'Continua', galley: 'Galerada',

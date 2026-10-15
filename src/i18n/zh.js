@@ -93,7 +93,7 @@ export default {
   exporting: '正在导出…', viewReport: '查看报表', didNotRun: '报表未能运行。', fontsDidNotLoad: '部分字体未能加载（{fonts}），文字以备用字体显示。请确认字体文件夹可通过 fontsUrl 访问。', true: '是', false: '否',
   commaSeparated: '多个值用逗号分隔',
   selectAll: '全选', nullValue: 'Null（无值）',
-  pagesRows: '{pages} 页 · {rows} 行 · {ms} 毫秒', warnings: '{n} 条警告',
+  pagesRows: '{pages} · {rows} · {ms} 毫秒', warnings: '{n} 条警告',
   back: '返回', drillDepth: '钻取层级 {n}', liveHint: '选择后立即生效。',
   print: '打印', printing: '正在准备…', fullScreen: '全屏', exitFullScreen: '退出全屏',
   viewMode: '视图模式', single: '单页', continuous: '连续', galley: '长页',
