@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { useDesigner, addItem, bodyWidth, findItem } from './store.js';
 import { loadSample, noSourceKey } from './DataPanel.jsx';
 import { paintItemSvg } from './Canvas.jsx';
-import { tableFor, matrixFor, labelOf } from './tableGen.js';
+import { tableFor, matrixFor, labelOf, sumFieldFor } from './tableGen.js';
 import { Dialog, Field, Select, Check } from './ui.jsx';
 import { t } from '@/i18n/index.js';
 import { ITEMS } from '@/engine/items/index.js';
@@ -29,7 +29,7 @@ export default function TableWizard() {
   const parent = wiz?.parentId ? findItem(def, wiz.parentId)?.item : null;
   const width = Math.max(120, Math.round((parent ? parent.w : bodyWidth(def, wiz?.section || 'body')) - (wiz?.x || 0)));
 
-  const [c, setC] = useState(() => ({ dataSet: wiz?.dataSet || def.dataSets?.[0]?.name, layout: wiz?.type === 'matrix' ? 'matrix' : 'list', groupBy: '', fields: null, mRows: '', mCols: '', mValue: '' }));
+  const [c, setC] = useState(() => ({ dataSet: wiz?.dataSet || def.dataSets?.[0]?.name, layout: wiz?.type === 'matrix' ? 'matrix' : 'list', groupBy: '', fields: null, mRows: '', mCols: '', mValue: null }));
   const set = (patch) => setC(x => ({ ...x, ...patch }));
   useEffect(() => { if (!sample?.dataSets && !sample?.loading) loadSample(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -43,7 +43,7 @@ export default function TableWizard() {
   const card = (f) => new Set(rows.map(r => r[f.name])).size;
   const groupGuess = [...text].filter(f => !rows.length || (card(f) > 1 && card(f) < Math.max(3, rows.length * 0.6))).sort((a, b) => card(a) - card(b))[0]?.name || text[0]?.name || '';
   const groupBy = c.groupBy || groupGuess;
-  const mRows = c.mRows || groupBy, mCols = c.mCols || text.find(f => f.name !== mRows)?.name || '', mValue = c.mValue || nums[0]?.name || '';
+  const mRows = c.mRows || groupBy, mCols = c.mCols || text.find(f => f.name !== mRows)?.name || '', mValue = c.mValue ?? sumFieldFor(fields, rows); // never an id: '' counts rows
 
   const itemFor = (layout, w) => (layout === 'matrix'
     ? (mRows && mCols ? matrixFor(ds, { rows: mRows, columns: mCols, value: mValue, agg: mValue ? 'Sum' : 'Count', width: w, sample: rows, currency: def.currency }) : null)
@@ -85,7 +85,7 @@ export default function TableWizard() {
       </>}>
       <div className="cw-body">
         <section className="cw-side" aria-label="Data for the table">
-          <Field label="Data set"><Select value={c.dataSet} options={(def.dataSets || []).map(d => d.name)} onChange={v => set({ dataSet: v, fields: null, groupBy: '', mRows: '', mCols: '', mValue: '' })} /></Field>
+          <Field label="Data set"><Select value={c.dataSet} options={(def.dataSets || []).map(d => d.name)} onChange={v => set({ dataSet: v, fields: null, groupBy: '', mRows: '', mCols: '', mValue: null })} /></Field>
           {sample?.loading && <span className="hint">Calling the API…</span>}
           {noSourceKey(def) && <span className="hint" role="status" data-testid="no-source">{t(lang, noSourceKey(def))}</span>}
           {sample?.error && <span className="err">{sample.error}</span>}
@@ -100,6 +100,7 @@ export default function TableWizard() {
             <Field label="Rows"><Select value={mRows} options={text.map(f => f.name)} onChange={v => set({ mRows: v })} /></Field>
             <Field label="Columns"><Select value={mCols} options={text.filter(f => f.name !== mRows).map(f => f.name)} onChange={v => set({ mCols: v })} /></Field>
             <Field label="Sum of"><Select value={mValue} allowEmpty options={nums.map(f => f.name)} onChange={v => set({ mValue: v || '' })} /></Field>
+            {!mValue && <span className="hint" data-testid="matrix-count">No amount picked: the matrix counts rows.</span>}
           </>}
         </section>
         <section className="cw-main" aria-label="Table layouts">

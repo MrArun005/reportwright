@@ -155,3 +155,18 @@ export function instantPicks(fields, rows = []) {
   ROWS = null;
   return [...dims.slice(0, 2), ...nums.slice(0, 1)];
 }
+
+/**
+ * The number a matrix sums by default: the first additive one (an amount, not an id, a code, a rate or a row number);
+ * '' when there is none, so the matrix counts rows.
+ * @param {{ name: string, type?: string }[]} fields @param {any[]} [rows]
+ * @returns {string}
+ */
+export function sumFieldFor(fields, rows = []) {
+  ROWS = rows;
+  try {
+    return (fields || []).find(additive)?.name || '';
+  } finally {
+    ROWS = null;
+  }
+}
