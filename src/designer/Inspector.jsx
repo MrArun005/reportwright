@@ -234,6 +234,10 @@ function ItemProps({ item, section, openExpr }) {
   const words = (...ks) => !!q && ks.some(k => k.toLowerCase().includes(q));
   const pivotHit = item.type === 'matrix' && words(T('i_actionOnClick'), T('ux_headerAction'), T('ux_cellAction'), T('i_interactivity'), T('pivotCollapsible'), 'action', 'drill', 'click', 'link', 'bookmark');
   const groupHit = item.type === 'table' && words(T('i_groups'), T('i_drillToggle'), T('i_startCollapsed'), T('i_addGroup'), 'drill', 'group', 'collapse', 'toggle');
+  // the item's own sort and filters (a pivot has filters only)
+  const sortFilterHit = ['table', 'list', 'chart', 'matrix'].includes(item.type) && (item.type === 'matrix'
+    ? words(T('sfFilterTitle'), T('dsAddFilter'), 'filter', 'filters')
+    : words(T('sfTitle'), T('sfSortBy'), T('sfDirection'), T('dsAddFilter'), 'sort', 'sorting', 'filter', 'filters', 'order'));
   const styleProps = stylePropsFor(item.type).filter(p => hit(p, 'style'));
   const set = (k, v) => updateItem(item.id, it => setOrDelete(it, k, v), `${item.id}.${k}`);
   const setStyle = (k, v) => updateItem(item.id, it => { it.style ||= {}; setOrDelete(it.style, k, v); }, `${item.id}.style.${k}`);
@@ -256,9 +260,10 @@ function ItemProps({ item, section, openExpr }) {
         <span className="ty">{tk(`item_${item.type}`, spec?.label || item.type)}</span>
       </div>
       <div className="cat insp-find"><input type="search" className="input" value={find} onChange={e => setFind(e.target.value)} placeholder={T('i_findProperty')} aria-label={T('i_findProperty')} data-testid="find-property" /></div>
-      {q && !props.length && !styleProps.length && !pivotHit && !groupHit && <div className="cat"><span className="hint">{T('i_noPropMatch')}</span></div>}
+      {q && !props.length && !styleProps.length && !pivotHit && !groupHit && !sortFilterHit && <div className="cat"><span className="hint">{T('i_noPropMatch')}</span></div>}
       {pivotHit && <PivotEditor item={item} openExpr={openExpr} />}
       {groupHit && <GroupsEditor table={item} openExpr={openExpr} />}
+      {sortFilterHit && <SortFilterEditor item={item} noSort={item.type === 'matrix'} />}
       {!q && item.type === 'chart' && (
         <div className="cat">
           <button className="btn sm" data-testid="open-chart-gallery" onClick={() => useDesigner.getState().setUi({ wizard: { mode: 'edit', id: item.id } })}>{T('i_chartGallery')}</button>
