@@ -488,7 +488,8 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
           <input className="name" value={def.name || ''} aria-label={T('reportName')} readOnly={readOnly} onChange={e => st().apply(d => { d.name = e.target.value; }, 'name')} />
           {!readOnly && <span className={`saved${saved ? '' : ' dirty'}`} data-testid="save-state"><i aria-hidden="true" />{saving ? T('saving') : saved ? T('saved') : T('unsaved')}</span>}
         </div>
-        {saveError && <span className="err" role="status" title={saveError}>{saveError}</span>}
+        {/* a message (Nothing to paste, a save error) floats below the bar: it never squeezes the bar or pushes the canvas (#14) */}
+        {saveError && <span className="dmsg"><span className="err" role="status">{saveError}</span></span>}
         <div className="spacer" />
         <TbGroup label={T('b2_file')}>
           {!embed && <button className="tb-btn" onClick={() => setDialog('history')} title={T('historyHint')} aria-label={T('history')}><Icon name="history" /></button>}
