@@ -8,6 +8,16 @@ import { StreamLanguage, syntaxHighlighting, HighlightStyle, bracketMatching } f
 import { tags } from '@lezer/highlight';
 import { FUNCTION_NAMES } from '@/engine/expr/evaluate.js';
 
+/** The Globals the editor suggests, with what each one is. */
+export const GLOBALS = [
+  ['PageNumber', 'This page’s number. Starts again at 1 in each group that starts a new section (newSection)'],
+  ['TotalPages', 'Pages in this section (in the whole report when no group starts a new section)'],
+  ['OverallPageNumber', 'This page’s number in the whole report: not restarted by newSection'],
+  ['OverallTotalPages', 'Pages in the whole report, all sections together'],
+  ['ExecutionTime', 'When the report ran'],
+  ['ReportName', 'The report’s name'],
+];
+
 /* Tiny tokenizer for the ReportWright expression language. */
 const lang = StreamLanguage.define({
   token(stream) {
@@ -72,7 +82,8 @@ const ExprCode = forwardRef(function ExprCode({ value, onChange, fields, paramet
       const m = ctx.matchBefore(/(Fields|Parameters|Globals)\.\w*$/);
       if (m) {
         const [root] = m.text.split('.');
-        const list = root === 'Fields' ? latest.current.fields : root === 'Parameters' ? latest.current.parameters : ['PageNumber', 'TotalPages', 'ExecutionTime', 'ReportName'];
+        if (root === 'Globals') return { from: m.from + root.length + 1, options: GLOBALS.map(([g, info]) => ({ label: g, type: 'property', info })) };
+        const list = root === 'Fields' ? latest.current.fields : latest.current.parameters;
         return { from: m.from + root.length + 1, options: list.map(l => ({ label: l, type: 'property' })) };
       }
       const w = ctx.matchBefore(/[A-Za-z_]\w*$/);
