@@ -121,11 +121,14 @@ export default function Outline() {
     },
   });
 
+  // 14px a level for the first four, then 4px: a deep item keeps room for its name
+  const indent = (depth) => (depth <= 4 ? depth * 14 : 56 + Math.min(depth - 4, 6) * 4);
   const rows = (list, parent, depth, section) => list.map((it, i) => {
     const mark = drop && drop.id != null && drop.id === it.id ? ` drop-${drop.where}` : ''; // an item from Ask AI may have no id yet
     return (
       <li key={it.id} role="none">
-        <div className={`trow outline-row${chosen.has(it.id) ? ' sel' : ''}${mark}`} style={{ paddingInlineStart: depth * 14 }} data-outline={it.name} data-outline-id={it.id} {...dragProps(it, i, parent, section)}>
+        <div className={`trow outline-row${chosen.has(it.id) ? ' sel' : ''}${mark}`} style={{ paddingInlineStart: indent(depth) }} data-outline={it.name} data-outline-id={it.id} {...dragProps(it, i, parent, section)}
+          onClick={(e) => { if (e.target.closest('button')) return; pick(e, it.id); e.currentTarget.querySelector('.nm')?.focus(); }}>
           {!readOnly && <span className="grip" aria-hidden="true">⠿</span>}
           <button type="button" data-opt="" className="linklike nm" onClick={(e) => pick(e, it.id)} onKeyDown={(e) => onKey(e, it, list, i, parent)} aria-pressed={chosen.has(it.id)} aria-describedby={readOnly ? 'outline-nav' : 'outline-nav outline-keys'} title={it.name} {...roving(it.id)}>{it.name}</button>
           <span className="outline-meta"><span className="ty">{T(`item_${it.type}`) === `item_${it.type}` ? ITEMS[it.type]?.label || it.type : T(`item_${it.type}`)}</span>

@@ -387,15 +387,20 @@ a.cell-name:hover { color: var(--accent); }
 .trow:hover .act, .trow:focus-within .act { opacity: 1; }
 .outline-row.sel { background: var(--accent-soft); }
 .outline-row .linklike.nm, .outline-band { text-decoration: none; color: var(--ink); text-align: start; }
-/* a long name wraps inside the panel's width (no cut-off text); the type and the buttons keep their size */
-/* (the type and the buttons, together, go under a name too long to share the line) */
-.outline-row { flex-wrap: wrap; }
-.outline-row .linklike.nm { flex: 1 1 auto; white-space: normal; overflow-wrap: anywhere; }
-.outline-meta { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-inline-start: auto; }
+/* one line per item: a long name ends in "…" (its title shows it whole) and keeps at least 80px; the type label gives
+   way first, whole (it wraps out of sight after an empty first flex item, never "Co…").
+   The ↑↓⇱ buttons sit over the row's end, inside the panel, shown on hover, focus and the selected row. */
+.outline-row { position: relative; cursor: pointer; }
+.outline-row .linklike.nm { flex: 1 1 auto; min-width: min(80px, 100%); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.outline-meta { display: flex; flex-wrap: wrap; align-items: center; flex: 0 1000 auto; min-width: 0; height: 18px; overflow: hidden; margin-inline-start: auto; }
+.outline-meta::before { content: ''; width: 0; height: 18px; }
+.outline-meta .ty { white-space: nowrap; line-height: 18px; }
+.outline-meta .act { position: absolute; inset-inline-end: 2px; top: 50%; transform: translateY(-50%); padding-inline-start: 6px; border-radius: 4px; background: var(--panel-2); opacity: 0; }
+.outline-row.sel .act { background: var(--accent-soft); }
 .outline-meta .btn.icon { width: 22px; }
 .outline-row.sel .linklike.nm, .outline-band.sel { color: var(--accent); }
 .outline-row.sel .ty { color: var(--muted); } /* --faint is 4.38:1 on --accent-soft; --muted passes in both themes */
-.outline-row.sel .act, .outline-row:focus-within .act { opacity: 1; }
+.outline-row:hover .act, .outline-row.sel .act, .outline-row:focus-within .act { opacity: 1; }
 .outline-row[draggable="true"] { cursor: grab; }
 .outline-row .grip { color: var(--faint); font-size: 10px; line-height: 1; margin-inline-start: -2px; opacity: .55; }
 .outline-row:hover .grip { opacity: 1; }
