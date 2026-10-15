@@ -339,7 +339,7 @@ export function selectedBand(def, sel) {
 /** Items that only go in a body section (or a content report's placeholder), never in a page header or footer. */
 export const BODY_ONLY = new Set(['table', 'matrix', 'subreport']);
 /** The y below a list of items (8 pt gap, on a 4 pt step); 0 for none. */
-const belowItems = (items) => (items.length ? Math.ceil((Math.max(...items.map(i => i.y + i.h)) + 8) / 4) * 4 : 0);
+const belowItems = (items) => (items.length ? Math.ceil((items.reduce((m, i) => Math.max(m, i.y + i.h), -Infinity) + 8) / 4) * 4 : 0);
 /**
  * Where the toolbox's Insert puts a new item (#12): inside the selected list or container (below its items); else in
  * the selected band, or the band (or container) of the selected item, below its items; nothing selected: the body.
@@ -615,7 +615,7 @@ export function pasteItems(section = 'body', text = null) {
     if (data.from === section || (data.from === undefined && fits)) {
       for (const c of copies) { offsetCopy(band.items, c, data.cut === true); band.items.push(c); }
     } else if (copies.length) {
-      const top = Math.min(...copies.map(c => c.y)), tall = Math.max(...copies.map(c => c.y + hOf(c))) - top;
+      const top = copies.reduce((m, c) => Math.min(m, c.y), Infinity), tall = copies.reduce((m, c) => Math.max(m, c.y + hOf(c)), -Infinity) - top;
       const y0 = Math.max(0, Math.min(belowItems(band.items), (band.height || 0) - tall));
       const room = bodyWidth(d, section);
       for (const c of copies) { c.y = round(y0 + c.y - top); c.x = round(clamp(c.x, 0, Math.max(0, room - wOf(c)))); band.items.push(c); }
