@@ -421,7 +421,11 @@ function moveToBand(ids, dx, dy, to) {
   if (fs[0].section === to.section) return false;
   if (!isBodyKey(to.section) && !isContentKey(to.section) && fs.some(f => BODY_ONLY.has(f.item.type))) return false;
   const room = bodyWidth(def, to.section);
-  const place = (it) => ({ x: round(clamp(it.x + dx - (to.ox || 0), 0, Math.max(0, room - it.w))), y: round(Math.max(0, it.y + dy - (to.oy || 0))) });
+  // the bands are not a whole number of grid steps apart: the y in the new band snaps again (to the grid, or to cells)
+  const { snap, grid, cells, cellSize } = S();
+  const step = cells ? cellSize : snap ? grid : 0;
+  const snapY = (v) => (step ? Math.round(v / step) * step : v);
+  const place = (it) => ({ x: round(clamp(it.x + dx - (to.ox || 0), 0, Math.max(0, room - it.w))), y: round(Math.max(0, snapY(it.y + dy - (to.oy || 0)))) });
   if (S().cells && fs.some(f => overlapsAny({ ...f.item, ...place(f.item) }, secOf(def, to.section).items || []))) { S().setUi({ saveError: CELL_TAKEN() }); setTimeout(() => S().setUi({ saveError: null }), 2500); return true; }
   S().apply((d) => {
     const dest = secOf(d, to.section);

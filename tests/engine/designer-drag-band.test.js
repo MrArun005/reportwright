@@ -23,4 +23,9 @@ describe('#12: a drag moves an item to another band', () => {
     moveItems(['a'], 0, 10, { to: { section: 'body', ox: 0, oy: 0 } });
     expect(where('a')).toMatchObject({ section: 'body', y: 20 });
   });
+  it('the y in the new band snaps to the grid (the bands are not whole grid steps apart)', () => {
+    S().setUi({ snap: true, grid: 4 });
+    moveItems(['b'], 0, 403.3, { to: { section: 'pageFooter', ox: 0, oy: 421.1 } });
+    expect(where('b')).toMatchObject({ section: 'pageFooter', y: 24 });
+  });
 });
