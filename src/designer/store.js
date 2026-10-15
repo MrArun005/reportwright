@@ -305,15 +305,27 @@ export function addItem(type, section, x, y, extra = {}, parentId = null) {
   return id;
 }
 
+/** Items that only go in a body section (or a content report's placeholder), never in a page header or footer. */
+export const BODY_ONLY = new Set(['table', 'matrix', 'subreport']);
+/** The y below a list of items (8 pt gap, on a 4 pt step); 0 for none. */
+const belowItems = (items) => (items.length ? Math.ceil((Math.max(...items.map(i => i.y + i.h)) + 8) / 4) * 4 : 0);
 /**
- * Where the toolbox's Insert puts a new item: inside the selected list or container (below its items), else the body
- * below everything. @returns {{ section: string, parentId: string|null, y: number }}
+ * Where the toolbox's Insert puts a new item (#12): inside the selected list or container (below its items); else in
+ * the selected band, or the band (or container) of the selected item, below its items; nothing selected: the body.
+ * A table, matrix or subreport for a page header or footer goes to the body. `type` is the item to insert.
+ * @returns {{ section: string, parentId: string|null, y: number }}
  */
-export function insertSpot(def, sel) {
-  const below = (items) => (items.length ? Math.ceil((Math.max(...items.map(i => i.y + i.h)) + 8) / 4) * 4 : 0);
-  const f = sel?.kind === 'items' && sel.ids?.length === 1 ? findItem(def, sel.ids[0]) : null;
-  if (f && Array.isArray(f.item.items)) return { section: f.section, parentId: f.item.id, y: f.item.items.length ? below(f.item.items) : 0 };
-  return { section: 'body', parentId: null, y: below(secOf(def, 'body').items) };
+export function insertSpot(def, sel, type = null) {
+  const id = sel?.kind === 'items' ? sel.ids?.[0] : sel?.kind === 'cell' ? sel.id : null;
+  const f = id ? findItem(def, id) : null;
+  const one = sel?.kind === 'items' && sel.ids?.length === 1;
+  let at = null;
+  if (f && one && Array.isArray(f.item.items)) at = { section: f.section, parentId: f.item.id, y: belowItems(f.item.items) };
+  else if (f?.parent) at = { section: f.section, parentId: f.parent.id, y: belowItems(f.parent.items) };
+  else if (f) at = { section: f.section, parentId: null, y: belowItems(secOf(def, f.section)?.items || []) };
+  else if (sel?.kind === 'section' && secOf(def, sel.section)) at = { section: sel.section, parentId: null, y: belowItems(secOf(def, sel.section).items || []) };
+  if (at && type && BODY_ONLY.has(type) && !isBodyKey(at.section) && !isContentKey(at.section)) at = null;
+  return at || { section: 'body', parentId: null, y: belowItems(secOf(def, 'body').items) };
 }
 
 /** Insert from the toolbox or a drop. Charts open the chart gallery first (when the report has data), other items go straight in. */

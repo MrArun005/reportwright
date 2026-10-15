@@ -56,10 +56,10 @@ const TOOLS = [
 function Toolbox({ T, hide = [] }) {
   const api = useDesignerStore();
   const name = (type) => (T(`item_${type}`) === `item_${type}` ? ITEMS[type].label : T(`item_${type}`));
-  // a selected list or container takes the new item; otherwise it goes below the body's items
+  // a selected list or container takes the new item; otherwise the selected band, or the band of the selected item (#12)
   const add = (type) => {
     const s = api.getState();
-    const at = insertSpot(s.def, s.sel);
+    const at = insertSpot(s.def, s.sel, type);
     insertItem(type, at.section, 0, at.y, {}, at.parentId);
   };
   return (
@@ -500,7 +500,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
             {QUICK.filter(([type]) => !(embed?.toolbox?.hide || []).includes(type)).map(([type, icon]) => {
               const nm = T(`item_${type}`) === `item_${type}` ? ITEMS[type].label : T(`item_${type}`);
               return <button key={type} className="tb-btn" title={`${T('b2_insertItem', { item: nm })} · ${T('b2_insertHint')}`} aria-label={T('b2_insertItem', { item: nm })} data-testid={`quick-${type}`}
-                onClick={() => { const s0 = st(); const at = insertSpot(s0.def, s0.sel); insertItem(type, at.section, 0, at.y, {}, at.parentId); }}><Icon name={icon} /></button>;
+                onClick={() => { const s0 = st(); const at = insertSpot(s0.def, s0.sel, type); insertItem(type, at.section, 0, at.y, {}, at.parentId); }}><Icon name={icon} /></button>;
             })}
           </TbGroup>
         )}
