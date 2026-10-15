@@ -174,13 +174,36 @@ export const newDesignerStore = () => createStore((set, get) => ({
     const { past, def, future } = get();
     if (!past.length || get().readOnly) return;
     set({ def: past[past.length - 1], past: past.slice(0, -1), future: [def, ...future].slice(0, 200), saved: false, lastKey: null });
-    get().fixSelection();
+    get().selectChanged(def);
   },
   redo() {
     const { past, def, future } = get();
     if (!future.length || get().readOnly) return;
     set({ def: future[0], future: future.slice(1), past: [...past, def], saved: false, lastKey: null });
-    get().fixSelection();
+    get().selectChanged(def);
+  },
+  /**
+   * After undo or redo: select the items the step brought back or changed (#25), e.g. the item a redo inserts again, the
+   * items an undo of a delete restores, the item an undo of a move puts back. A step that changed no item (or a table's
+   * cells, while a cell is selected) keeps the selection, without what is gone.
+   */
+  selectChanged(before) {
+    const { def, sel } = get();
+    const old = new Map();
+    walk(before, (it) => { if (it.id) old.set(it.id, it); });
+    const added = [], changed = [];
+    const ancestors = new Set(); // a changed child changes its container too (immer): the child is what changed
+    walk(def, (it, _l, _i, parent) => {
+      const o = old.get(it.id);
+      if (o === it) return;
+      (o ? changed : added).push(it);
+      for (let p = parent; p; p = findItem(def, p.id)?.parent) ancestors.add(p.id);
+    });
+    const top = (list) => list.filter(it => !list.some(p => p !== it && p.items?.includes(it))).map(it => it.id);
+    const ids = added.length ? top(added) : top(changed.filter(it => !ancestors.has(it.id)));
+    const keepCell = sel.kind === 'cell' && ids.length === 1 && ids[0] === sel.id;
+    if (ids.length && !keepCell) set({ sel: { kind: 'items', ids } });
+    else get().fixSelection();
   },
   fixSelection() {
     const { sel, def } = get();
