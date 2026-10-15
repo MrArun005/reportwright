@@ -77,3 +77,36 @@ describe('the body against the page height (#30)', () => {
     expect(kinds(check(one([tb('A', 0, 0), tb('B', 0, 670)])))).toEqual([]);
   });
 });
+
+describe('a section with another page width and the shared header or footer (#16)', () => {
+  const def = (own) => ({
+    page: A4,
+    sections: {
+      pageHeader: { height: 0, items: [] },
+      body: [
+        { name: 'Section1', items: [tb('P', 0, 0)] },
+        { name: 'Section2', page: { orientation: 'landscape' }, items: [tb('L', 0, 0)], ...own },
+      ],
+      pageFooter: { height: 20, items: [{ ...tb('Pg', 0, 0), w: 523 }] },
+    },
+  });
+  it('landscape with the shared footer: say so', () => {
+    const is = designIssues(def({}), []);
+    expect(is.find((i) => i.kind === 'shared')).toMatchObject({
+      name: 'Section2',
+      band: 'footer',
+      orient: 'landscape',
+      width: 770,
+      room: 523,
+    });
+  });
+  it('with its own footer: nothing', () => {
+    const is = designIssues(def({ pageFooter: { height: 20, items: [] } }), []);
+    expect(is.filter((i) => i.kind === 'shared')).toEqual([]);
+  });
+  it('the landscape section measures items against its own page height', () => {
+    const d = def({});
+    d.sections.body[1].items.push(tb('Low', 0, 520)); // 595 - 72 - 20 = 503 pt for the body
+    expect(designIssues(d, []).find((i) => i.kind === 'below')).toMatchObject({ name: 'Low', room: 503 });
+  });
+});

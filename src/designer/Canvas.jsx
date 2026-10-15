@@ -51,6 +51,7 @@ export function issueLine(T, i) {
   if (i.kind === 'past') return T('ux_issuePast', { name: i.name, bottom: i.bottom, room: i.room, section: i.section }) + more;
   if (i.kind === 'tall') return T('ux_issueTall', { name: i.name, height: i.height, room: i.room, section: i.section });
   if (i.kind === 'room') return T('ux_issueRoom', { name: i.name, header: i.header, footer: i.footer, room: i.room });
+  if (i.kind === 'shared') return T(`ux_issueShared_${i.band}`, { name: i.name, orient: T(`ux_${i.orient}`), width: i.width, room: i.room });
   if (i.kind === 'check') return i.text;
   return i.suggest ? T('ux_issueFieldSuggest', { name: i.name, field: i.field, suggest: i.suggest }) : T('ux_issueField', { name: i.name, field: i.field });
 }

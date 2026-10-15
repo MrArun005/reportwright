@@ -130,6 +130,13 @@ function pageIssues(def, out) {
         ? { id: f.it.id, name: f.it.name, kind: 'below', y: Math.round(f.y), room: Math.round(room), section: label, more: late.length - 1 }
         : { id: f.it.id, name: f.it.name, kind: 'past', bottom: Math.round(f.y + f.h), room: Math.round(room), section: label, more: late.length - 1 });
     }
+    // a shared page header or footer is laid out at the report's width (#16): on a wider (landscape) page it stops
+    // short of the right edge, on a narrower one it runs past it
+    if (Math.abs(pg.bodyWidth - base.bodyWidth) > 0.5) {
+      const h = !!hdr && hdr === shared('pageHeader') && (hdr.items || []).length > 0;
+      const f = !!ftr && ftr === shared('pageFooter') && (ftr.items || []).length > 0;
+      if (h || f) out.push({ id: null, name: label, kind: 'shared', band: h && f ? 'both' : h ? 'header' : 'footer', orient: pg.width > pg.height ? 'landscape' : 'portrait', width: Math.round(pg.bodyWidth), room: Math.round(base.bodyWidth) });
+    }
   });
 }
 

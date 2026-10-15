@@ -23,7 +23,7 @@ import { PartsPanel, LayersPanel } from './Reuse.jsx';
 import PivotWizard, { InstantVisuals } from './PivotWizard.jsx';
 import { t, dirOf, pickLang } from '@/i18n/index.js';
 import { Icon } from '@/viewer/icons.jsx';
-import { sectionList, findItem, bodyWidth, nudgeStep } from './store.js';
+import { sectionList, findItem, bodyWidth, nudgeStep, pageOf, secOf, bodyKeyOf } from './store.js';
 import { resolvePage } from '@/engine/units.js';
 import { readDraft, writeDraft, clearDraft, clearDrafts, mergeDraft, staleDraft } from './draft.js';
 
@@ -145,10 +145,14 @@ function StatusBar({ T, zoom, setZoom }) {
   else what = T('b2_selReport');
   let page = '';
   try {
-    const pg = resolvePage(def.page);
+    // #16: the page of the selected body section (a landscape section has its own), else the report's
+    const key = sel.kind === 'section' ? sel.section : sel.kind === 'items' ? findItem(def, sel.ids[0])?.section : sel.kind === 'cell' ? findItem(def, sel.id)?.section : null;
+    const own = key && bodyKeyOf(key) && Array.isArray(def.sections?.body) ? secOf(def, bodyKeyOf(key))?.page : null;
+    const pg = own ? pageOf(def, key) : resolvePage(def.page);
+    const size = `${own?.size || def.page?.size || ''}${pg.width > pg.height && !pg.pageless ? ` ${T('ux_landscape')}` : ''}`;
     const k = { pt: 1, mm: 25.4 / 72, cm: 2.54 / 72, in: 1 / 72 }[unit] || 1;
     const r = (v) => Math.round(v * k * (unit === 'pt' ? 1 : 10)) / (unit === 'pt' ? 1 : 10);
-    page = pg.pageless ? `${def.page?.size || 'Pageless'} · ${r(bodyWidth(def, 'body'))} ${unit}` : T('b2_pageInfo', { size: def.page?.size || '', w: r(pg.width), h: r(pg.height), unit });
+    page = pg.pageless ? `${def.page?.size || 'Pageless'} · ${r(bodyWidth(def, 'body'))} ${unit}` : T('b2_pageInfo', { size, w: r(pg.width), h: r(pg.height), unit });
   } catch { /* an unknown size: the Inspector says so */ }
   const step = (dir) => { const z = zoom === 'fit' ? 1 : zoom; const next = dir > 0 ? ZOOMS.find(x => x > z) : [...ZOOMS].reverse().find(x => x < z); if (next) setZoom(next); };
   return (

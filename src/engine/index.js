@@ -323,8 +323,13 @@ export async function render(def0, opts = {}) {
       const overflow = lc.overflow = { pending: new Map(), more: null, repeat: false, head: null };
       // each body section: laid out and paginated with its own page
       const parts = [];
+      // #16: a body section with no items and no page header or footer of its own (the empty Section1 that "Add a body
+      // section" leaves on a report with an empty body) prints no blank page; every section like that: the first prints
+      const blank = (/** @type {any} */ b, /** @type {any} */ g) => !(Array.isArray(b?.items) && b.items.length) && !g.own.h && !g.own.f;
+      const allBlank = bodies.every((b, i) => blank(b, geos[i]));
       sections: for (let bi = 0; bi < bodies.length; bi++) {
         const g = geos[bi];
+        if (!def.master && bodies.length > 1 && blank(bodies[bi], g) && (!allBlank || bi > 0)) continue;
         const blc = bi === 0 && !bodies[0].page && g.cH === contentH ? lc : { ...lc, bodyWidth: g.bodyWidth, maxUnitHeight: g.cH };
         // a section whose last overflow placeholder still has rows is laid out again, page after page
         for (let rep = 0; ; rep++) {
