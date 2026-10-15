@@ -552,7 +552,7 @@ function SortFilterEditor({ item, noSort }) {
         <Field label={T('sfDirection')}><Select value={sort?.dir || 'asc'} options={[{ value: 'asc', label: T('dsAsc') }, { value: 'desc', label: T('dsDesc') }]} onChange={v => set(t => { if (t.sort?.[0]) t.sort[0].dir = v; })} aria-label={T('sfDirection')} /></Field>
       </div>}
       {(item.filters || []).map((f, i) => (
-        <div className="rowx" key={i}>
+        <div className={`rowx${f.op === 'Between' ? ' between' : ''}`} key={i}>
           <TextInput mono value={f.expr} onChange={v => set(t => { t.filters[i].expr = v; })} aria-label={T('dsFilterField')} />
           <Select value={f.op || '='} options={OPS} onChange={v => set(t => { t.filters[i].op = v; })} aria-label={T('sfOperator')} />
           <TextInput mono value={f.value} onChange={v => set(t => { t.filters[i].value = v; })} aria-label={T('dsFilterValue')} placeholder={/^(top|bottom)/i.test(f.op || '') ? 'N' : undefined} />

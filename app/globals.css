@@ -488,7 +488,10 @@ a.cell-name:hover { color: var(--accent); }
 .nest-tag { position: absolute; right: 2px; top: -15px; font: var(--fs-2xs) var(--mono); color: var(--expr); background: var(--expr-soft); padding: 0 4px; border-radius: 3px; white-space: nowrap; pointer-events: none; }
 .it.sel > .box.nest-box { outline: 1.5px solid var(--accent) !important; }
 .group-card { border: 1px solid var(--line); border-radius: 6px; padding: 8px; display: grid; gap: 6px; background: var(--panel-2); }
-.rowx { display: grid; grid-template-columns: 1fr 70px 1fr auto; gap: 4px; align-items: center; }
+/* an item's filter: the expression on its own line, then operator, value (and the upper value of Between) and remove */
+.rowx { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 4px; align-items: center; }
+.rowx.between { grid-template-columns: 96px minmax(0, 1fr) minmax(0, 1fr) auto; }
+.rowx > :first-child { grid-column: 1 / -1; min-width: 0; }
 /* viewer extras */
 .vside { width: 240px; border-inline-end: 1px solid var(--line); background: var(--panel); overflow: auto; padding: 12px; display: grid; gap: 4px; align-content: start; }
 .vside h3 { margin: 0 0 6px; font-size: var(--fs-sm); text-transform: uppercase; font-weight: var(--fw-strong); letter-spacing: var(--track-caps); color: var(--muted); }
