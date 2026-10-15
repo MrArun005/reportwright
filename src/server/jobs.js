@@ -21,6 +21,7 @@ import { renderInPool, submit } from './pool.js';
 import { serverFetch, checkTarget } from './safeFetch.js';
 import { jsonPath } from '@/engine/data/index.js';
 import { evalValue } from '@/engine/expr/evaluate.js';
+import { fileStem } from '@/engine/filename.js';
 import { store, withLock } from './storage/index.js';
 import { blobs, removePrefix } from './blobs.js';
 import { mailOn, checkRecipients, oneLine, sendMail, maxAttachmentBytes } from './mail.js';
@@ -329,7 +330,7 @@ export function startWorker() {
 }
 
 // letters, digits and . _ @ - only, and never a leading dot, so ".." or ".x" cannot name a path outside data/outputs
-export const safeName = (s) => String(s || 'report').replace(/[^\w.@-]+/g, '-').replace(/^\.+/, '').slice(0, 120) || 'report';
+export const safeName = (s) => fileStem(s);
 
 function itemName(job, item, i) {
   if (item.name) return safeName(item.name);

@@ -12,6 +12,7 @@ import { throughSnapshot } from '@/server/snapshots.js';
 
 import { outputHeaders, rwHeaders } from '@/server/headers.js';
 import { readJson, pushedDataBytes } from '@/server/body.js';
+import { fileStem } from '@/engine/filename.js';
 
 export const runtime = 'nodejs';
 
@@ -43,7 +44,7 @@ export async function POST(req) {
     // a saved template may come from the snapshot cache (src/server/snapshots.js: off unless an admin sets a TTL)
     const r = await throughSnapshot({ def: typeof body.template === 'string' ? def : null, opt, principal }, () => { const job = { ref: typeof body.template === 'string' ? body.template : undefined, def, opt }; return streams(opt) ? streamInPool(job, { signal: req.signal, ticket }) : renderInPool(job, { signal: req.signal, ticket }); });
     await audit('report.render', { req, principal, report: typeof body.template === 'string' ? body.template : null, format: body.format || 'pdf', params: body.parameters, detail: { pages: r.pages, ms: r.ms ?? undefined, via: 'api', ...(r.snapshot !== 'off' ? { snapshot: r.snapshot } : {}), ...flags({ inline: typeof body.template !== 'string', pushedData: !!body.data, signed: !!body.sign, encrypted: !!encrypt }) } }); // the only event of a render (no api.call)
-    const name = (body.fileName || r.name || 'report').replace(/[^\w.-]+/g, '-');
+    const name = fileStem(body.fileName || r.name);
     // a stream (a data CSV, Excel or plain PDF of a report that can stream): no length, its first rows go out while the rest render
     return new Response(r.stream || r.bytes, { // the worker's buffer, moved here without a copy
       headers: {
