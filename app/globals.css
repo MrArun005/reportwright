@@ -456,6 +456,9 @@ a.cell-name:hover { color: var(--accent); }
 .cat > h5 { margin: 0; font-size: var(--fs-2xs); text-transform: uppercase; font-weight: var(--fw-strong); letter-spacing: var(--track-caps); color: var(--faint); }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+/* four number boxes in a row (page margins): no spinner and less padding, so "128.35" fits; arrow keys still step */
+.grid4.nums .input { padding: 0 4px; appearance: textfield; -moz-appearance: textfield; }
+.grid4.nums .input::-webkit-inner-spin-button, .grid4.nums .input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .expr-row { display: flex; gap: 4px; }
 .expr-row .input { flex: 1; }
 .fx { width: 26px; height: 26px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--panel-2); cursor: pointer; font: italic 600 var(--fs-sm) Georgia, serif; color: var(--expr); }

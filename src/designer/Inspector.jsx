@@ -1112,7 +1112,7 @@ function ReportProps() {
             : <Field label={T('i_orientation')}><Select value={def.page?.orientation || 'portrait'} options={[{ value: 'portrait', label: T('i_portrait') }, { value: 'landscape', label: T('i_landscape') }]} onChange={v => set(d => { d.page.orientation = v; })} /></Field>}
         </div>
         {def.page?.size === 'Pageless' && <div className="hint">{T('i_pagelessHint')}</div>}
-        <div className="grid4">
+        <div className="grid4 nums">
           {['i_top', 'i_right', 'i_bottom', 'i_left'].map((l, i) => (
             <Field key={l} label={T(l)}><NumberInput value={m[i]} step={1} onChange={v => set(d => { const mm = Array.isArray(d.page.margins) ? d.page.margins : [36, 36, 36, 36]; mm[i] = Math.max(0, v); d.page.margins = mm; }, `margin${i}`)} /></Field>
           ))}
