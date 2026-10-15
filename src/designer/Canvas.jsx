@@ -440,10 +440,25 @@ function useItemDrag(item, scale, setDrag) {
       dx = nx - item.x; dy = ny - item.y;
       setDrag({ mode: 'move', ids, dx, dy, guides, guideParent: f?.parent?.id || null });
     };
-    const up = () => {
+    // the band the drag starts in, and the page's bands: a drop over another band moves the items there (#12)
+    const fromBand = e.currentTarget.closest?.('.band[data-section]');
+    const paper = fromBand?.closest('.paper');
+    const up = (ev) => {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
       setDrag(null);
-      if (moved) moveItems(ids, dx, dy);
+      if (!moved) return;
+      let to = null;
+      if (paper && !f?.parent) {
+        const hit = [...paper.querySelectorAll('.band[data-section]')].filter((b) => {
+          const r = b.getBoundingClientRect();
+          return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+        }).pop();
+        if (hit && hit !== fromBand) {
+          const a = fromBand.getBoundingClientRect(), b = hit.getBoundingClientRect();
+          to = { section: hit.dataset.section, ox: (b.left - a.left) / scale, oy: (b.top - a.top) / scale };
+        }
+      }
+      moveItems(ids, dx, dy, { to });
     };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   };

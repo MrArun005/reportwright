@@ -363,7 +363,8 @@ export function minSize(it) {
 
 /** A drag keeps items inside their band; a keyboard nudge ({ nudge: true }) moves the whole step (E12: an item as wide
  * as the body had 0.28 pt of room on A4 with margins), never before the band's start; the Issues panel flags overflow. */
-export function moveItems(ids, dx, dy, { nudge = false } = {}) {
+export function moveItems(ids, dx, dy, { nudge = false, to = null } = {}) {
+  if (to && moveToBand(ids, dx, dy, to)) return;
   if (!dx && !dy) return;
   if (S().cells && wouldOverlap(S().def, ids, (it) => ({ x: it.x + dx, y: it.y + dy, w: it.w, h: it.h }))) { S().setUi({ saveError: CELL_TAKEN() }); setTimeout(() => S().setUi({ saveError: null }), 2500); return; }
   S().apply((d) => {
@@ -376,6 +377,36 @@ export function moveItems(ids, dx, dy, { nudge = false } = {}) {
       growToFit(d, f);
     }
   });
+}
+
+/**
+ * A drag that ends over another band moves the items into it (#12), in one undo step. to: { section, ox, oy }: the
+ * band dropped on and where its top left is from the top left of the items' band, in pt. Only items of one band, none
+ * inside a container, and never a table, matrix or subreport into a page header or footer.
+ * @returns {boolean} whether they moved (false: an ordinary move in their own band)
+ */
+function moveToBand(ids, dx, dy, to) {
+  const { def } = S();
+  const fs = ids.map(id => findItem(def, id));
+  if (!fs.length || !secOf(def, to.section) || fs.some(f => !f || f.parent || f.section !== fs[0].section)) return false;
+  if (fs[0].section === to.section) return false;
+  if (!isBodyKey(to.section) && !isContentKey(to.section) && fs.some(f => BODY_ONLY.has(f.item.type))) return false;
+  const room = bodyWidth(def, to.section);
+  const place = (it) => ({ x: round(clamp(it.x + dx - (to.ox || 0), 0, Math.max(0, room - it.w))), y: round(Math.max(0, it.y + dy - (to.oy || 0))) });
+  if (S().cells && fs.some(f => overlapsAny({ ...f.item, ...place(f.item) }, secOf(def, to.section).items || []))) { S().setUi({ saveError: CELL_TAKEN() }); setTimeout(() => S().setUi({ saveError: null }), 2500); return true; }
+  S().apply((d) => {
+    const dest = secOf(d, to.section);
+    dest.items ||= [];
+    for (const id of ids) {
+      const f = findItem(d, id);
+      if (!f) continue;
+      f.list.splice(f.index, 1);
+      Object.assign(f.item, place(f.item));
+      dest.items.push(f.item);
+      growToFit(d, { section: to.section, parent: null, item: f.item });
+    }
+  });
+  return true;
 }
 
 /** An item placed below its band (or container) grows it to the item's bottom, visibly, never more. */
