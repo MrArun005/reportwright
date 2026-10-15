@@ -424,7 +424,8 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
       if (e.key === 'Escape') { st().select({ kind: 'report' }); return; }
       if (e.key === '?') { setDialog(d => (d === 'keys' ? null : 'keys')); return; }
       const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-      if (arrows[e.key] && st().sel.kind === 'items') {
+      // Alt+arrows are the browser's (back, forward) and the outline's (move out, in): never a nudge (#15)
+      if (arrows[e.key] && !e.altKey && st().sel.kind === 'items') {
         e.preventDefault();
         const step = nudgeStep(st(), e.shiftKey);
         const [dx, dy] = arrows[e.key];
