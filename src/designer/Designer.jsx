@@ -11,6 +11,7 @@ import DataPanel, { loadSample } from './DataPanel.jsx';
 import Outline from './Outline.jsx';
 import ReportViewer from '@/viewer/ReportViewer.jsx';
 import { ITEMS } from '@/engine/items/index.js';
+import { fileStem } from '@/engine/filename.js';
 import { fontFaceCss } from '@/exporters/svg.js';
 import { allFontKeys, optionalMissing } from '@/engine/text/fonts.js';
 import { customFonts, fontsBase } from '@/viewer/engineClient.js';
@@ -488,7 +489,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
     const d = st().def;
     const url = URL.createObjectURL(new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' }));
     const a = document.createElement('a');
-    a.href = url; a.download = `${(d.name || id || 'report').replace(/[^\w-]+/g, '-')}.pw.json`;
+    a.href = url; a.download = `${fileStem(d.name || id)}.pw.json`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
