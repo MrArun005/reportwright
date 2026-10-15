@@ -1503,7 +1503,8 @@ register('subreport', {
       const tl = layoutTextLines(msg, st, item.w, lc.m);
       return { height: item.h, units: [{ top: 0, height: item.h, items: paintBox({ x: item.x, y: 0, w: item.w, h: item.h, st, tl, m: lc.m }) }] };
     };
-    if (!item.report) return placeholder('Pick a report for this subreport');
+    // no report yet: the designer draws its own hint; the output keeps the space and prints nothing
+    if (!item.report) { lc.warn(`${item.name || 'Subreport'} has no report: nothing is printed`); return { height: item.h, units: [{ top: 0, height: item.h, items: [] }] }; }
     if (!sub) return placeholder(`Subreport "${item.report}" needs a report loader`);
     if (sub.mode === 'collect') { sub.requests.set(key, { report: item.report, params }); return { height: item.h, units: [{ top: 0, height: item.h, items: [] }] }; }
     const res = sub.results.get(key);
@@ -1607,6 +1608,11 @@ register('overflow', {
 });
 
 /* ---------------------------------------------------------------- table of contents */
+/** The entries a table of contents shows from the report's list (bookmarks or headings, to its levels), each with its index in the list. @param {any} item @param {any[]} [toc] */
+export function tocEntries(item, toc) {
+  const fromHeadings = item.source === 'headings';
+  return (toc || []).map((e, i) => ({ ...e, i })).filter(e => !!e.heading === fromHeadings && (e.level || 0) < (item.levels || 3));
+}
 register('toc', {
   label: 'Table of contents',
   defaults: () => ({ type: 'toc', w: 400, h: 40, title: 'Contents', levels: 3, style: {} }),
@@ -1631,16 +1637,12 @@ register('toc', {
       units.push({ top: 0, height: tl.needed, items: ti, keepWithNext: true });
       y += tl.needed;
     }
-    const fromHeadings = item.source === 'headings';
     // each entry keeps its index in lc.toc: the render fills in the page numbers once the pages are known (engine/index.js)
-    const entries = (lc.toc || []).map((e, i) => ({ ...e, i })).filter(e => !!e.heading === fromHeadings && (e.level || 0) < (item.levels || 3));
+    const entries = tocEntries(item, lc.toc);
     const kinds = (Array.isArray(item.numbering) ? item.numbering : String(item.numbering || '').split(',')).map(k => String(k).trim()).filter(k => ['decimal', 'roman', 'alpha'].includes(k));
     const nums = kinds.length ? tocNumbers(entries, kinds) : null;
-    if (!entries.length) {
-      const tl = layoutTextLines('Entries appear here: add bookmarks to items or cells.', { ...st, fontStyle: 'italic', color: '#9ca3af' }, item.w, lc.m);
-      units.push({ top: y, height: tl.needed, items: paintBox({ x: item.x, y: 0, w: item.w, h: tl.needed, st: { ...st, fontStyle: 'italic', color: '#9ca3af' }, tl, m: lc.m }) });
-      return { height: Math.max(item.h, y + tl.needed), units };
-    }
+    // no entries (yet): the title only; the render warns once the entries are known (engine/index.js)
+    if (!entries.length) return { height: Math.max(item.h, y), units: units.length ? units : [{ top: 0, height: item.h, items: [] }] };
     const key = resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle);
     const size = Number(st.fontSize) || 9;
     const lh = size * 1.6;

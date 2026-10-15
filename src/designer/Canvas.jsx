@@ -694,6 +694,9 @@ function ItemBody({ item, scale }) {
   if (item.type === 'subreport') {
     return <div className="box" style={{ background: '#f5f3ff', alignItems: 'center', justifyContent: 'center' }}><span className="hint" style={{ color: '#6d28d9' }}>Subreport · {item.report || 'pick a report'}</span></div>;
   }
+  if (item.type === 'toc') { // the hint is the designer's only: the output prints the title and the entries
+    return <div className="box" style={{ flexDirection: 'column', alignItems: 'flex-start', padding: 4 }}><b style={{ fontSize: 12 * scale }}>{item.title || ''}</b><span className="hint">Entries appear here: add bookmarks to items or cells{item.source === 'headings' ? ' (from headings: give text boxes a heading level)' : ''}.</span></div>;
+  }
   if (item.type === 'textbox') {
     const dyn = isDynamic(item.value);
     const c = textCss([base, item.style], scale, false);
