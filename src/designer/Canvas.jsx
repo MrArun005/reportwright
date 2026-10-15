@@ -43,6 +43,7 @@ const IssueMap = createContext(new Map());
 export function issueLine(T, i) {
   if (i.kind === 'overlap') return T('ux_issueOverlap', { name: i.name, other: i.other });
   if (i.kind === 'wide') return T('ux_issueWide', { name: i.name, width: i.width, room: i.room });
+  if (i.kind === 'loose') return T('ux_issueLoose', { name: i.name, other: i.other });
   if (i.kind === 'check') return i.text;
   return i.suggest ? T('ux_issueFieldSuggest', { name: i.name, field: i.field, suggest: i.suggest }) : T('ux_issueField', { name: i.name, field: i.field });
 }

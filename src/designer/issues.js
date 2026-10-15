@@ -12,7 +12,7 @@ const THIN = new Set(['line']); // a rule across a box is meant to overlap it
  * @param {any} def the report
  * @param {{ key: string, items: any[], width: number }[]} bands every band with its items and printable width
  * @param {Record<string, { w: number }>} [extents] drawn widths of live items (a matrix grows with its data), by item id
- * @returns {{ id: string, name: string, kind: 'overlap' | 'wide' | 'field', other?: string, width?: number, room?: number, field?: string, suggest?: string | null }[]}
+ * @returns {{ id: string | null, name: string, kind: 'overlap' | 'loose' | 'wide' | 'field', other?: string, width?: number, room?: number, field?: string, suggest?: string | null }[]}
  */
 export function designIssues(def, bands, extents = {}) {
   const out = [];
@@ -27,7 +27,6 @@ export function designIssues(def, bands, extents = {}) {
     if (it.type === 'matrix') for (const k of ['rowGroups', 'columnGroups', 'values']) for (const g of it[k] || []) { check(g?.expr); check(g?.value); check(g?.label); }
   };
   const walkList = (items, room, scope) => {
-    const live = (items || []).filter(i => i && !THIN.has(i.type));
     for (const it of items || []) {
       if (!it) continue;
       const w = Math.max(it.w || 0, extents[it.id]?.w || 0);
@@ -35,14 +34,49 @@ export function designIssues(def, bands, extents = {}) {
       fieldsIn(it, it.dataSet || scope);
       if (Array.isArray(it.items)) walkList(it.items, it.w, it.dataSet || scope);
     }
-    for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
-      const a = live[i], b = live[j];
-      // one inside the other is layering on purpose (a text box on a tile, a logo on a band of colour); a partial overlap is not
-      if (overlap(a, b) && !contains(a, b) && !contains(b, a)) out.push({ id: b.id, name: b.name, kind: 'overlap', other: a.name });
+  };
+  for (const b of bands) {
+    walkList(b.items, b.width, sets[0]?.name || null);
+    overlaps(b.items, out);
+  }
+  return out;
+}
+
+/** Items that hold other items: one lying on such a box without being in it does not move or grow with it (#1a). */
+const holds = (it) => it.type === 'container' || it.type === 'list' || Array.isArray(it.items);
+
+/**
+ * Overlaps in one band, by the items' places on the page: children are compared with the items outside their box too
+ * (a container that grew over an item, a child that runs out of its box). One item fully on another is layering on
+ * purpose (a text box on a tile, a logo on a band of colour), except on a container or list it is not in (#1a).
+ * @param {any[]} items @param {any[]} out
+ */
+function overlaps(items, out) {
+  /** @type {{ it: any, x: number, y: number, w: number, h: number, chain: any[] }[]} */
+  const flat = [];
+  /** @param {any[]} list @param {number} dx @param {number} dy @param {any[]} chain @param {number} depth */
+  const go = (list, dx, dy, chain, depth) => {
+    if (depth > 64) return;
+    for (const it of list || []) {
+      if (!it || typeof it !== 'object') continue;
+      const x = dx + (Number(it.x) || 0), y = dy + (Number(it.y) || 0);
+      if (!THIN.has(it.type)) flat.push({ it, x, y, w: Number(it.w) || 0, h: Number(it.h) || 0, chain });
+      if (Array.isArray(it.items)) go(it.items, x, y, [...chain, it], depth + 1);
     }
   };
-  for (const b of bands) walkList(b.items, b.width, sets[0]?.name || null);
-  return out;
+  go(items, 0, 0, [], 0);
+  if (flat.length > 2000) return; // a huge band: the pairs would take too long for a live check
+  for (let i = 0; i < flat.length; i++) for (let j = i + 1; j < flat.length; j++) {
+    const a = flat[i], b = flat[j];
+    if (!overlap(a, b) || a.chain.includes(b.it) || b.chain.includes(a.it)) continue; // a child in its own box is fine
+    const outer = contains(a, b) ? a : contains(b, a) ? b : null;
+    if (outer) {
+      const inner = outer === a ? b : a;
+      if (holds(outer.it)) out.push({ id: inner.it.id, name: inner.it.name, kind: 'loose', other: outer.it.name });
+      continue;
+    }
+    out.push({ id: b.it.id, name: b.it.name, kind: 'overlap', other: a.it.name });
+  }
 }
 
 /**
