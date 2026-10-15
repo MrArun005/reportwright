@@ -33,7 +33,36 @@ export function pivotFor(ds, { rows = [], columns = [], values = [], width = 523
       ...(pct ? { show: v.show } : { format: agg === 'Count' ? 'N0' : (f && formatFor(f, sample, { currency })) || 'N2' }),
     };
   });
-  return { type: 'matrix', dataSet: ds.name, w: width, h: 54, ...(rows[0] ? { corner: labelOf(rows[0]) } : {}), rowGroups: rows.map(group), columnGroups: columns.map(group), values: vals, repeatHeader: true };
+  const item = { type: 'matrix', dataSet: ds.name, w: width, h: 54, ...(rows[0] ? { corner: labelOf(rows[0]) } : {}), rowGroups: rows.map(group), columnGroups: columns.map(group), values: vals, repeatHeader: true };
+  // #9: the engine draws a 110 pt row header per row group and 64 pt per column, whatever w says: with the sample
+  // rows, narrow the columns (to 40 pt) and then the row headers (to 72 pt) until it fits the page
+  const nCols = pivotColumnCount(item, sample);
+  const R = item.rowGroups.length;
+  if (nCols && R * 110 + nCols * 64 > width) {
+    const cw = Math.max(40, Math.min(64, Math.floor((width - R * 110) / nCols)));
+    const rhw = R && R * 110 + nCols * cw > width ? Math.max(72, Math.floor((width - nCols * cw) / R)) : 110;
+    if (cw !== 64) item.columnWidth = cw;
+    if (rhw !== 110) item.rowHeaderWidth = rhw;
+  }
+  item.w = Math.min(width, pivotDrawnWidth(item, sample));
+  return item;
+}
+
+/** Value columns a matrix draws for the sample rows: each column group instance (and total) once per value. */
+function pivotColumnCount(item, sample = []) {
+  const groups = item.columnGroups || [];
+  const fieldOf = (g) => /^=Fields\.(\w+)$/.exec(String(g?.expr || ''))?.[1];
+  const prefixes = (n) => new Set(sample.map((r) => groups.slice(0, n).map((g) => String(r?.[fieldOf(g)] ?? '')).join('\u0001'))).size || 1;
+  let n = groups.length ? prefixes(groups.length) : 1;
+  groups.forEach((g, i) => { if (g.total && g.total !== 'none') n += prefixes(i); });
+  return n * Math.max(1, (item.values || []).length);
+}
+
+/** The width the engine draws a matrix at with the sample rows (row headers + value columns; items/index.js). */
+export function pivotDrawnWidth(item, sample = []) {
+  const rhw = item.rowHeaderWidth || 110;
+  const head = (item.rowGroups || []).reduce((s, g) => s + (Number(g.width) || rhw), 0);
+  return head + pivotColumnCount(item, sample) * (item.columnWidth || 64);
 }
 
 /** One live thumbnail of an item with the sample data. */
@@ -139,6 +168,7 @@ export default function PivotWizard() {
         </section>
         <section className="cw-main">
           <div className="pv-zones">{zone('rows', T('pivotRows'))}{zone('columns', T('pivotColumns'))}{zone('values', T('pivotValues'))}</div>
+          {item && pivotDrawnWidth(item, rows) > width && <div className="hint" role="status" data-testid="pivot-too-wide">{T('ux_pivotTooWide', { width: Math.round(pivotDrawnWidth(item, rows)), room: width })}</div>}
           <div className="cw-thumb pv-preview" data-testid="pivot-preview">{item ? <Thumb item={item} /> : <span className="hint">{T('pivotPreviewHint')}</span>}</div>
         </section>
       </div>

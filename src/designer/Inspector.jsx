@@ -89,10 +89,14 @@ export default function Inspector() {
 }
 
 /* ---------------------------------------------------------------- shared */
-function Geo({ label, value, onChange, min }) {
+function Geo({ label, value, onChange, min, drawnOf }) {
   const unit = useDesigner(s => s.unit);
+  const T = useT();
+  // #9: a matrix draws wider than its box with its data: say so where the width is (the issues pane counts the drawn width)
+  const drawn = useDesigner(s => (drawnOf ? s.extents?.[drawnOf]?.w || 0 : 0));
+  const hint = drawn > (value ?? 0) + 0.5 ? T('ux_drawsWidth', { w: `${round(fromPt(drawn, unit) * 100) / 100} ${unit}` }) : undefined;
   return (
-    <Field label={`${label} (${unit})`}>
+    <Field label={`${label} (${unit})`} hint={hint}>
       <NumberInput value={round(fromPt(value ?? 0, unit) * 100) / 100} min={min == null ? undefined : round(fromPt(min, unit) * 100) / 100} step={unit === 'pt' ? 1 : unit === 'in' ? 0.05 : 0.5} onChange={v => onChange(round(toPt(v, unit)))} />
     </Field>
   );
@@ -266,7 +270,7 @@ function ItemProps({ item, section, openExpr }) {
         <div className="grid2">
           <Geo label="X" value={item.x} onChange={v => setGeo('x', Math.max(0, v))} />
           <Geo label="Y" value={item.y} onChange={v => setGeo('y', Math.max(0, v))} />
-          {item.type !== 'table' && <Geo label={T('i_width')} value={item.w} min={item.type === 'line' ? 0 : 1} onChange={v => setGeo('w', Math.max(0, v))} />}
+          {item.type !== 'table' && <Geo label={T('i_width')} value={item.w} drawnOf={item.id} min={item.type === 'line' ? 0 : 1} onChange={v => setGeo('w', Math.max(0, v))} />}
           {item.type !== 'table' && <Geo label={T('i_height')} value={item.h} min={item.type === 'line' ? 0 : 1} onChange={v => setGeo('h', Math.max(0, v))} />}
           {item.type === 'table' && <Field label={T('tableSize')} hint={T('tableSizeHint')}><TextInput value={`${round(item.w)} × ${round(item.h)} pt`} readOnly data-testid="table-size" /></Field>}
         </div>
