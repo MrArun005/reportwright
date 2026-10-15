@@ -250,7 +250,7 @@ export function validate(def) {
     for (const it of Array.isArray(items) ? items : []) {
       const label = it.name || it.type;
       if (!ITEMS[it.type]) { warnings.push(`Unknown item type "${it.type}"`); continue; }
-      walkItems(it, (x) => { itemRefs(x, warnings, fields, params, refErrors); if (Array.isArray(x.filters)) filterShape(x.filters, x.name || x.type, errors); });
+      walkItems(it, (x) => { itemRefs(x, warnings, fields, params, refErrors); if (Array.isArray(x.filters)) filterShape(x.filters, x.name || x.type, errors); visualIssues(x, x.name || (x === it ? label : `${label} ${x.type}`), warnings); });
       if (it.name) {
         if (names.has(it.name)) warnings.push(`Two items have the name "${it.name}"`);
         names.add(it.name);
@@ -491,6 +491,15 @@ function itemRefs(it, warnings, fields, params, exprErrors) {
 }
 
 /** fn on an item and every item inside it (containers, lists, table cells). @param {any} it @param {(x: any) => void} fn */
+/** A number written as a constant: 80, "80" or "=80"; else null (an expression is not judged). @param {any} v */
+const constNumber = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && /^=?\s*-?\d+(\.\d+)?\s*$/.test(v) ? Number(v.replace('=', '')) : null);
+/** Mistakes in an item or a cell visual that print something other than meant, or nothing. @param {any} x @param {string} who @param {string[]} out */
+function visualIssues(x, who, out) {
+  if (x.type === 'iconset') {
+    const lo = constNumber(x.lower), hi = constNumber(x.upper);
+    if (lo != null && hi != null && hi < lo) out.push(`${who}: the high threshold (${hi}) is below the low one (${lo}), so the middle icon never shows`);
+  }
+}
 function walkItems(it, fn, depth = 0) {
   if (!it || typeof it !== 'object' || depth > 64) return;
   if (it.type) fn(it);
