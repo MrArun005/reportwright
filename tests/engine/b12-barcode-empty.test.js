@@ -4,7 +4,17 @@ import { render } from '../../src/engine/index.js';
 import { validate } from '../../src/engine/schema/validate.js';
 import { fontStore, report } from '../helpers.js';
 
-const bc = (value, extra = {}) => ({ type: 'barcode', name: 'Barcode1', x: 0, y: 0, w: 160, h: 48, symbology: 'code128', value, ...extra });
+const bc = (value, extra = {}) => ({
+  type: 'barcode',
+  name: 'Barcode1',
+  x: 0,
+  y: 0,
+  w: 160,
+  h: 48,
+  symbology: 'code128',
+  value,
+  ...extra,
+});
 
 describe('barcode without a value', () => {
   it('a constant empty value: the check warns', () => {
@@ -21,10 +31,19 @@ describe('barcode without a value', () => {
   });
   it('an expression empty in some rows of a list: one warning, the other rows print', async () => {
     const list = {
-      type: 'list', name: 'L', dataSet: 'Rows', x: 0, y: 0, w: 200, h: 50,
+      type: 'list',
+      name: 'L',
+      dataSet: 'Rows',
+      x: 0,
+      y: 0,
+      w: 200,
+      h: 50,
       items: [bc('=Fields.sku', { h: 40 })],
     };
-    const m = await render(report([list], { data: { rows: [{ sku: 'A1' }, { sku: '' }, { sku: null }, { sku: 'B2' }] } }), { fontStore });
+    const m = await render(
+      report([list], { data: { rows: [{ sku: 'A1' }, { sku: '' }, { sku: null }, { sku: 'B2' }] } }),
+      { fontStore },
+    );
     const ws = m.warnings.filter((w) => w.includes('Barcode1'));
     expect(ws).toEqual(['Barcode1: the value (=Fields.sku) is empty in some rows; no barcode is printed there']);
   });

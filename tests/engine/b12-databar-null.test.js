@@ -5,10 +5,18 @@ import { fontStore, report } from '../helpers.js';
 
 const rows = [{ n: 'a', v: 10 }, { n: 'b', v: null }, { n: 'c', v: 50 }, { n: 'd' }];
 const table = (cell) => ({
-  type: 'table', name: 'T', dataSet: 'Rows', x: 0, y: 0, w: 300, h: 18, columns: [{ width: 100 }, { width: 200 }],
+  type: 'table',
+  name: 'T',
+  dataSet: 'Rows',
+  x: 0,
+  y: 0,
+  w: 300,
+  h: 18,
+  columns: [{ width: 100 }, { width: 200 }],
   detail: [{ height: 18, cells: [{ value: '=Fields.n' }, cell] }],
 });
-const shapes = (m) => m.pages[0].items.filter((i) => (i.t === 'rect' && i.x >= 100) || (i.t === 'text' && i.lines?.[0]?.x >= 100));
+const shapes = (m) =>
+  m.pages[0].items.filter((i) => (i.t === 'rect' && i.x >= 100) || (i.t === 'text' && i.lines?.[0]?.x >= 100));
 
 describe('data bar: a null value', () => {
   for (const [form, cell] of [
@@ -30,7 +38,12 @@ describe('data bar: a null value', () => {
     });
   }
   it('a data bar item outside a table with a null value draws nothing', async () => {
-    const m = await render(report([{ type: 'databar', name: 'Bar', x: 100, y: 0, w: 100, h: 18, value: '=Fields.v', dataSet: 'Rows' }], { data: { rows: [{ v: null }] } }), { fontStore });
+    const m = await render(
+      report([{ type: 'databar', name: 'Bar', x: 100, y: 0, w: 100, h: 18, value: '=Fields.v', dataSet: 'Rows' }], {
+        data: { rows: [{ v: null }] },
+      }),
+      { fontStore },
+    );
     expect(shapes(m)).toEqual([]);
   });
 });

@@ -10,7 +10,17 @@ const def = (items) => ({
   dataSets: [{ name: 'Rows', source: 'src', path: '$.rows', fields: [{ name: 'v', type: 'number' }] }],
   sections: { body: { items } },
 });
-const icon = (lower, upper) => ({ type: 'iconset', name: 'Iconset1', x: 0, y: 0, w: 18, h: 18, value: '=Fields.v', lower, upper });
+const icon = (lower, upper) => ({
+  type: 'iconset',
+  name: 'Iconset1',
+  x: 0,
+  y: 0,
+  w: 18,
+  h: 18,
+  value: '=Fields.v',
+  lower,
+  upper,
+});
 const hits = (d) => validate(d).warnings.filter((w) => w.includes('threshold'));
 
 describe('icon set thresholds', () => {
@@ -31,8 +41,20 @@ describe('icon set thresholds', () => {
   });
   it('an icon set as a table cell visual is checked as well', () => {
     const table = {
-      type: 'table', name: 'T', dataSet: 'Rows', x: 0, y: 0, w: 100, h: 18, columns: [{ width: 100 }],
-      detail: [{ height: 18, cells: [{ value: '', visual: { type: 'iconset', value: '=Fields.v', lower: '=90', upper: '=10' } }] }],
+      type: 'table',
+      name: 'T',
+      dataSet: 'Rows',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 18,
+      columns: [{ width: 100 }],
+      detail: [
+        {
+          height: 18,
+          cells: [{ value: '', visual: { type: 'iconset', value: '=Fields.v', lower: '=90', upper: '=10' } }],
+        },
+      ],
     };
     const ws = hits(def([table]));
     expect(ws).toHaveLength(1);
