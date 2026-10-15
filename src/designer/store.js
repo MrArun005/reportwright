@@ -560,25 +560,27 @@ export function duplicateSelection() {
 /* ---- clipboard: copy / paste items, also across reports (JSON on the system clipboard) ---- */
 const PASTE_OFFSET = 12;
 /** A copy goes 12 pt right and down, and 12 more while an item already sits there (an earlier copy): repeated copies
- *  cascade instead of stacking (N37). @param {any[]} list the items the copy joins @param {any} c */
-function offsetCopy(list, c) {
+ *  cascade instead of stacking (N37). keep (a cut item pasted back): its own place while nothing sits there (#14).
+ *  @param {any[]} list the items the copy joins @param {any} c @param {boolean} [keep] */
+function offsetCopy(list, c, keep = false) {
   // pasted JSON is not trusted: a coordinate that is not a finite number (1e309 parses to Infinity) starts at 0, and
   // the steps are bounded (list.length + 1 spots cannot all be taken; past 2^53, += 12 changes nothing)
   for (const k of ['x', 'y']) if (!Number.isFinite(c[k])) c[k] = 0;
+  if (keep && !list.some(i => i !== c && i.x === c.x && i.y === c.y)) return;
   for (let n = 0; n <= list.length; n++) {
     c.x += PASTE_OFFSET; c.y += PASTE_OFFSET;
     if (!list.some(i => i !== c && i.x === c.x && i.y === c.y)) return;
   }
 }
 const CLIP = 'pagewright/items@1'; // kept after the rename: copy and paste between 0.8 and 0.9 tabs
-export async function copySelection() {
+export async function copySelection({ cut = false } = {}) {
   const { sel, def } = S();
   if (sel.kind !== 'items') return 0;
   const fs = sel.ids.map(id => findItem(def, id)).filter(Boolean);
   const items = fs.map(f => f.item);
   // the band they come from (items of one band, none inside a container): a paste there cascades, elsewhere it fits (#13)
   const from = fs.length && fs.every(f => !f.parent && f.section === fs[0].section) ? fs[0].section : undefined;
-  const text = JSON.stringify({ kind: CLIP, items, from });
+  const text = JSON.stringify({ kind: CLIP, items, from, ...(cut ? { cut: true } : {}) });
   try { await navigator.clipboard.writeText(text); } catch { /* clipboard blocked: keep the in-memory copy */ }
   memClip = text;
   return items.length;
@@ -587,7 +589,7 @@ let memClip = null;
 /** Ctrl+X (#14): copy the selected items, then delete them (one undo step). @returns {Promise<number>} how many */
 export function cutSelection() {
   if (S().sel.kind !== 'items') return Promise.resolve(0);
-  const n = copySelection(); // the in-memory copy is made before the items go
+  const n = copySelection({ cut: true }); // the in-memory copy is made before the items go
   deleteSelection();
   return n;
 }
@@ -611,7 +613,7 @@ export function pasteItems(section = 'body', text = null) {
     // top of its free space, moved up as far as needed to fit, keeping their places relative to each other (#13)
     const fits = copies.every(c => c.y + PASTE_OFFSET + hOf(c) <= (band.height || 0));
     if (data.from === section || (data.from === undefined && fits)) {
-      for (const c of copies) { offsetCopy(band.items, c); band.items.push(c); }
+      for (const c of copies) { offsetCopy(band.items, c, data.cut === true); band.items.push(c); }
     } else if (copies.length) {
       const top = Math.min(...copies.map(c => c.y)), tall = Math.max(...copies.map(c => c.y + hOf(c))) - top;
       const y0 = Math.max(0, Math.min(belowItems(band.items), (band.height || 0) - tall));
