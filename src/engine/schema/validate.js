@@ -490,7 +490,6 @@ function itemRefs(it, warnings, fields, params, exprErrors) {
   scan(it, 0);
 }
 
-/** fn on an item and every item inside it (containers, lists, table cells). @param {any} it @param {(x: any) => void} fn */
 /** A number written as a constant: 80, "80" or "=80"; else null (an expression is not judged). @param {any} v */
 const constNumber = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && /^=?\s*-?\d+(\.\d+)?\s*$/.test(v) ? Number(v.replace('=', '')) : null);
 /** Mistakes in an item or a cell visual that print something other than meant, or nothing. @param {any} x @param {string} who @param {string[]} out */
@@ -501,6 +500,7 @@ function visualIssues(x, who, out) {
     if (lo != null && hi != null && hi < lo) out.push(`${who}: the high threshold (${hi}) is below the low one (${lo}), so the middle icon never shows`);
   }
 }
+/** fn on an item and every item inside it (containers, lists, table cells). @param {any} it @param {(x: any) => void} fn */
 function walkItems(it, fn, depth = 0) {
   if (!it || typeof it !== 'object' || depth > 64) return;
   if (it.type) fn(it);
