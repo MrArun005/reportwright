@@ -232,6 +232,13 @@ export function paginate(units, tables, pageH, warn, stats) {
           }
           if (bottom >= 0) break;
         }
+        // N1: nothing to place before the limit (a gap taller than the page): no page of the gap alone and no false
+        // warning; the next page starts at the next unit
+        if (bottom < 0 && !cutsUnit(limit)) {
+          let g = firstAtOrAfter(top - EPS);
+          while (g < units.length && placed.has(units[g])) g++;
+          if (g < units.length && units[g].top >= limit - EPS) { top = units[g].top; continue; }
+        }
         if (bottom < 0) {
           bottom = limit;
           cut = true;

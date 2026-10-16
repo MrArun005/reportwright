@@ -43,6 +43,15 @@ const IssueMap = createContext(new Map());
 export function issueLine(T, i) {
   if (i.kind === 'overlap') return T('ux_issueOverlap', { name: i.name, other: i.other });
   if (i.kind === 'wide') return T('ux_issueWide', { name: i.name, width: i.width, room: i.room });
+  if (i.kind === 'loose') return T('ux_issueLoose', { name: i.name, other: i.other });
+  // a report with one body section: issues.js names it null, said here in the UI language
+  if (i.section === null || (i.kind === 'room' && i.name === null)) i = { ...i, section: i.section ?? T('ux_theBody'), name: i.name ?? T('ux_theBody') };
+  const more = i.more ? T('ux_issueMore', { n: i.more }) : '';
+  if (i.kind === 'below') return T('ux_issueBelow', { name: i.name, y: i.y, room: i.room, section: i.section }) + more;
+  if (i.kind === 'past') return T('ux_issuePast', { name: i.name, bottom: i.bottom, room: i.room, section: i.section }) + more;
+  if (i.kind === 'tall') return T('ux_issueTall', { name: i.name, height: i.height, room: i.room, section: i.section });
+  if (i.kind === 'room') return T('ux_issueRoom', { name: i.name, header: i.header, footer: i.footer, room: i.room });
+  if (i.kind === 'shared') return T(`ux_issueShared_${i.band}`, { name: i.name, orient: T(`ux_${i.orient}`), width: i.width, room: i.room });
   if (i.kind === 'check') return i.text;
   return i.suggest ? T('ux_issueFieldSuggest', { name: i.name, field: i.field, suggest: i.suggest }) : T('ux_issueField', { name: i.name, field: i.field });
 }
@@ -440,10 +449,25 @@ function useItemDrag(item, scale, setDrag) {
       dx = nx - item.x; dy = ny - item.y;
       setDrag({ mode: 'move', ids, dx, dy, guides, guideParent: f?.parent?.id || null });
     };
-    const up = () => {
+    // the band the drag starts in, and the page's bands: a drop over another band moves the items there (#12)
+    const fromBand = e.currentTarget.closest?.('.band[data-section]');
+    const paper = fromBand?.closest('.paper');
+    const up = (ev) => {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
       setDrag(null);
-      if (moved) moveItems(ids, dx, dy);
+      if (!moved) return;
+      let to = null;
+      if (paper && !f?.parent) {
+        const hit = [...paper.querySelectorAll('.band[data-section]')].filter((b) => {
+          const r = b.getBoundingClientRect();
+          return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+        }).pop();
+        if (hit && hit !== fromBand) {
+          const a = fromBand.getBoundingClientRect(), b = hit.getBoundingClientRect();
+          to = { section: hit.dataset.section, ox: (b.left - a.left) / scale, oy: (b.top - a.top) / scale };
+        }
+      }
+      moveItems(ids, dx, dy, { to });
     };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   };
@@ -595,7 +619,8 @@ export async function paintItemSvg(shape, def, sample, api = activeStore()) { //
   await loadModelFonts({ pages: [{ items }] });
   // the drawn width: a matrix grows with its data past its box (the issues pane compares it with the page)
   const w = items.reduce((m, i) => { const r = (Number(i.x) || 0) + (Number(i.w) || 0); return Number.isFinite(r) && r > m ? r : m; }, shape.w); // no spread: a 100k-row table has millions of items
-  return { html: pageToSvg({ items }, shape.w, h, { background: false }), h, w };
+  // drawn at that width: a matrix wider than its box is not cut off (the pivot wizard's preview scales it to fit)
+  return { html: pageToSvg({ items }, w, h, { background: false }), h, w };
 }
 
 /** Draw chart-like items with the real engine and the sample data, so the design looks like the output. */
@@ -623,7 +648,7 @@ function LivePreview({ item, scale }) {
   }, [key, sample, def.styles, def.parameters]);
   if (!svg) return <div className="box"><span className="hint">{ITEMS[item.type].label}</span></div>;
   if (svg.error) return <div className="box"><span className="err">{svg.error}</span></div>;
-  return <div className="box live" style={{ overflow: 'visible' }}><SvgHtml as="div" style={{ width: item.w * scale, height: svg.h * scale }} html={svg.html} /></div>;
+  return <div className="box live" style={{ overflow: 'visible' }}><SvgHtml as="div" style={{ width: (svg.w || item.w) * scale, height: svg.h * scale }} html={svg.html} /></div>;
 }
 
 /** A linked report part, drawn by the engine from its library with this instance's property values. */
@@ -644,7 +669,7 @@ function PartPreview({ item, scale }) {
   }, [key, sample]); // eslint-disable-line react-hooks/exhaustive-deps
   const tag = <span className="nest-tag">{ITEMS.part.label} · {p?.label || item.part}</span>;
   if (!src || !svg || svg.error) return <div className="box reuse-box"><span className={svg?.error ? 'err' : 'hint'}>{svg?.error || `${item.library} / ${item.part}`}</span>{tag}</div>;
-  return <div className="box live reuse-part" style={{ overflow: 'visible' }}><SvgHtml as="div" style={{ width: src.w * scale, height: svg.h * scale }} html={svg.html} />{tag}</div>;
+  return <div className="box live reuse-part" style={{ overflow: 'visible' }}><SvgHtml as="div" style={{ width: (svg.w || src.w) * scale, height: svg.h * scale }} html={svg.html} />{tag}</div>;
 }
 
 /**
@@ -669,6 +694,9 @@ function ItemBody({ item, scale }) {
   }
   if (item.type === 'subreport') {
     return <div className="box" style={{ background: '#f5f3ff', alignItems: 'center', justifyContent: 'center' }}><span className="hint" style={{ color: '#6d28d9' }}>Subreport · {item.report || 'pick a report'}</span></div>;
+  }
+  if (item.type === 'toc') { // the hint is the designer's only: the output prints the title and the entries
+    return <div className="box" style={{ flexDirection: 'column', alignItems: 'flex-start', padding: 4 }}><b style={{ fontSize: 12 * scale }}>{item.title || ''}</b><span className="hint">Entries appear here: add bookmarks to items or cells{item.source === 'headings' ? ' (from headings: give text boxes a heading level)' : ''}.</span></div>;
   }
   if (item.type === 'textbox') {
     const dyn = isDynamic(item.value);

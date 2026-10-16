@@ -1,6 +1,6 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
-import ExprCode from './ExprCode.jsx';
+import ExprCode, { GLOBALS } from './ExprCode.jsx';
 import { Dialog } from './ui.jsx';
 import { useDesigner } from './store.js';
 import { fieldIssues, fieldNames } from './fieldCheck.js';
@@ -8,7 +8,6 @@ import { issueText } from './ui.jsx';
 import { t } from '@/i18n/index.js';
 import { checkValue, evalValue, toText, FUNCTION_NAMES, functionTable } from '@/engine/expr/evaluate.js';
 
-const GLOBALS = ['PageNumber', 'TotalPages', 'ExecutionTime', 'ReportName'];
 const SNIPPETS = {
   Sum: 'Sum(Fields.x)', Avg: 'Avg(Fields.x)', Count: 'Count(Fields.x)', CountDistinct: 'CountDistinct(Fields.x)', CountRows: 'CountRows()',
   Min: 'Min(Fields.x)', Max: 'Max(Fields.x)', First: 'First(Fields.x)', Last: 'Last(Fields.x)', RunningValue: 'RunningValue(Fields.x, "Sum")', RowNumber: 'RowNumber()', Rank: 'Rank(Fields.x, "DataSet")',
@@ -55,7 +54,7 @@ export default function ExpressionEditor({ value, dataSet, onSave, onClose, titl
           <h6>Parameters</h6>
           {(def.parameters || []).map(p => <button key={p.name} onClick={() => insert(`Parameters.${p.name}`)}>{p.name}</button>)}
           <h6>Globals</h6>
-          {GLOBALS.map(g => <button key={g} onClick={() => insert(`Globals.${g}`)}>{g}</button>)}
+          {GLOBALS.map(([g, info]) => <button key={g} title={info} onClick={() => insert(`Globals.${g}`)}>{g}</button>)}
           <h6>Functions</h6>
           {FUNCTION_NAMES.map(f => <button key={f} onClick={() => insert(SNIPPETS[f] || `${f}()`)}>{f}</button>)}
         </div>

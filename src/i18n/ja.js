@@ -93,7 +93,7 @@ export default {
   exporting: 'エクスポート中…', viewReport: 'レポートを表示', didNotRun: 'レポートを実行できませんでした。', fontsDidNotLoad: '一部のフォントを読み込めませんでした（{fonts}）。代替フォントで表示しています。フォントのフォルダが fontsUrl で配信されているか確認してください。', true: 'はい', false: 'いいえ',
   commaSeparated: '値をカンマで区切って入力',
   selectAll: 'すべて選択', nullValue: 'Null（値なし）',
-  pagesRows: '{pages} ページ · {rows} 行 · {ms} ms', warnings: '警告 {n} 件',
+  pagesRows: '{pages} · {rows} · {ms} ms', warnings: '警告 {n} 件',
   back: '戻る', drillDepth: 'ドリルレベル {n}', liveHint: '選択するとすぐに反映されます。',
   print: '印刷', printing: '準備中…', fullScreen: '全画面表示', exitFullScreen: '全画面表示を終了',
   viewMode: '表示モード', single: '単一ページ', continuous: '連続', galley: 'ゲラ表示',

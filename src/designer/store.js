@@ -174,13 +174,36 @@ export const newDesignerStore = () => createStore((set, get) => ({
     const { past, def, future } = get();
     if (!past.length || get().readOnly) return;
     set({ def: past[past.length - 1], past: past.slice(0, -1), future: [def, ...future].slice(0, 200), saved: false, lastKey: null });
-    get().fixSelection();
+    get().selectChanged(def);
   },
   redo() {
     const { past, def, future } = get();
     if (!future.length || get().readOnly) return;
     set({ def: future[0], future: future.slice(1), past: [...past, def], saved: false, lastKey: null });
-    get().fixSelection();
+    get().selectChanged(def);
+  },
+  /**
+   * After undo or redo: select the items the step brought back or changed (#25), e.g. the item a redo inserts again, the
+   * items an undo of a delete restores, the item an undo of a move puts back. A step that changed no item (or a table's
+   * cells, while a cell is selected) keeps the selection, without what is gone.
+   */
+  selectChanged(before) {
+    const { def, sel } = get();
+    const old = new Map();
+    walk(before, (it) => { if (it.id) old.set(it.id, it); });
+    const added = [], changed = [];
+    const ancestors = new Set(); // a changed child changes its container too (immer): the child is what changed
+    walk(def, (it, _l, _i, parent) => {
+      const o = old.get(it.id);
+      if (o === it) return;
+      (o ? changed : added).push(it);
+      for (let p = parent; p; p = findItem(def, p.id)?.parent) ancestors.add(p.id);
+    });
+    const top = (list) => list.filter(it => !list.some(p => p !== it && p.items?.includes(it))).map(it => it.id);
+    const ids = added.length ? top(added) : top(changed.filter(it => !ancestors.has(it.id)));
+    const keepCell = sel.kind === 'cell' && ids.length === 1 && ids[0] === sel.id;
+    if (ids.length && !keepCell) set({ sel: { kind: 'items', ids } });
+    else get().fixSelection();
   },
   fixSelection() {
     const { sel, def } = get();
@@ -295,6 +318,8 @@ export function addItem(type, section, x, y, extra = {}, parentId = null) {
     if (parent) {
       parent.items.push(it);
       if (it.y + it.h > parent.h) parent.h = Math.ceil(it.y + it.h);
+      // the container grew: its own container and its band grow with it, not over the next band (#1b)
+      for (let pf = findItem(d, parent.id); pf; pf = pf.parent ? findItem(d, pf.parent.id) : null) growToFit(d, pf);
     } else {
       const sec = secOf(d, section);
       sec.items.push(it);
@@ -305,15 +330,33 @@ export function addItem(type, section, x, y, extra = {}, parentId = null) {
   return id;
 }
 
+/** The band a selection is in: the selected band, the band of the (first) selected item or cell, else the body. */
+export function selectedBand(def, sel) {
+  if (sel?.kind === 'section' && secOf(def, sel.section)) return sel.section;
+  const id = sel?.kind === 'items' ? sel.ids?.[0] : sel?.kind === 'cell' ? sel.id : null;
+  return (id && findItem(def, id)?.section) || 'body';
+}
+/** Items that only go in a body section (or a content report's placeholder), never in a page header or footer. */
+export const BODY_ONLY = new Set(['table', 'matrix', 'subreport']);
+/** The y below a list of items (8 pt gap, on a 4 pt step); 0 for none. */
+const belowItems = (items) => (items.length ? Math.ceil((items.reduce((m, i) => Math.max(m, i.y + i.h), -Infinity) + 8) / 4) * 4 : 0);
 /**
- * Where the toolbox's Insert puts a new item: inside the selected list or container (below its items), else the body
- * below everything. @returns {{ section: string, parentId: string|null, y: number }}
+ * Where the toolbox's Insert puts a new item (#12): inside the selected list or container (below its items); else in
+ * the selected band, or the band (or container) of the selected item, below its items; nothing selected: the body.
+ * A table, matrix or subreport for a page header or footer goes to the body. `type` is the item to insert.
+ * @returns {{ section: string, parentId: string|null, y: number }}
  */
-export function insertSpot(def, sel) {
-  const below = (items) => (items.length ? Math.ceil((Math.max(...items.map(i => i.y + i.h)) + 8) / 4) * 4 : 0);
-  const f = sel?.kind === 'items' && sel.ids?.length === 1 ? findItem(def, sel.ids[0]) : null;
-  if (f && Array.isArray(f.item.items)) return { section: f.section, parentId: f.item.id, y: f.item.items.length ? below(f.item.items) : 0 };
-  return { section: 'body', parentId: null, y: below(secOf(def, 'body').items) };
+export function insertSpot(def, sel, type = null) {
+  const id = sel?.kind === 'items' ? sel.ids?.[0] : sel?.kind === 'cell' ? sel.id : null;
+  const f = id ? findItem(def, id) : null;
+  const one = sel?.kind === 'items' && sel.ids?.length === 1;
+  let at = null;
+  if (f && one && Array.isArray(f.item.items)) at = { section: f.section, parentId: f.item.id, y: belowItems(f.item.items) };
+  else if (f?.parent) at = { section: f.section, parentId: f.parent.id, y: belowItems(f.parent.items) };
+  else if (f) at = { section: f.section, parentId: null, y: belowItems(secOf(def, f.section)?.items || []) };
+  else if (sel?.kind === 'section' && secOf(def, sel.section)) at = { section: sel.section, parentId: null, y: belowItems(secOf(def, sel.section).items || []) };
+  if (at && type && BODY_ONLY.has(type) && !isBodyKey(at.section) && !isContentKey(at.section)) at = null;
+  return at || { section: 'body', parentId: null, y: belowItems(secOf(def, 'body').items) };
 }
 
 /** Insert from the toolbox or a drop. Charts open the chart gallery first (when the report has data), other items go straight in. */
@@ -349,7 +392,8 @@ export function minSize(it) {
 
 /** A drag keeps items inside their band; a keyboard nudge ({ nudge: true }) moves the whole step (E12: an item as wide
  * as the body had 0.28 pt of room on A4 with margins), never before the band's start; the Issues panel flags overflow. */
-export function moveItems(ids, dx, dy, { nudge = false } = {}) {
+export function moveItems(ids, dx, dy, { nudge = false, to = null } = {}) {
+  if (to && moveToBand(ids, dx, dy, to)) return;
   if (!dx && !dy) return;
   if (S().cells && wouldOverlap(S().def, ids, (it) => ({ x: it.x + dx, y: it.y + dy, w: it.w, h: it.h }))) { S().setUi({ saveError: CELL_TAKEN() }); setTimeout(() => S().setUi({ saveError: null }), 2500); return; }
   S().apply((d) => {
@@ -362,6 +406,40 @@ export function moveItems(ids, dx, dy, { nudge = false } = {}) {
       growToFit(d, f);
     }
   });
+}
+
+/**
+ * A drag that ends over another band moves the items into it (#12), in one undo step. to: { section, ox, oy }: the
+ * band dropped on and where its top left is from the top left of the items' band, in pt. Only items of one band, none
+ * inside a container, and never a table, matrix or subreport into a page header or footer.
+ * @returns {boolean} whether they moved (false: an ordinary move in their own band)
+ */
+function moveToBand(ids, dx, dy, to) {
+  const { def } = S();
+  const fs = ids.map(id => findItem(def, id));
+  if (!fs.length || !secOf(def, to.section) || fs.some(f => !f || f.parent || f.section !== fs[0].section)) return false;
+  if (fs[0].section === to.section) return false;
+  if (!isBodyKey(to.section) && !isContentKey(to.section) && fs.some(f => BODY_ONLY.has(f.item.type))) return false;
+  const room = bodyWidth(def, to.section);
+  // the bands are not a whole number of grid steps apart: the y in the new band snaps again (to the grid, or to cells)
+  const { snap, grid, cells, cellSize } = S();
+  const step = cells ? cellSize : snap ? grid : 0;
+  const snapY = (v) => (step ? Math.round(v / step) * step : v);
+  const place = (it) => ({ x: round(clamp(it.x + dx - (to.ox || 0), 0, Math.max(0, room - it.w))), y: round(Math.max(0, snapY(it.y + dy - (to.oy || 0)))) });
+  if (S().cells && fs.some(f => overlapsAny({ ...f.item, ...place(f.item) }, secOf(def, to.section).items || []))) { S().setUi({ saveError: CELL_TAKEN() }); setTimeout(() => S().setUi({ saveError: null }), 2500); return true; }
+  S().apply((d) => {
+    const dest = secOf(d, to.section);
+    dest.items ||= [];
+    for (const id of ids) {
+      const f = findItem(d, id);
+      if (!f) continue;
+      f.list.splice(f.index, 1);
+      Object.assign(f.item, place(f.item));
+      dest.items.push(f.item);
+      growToFit(d, { section: to.section, parent: null, item: f.item });
+    }
+  });
+  return true;
 }
 
 /** An item placed below its band (or container) grows it to the item's bottom, visibly, never more. */
@@ -445,6 +523,14 @@ export function deleteSelection() {
   S().select({ kind: 'report' });
 }
 
+/** Ctrl+A (#6): select every item of the selected band, or of the selected item's band; nothing selected: the body. */
+export function selectAllItems() {
+  const { def, sel } = S();
+  const ids = (secOf(def, selectedBand(def, sel))?.items || []).map(i => i.id);
+  if (ids.length) S().select({ kind: 'items', ids });
+  return ids.length;
+}
+
 export function cloneWithIds(it, used) {
   const c = JSON.parse(JSON.stringify(it));
   const fix = (x) => { x.id = rid(); x.name = uniqueName(used, String(x.name || 'Item').replace(/\d+$/, '')); (x.items || []).forEach(fix); };
@@ -474,27 +560,39 @@ export function duplicateSelection() {
 /* ---- clipboard: copy / paste items, also across reports (JSON on the system clipboard) ---- */
 const PASTE_OFFSET = 12;
 /** A copy goes 12 pt right and down, and 12 more while an item already sits there (an earlier copy): repeated copies
- *  cascade instead of stacking (N37). @param {any[]} list the items the copy joins @param {any} c */
-function offsetCopy(list, c) {
+ *  cascade instead of stacking (N37). keep (a cut item pasted back): its own place while nothing sits there (#14).
+ *  @param {any[]} list the items the copy joins @param {any} c @param {boolean} [keep] */
+function offsetCopy(list, c, keep = false) {
   // pasted JSON is not trusted: a coordinate that is not a finite number (1e309 parses to Infinity) starts at 0, and
   // the steps are bounded (list.length + 1 spots cannot all be taken; past 2^53, += 12 changes nothing)
   for (const k of ['x', 'y']) if (!Number.isFinite(c[k])) c[k] = 0;
+  if (keep && !list.some(i => i !== c && i.x === c.x && i.y === c.y)) return;
   for (let n = 0; n <= list.length; n++) {
     c.x += PASTE_OFFSET; c.y += PASTE_OFFSET;
     if (!list.some(i => i !== c && i.x === c.x && i.y === c.y)) return;
   }
 }
 const CLIP = 'pagewright/items@1'; // kept after the rename: copy and paste between 0.8 and 0.9 tabs
-export async function copySelection() {
+export async function copySelection({ cut = false } = {}) {
   const { sel, def } = S();
   if (sel.kind !== 'items') return 0;
-  const items = sel.ids.map(id => findItem(def, id)?.item).filter(Boolean);
-  const text = JSON.stringify({ kind: CLIP, items });
+  const fs = sel.ids.map(id => findItem(def, id)).filter(Boolean);
+  const items = fs.map(f => f.item);
+  // the band they come from (items of one band, none inside a container): a paste there cascades, elsewhere it fits (#13)
+  const from = fs.length && fs.every(f => !f.parent && f.section === fs[0].section) ? fs[0].section : undefined;
+  const text = JSON.stringify({ kind: CLIP, items, from, ...(cut ? { cut: true } : {}) });
+  memClip = text; // before the await: a paste (or cut's delete) right after sees this copy
   try { await navigator.clipboard.writeText(text); } catch { /* clipboard blocked: keep the in-memory copy */ }
-  memClip = text;
   return items.length;
 }
 let memClip = null;
+/** Ctrl+X (#14): copy the selected items, then delete them (one undo step). @returns {Promise<number>} how many */
+export function cutSelection() {
+  if (S().sel.kind !== 'items') return Promise.resolve(0);
+  const n = copySelection({ cut: true }); // sets the in-memory copy synchronously, before the items go
+  deleteSelection();
+  return n;
+}
 const clipOf = (text) => { try { const d = JSON.parse(text); return d?.kind === CLIP && Array.isArray(d.items) ? d : null; } catch { return null; } };
 /**
  * Paste items: from the text of a paste event (e.clipboardData: no permission prompt, N36), else the copy made in this
@@ -504,17 +602,27 @@ export function pasteItems(section = 'body', text = null) {
   const st = active; // the designer pasted into
   const data = clipOf(text) || clipOf(memClip);
   if (!data) return 0;
+  // a table, matrix or subreport goes to the body when the band cannot hold it, as Insert does
+  if (!isBodyKey(section) && !isContentKey(section) && data.items.some(it => BODY_ONLY.has(it?.type))) section = 'body';
   const ids = [];
   st.getState().apply((d) => {
     const used = allNames(d);
-    for (const it of data.items) {
-      const c = cloneWithIds(it, used);
-      if (c.type === 'table' && !isBodyKey(section)) continue;
-      offsetCopy(secOf(d, section).items, c);
-      secOf(d, section).items.push(c);
-      growToFit(d, { section, parent: null, item: c });
-      ids.push(c.id);
+    const band = secOf(d, section);
+    const copies = data.items.map(it => cloneWithIds(it, used));
+    for (const c of copies) for (const k of ['x', 'y']) if (!Number.isFinite(c[k])) c[k] = 0; // pasted JSON is not trusted
+    const hOf = (c) => (Number.isFinite(c.h) ? c.h : 0), wOf = (c) => (Number.isFinite(c.w) ? c.w : 0);
+    // the same band: 12 pt right and down (N37). Another band (or one not known, where the copies would not fit): at the
+    // top of its free space, moved up as far as needed to fit, keeping their places relative to each other (#13)
+    const fits = copies.every(c => c.y + PASTE_OFFSET + hOf(c) <= (band.height || 0));
+    if (data.from === section || (data.from === undefined && fits)) {
+      for (const c of copies) { offsetCopy(band.items, c, data.cut === true); band.items.push(c); }
+    } else if (copies.length) {
+      const top = copies.reduce((m, c) => Math.min(m, c.y), Infinity), tall = copies.reduce((m, c) => Math.max(m, c.y + hOf(c)), -Infinity) - top;
+      const y0 = Math.max(0, Math.min(belowItems(band.items), (band.height || 0) - tall));
+      const room = bodyWidth(d, section);
+      for (const c of copies) { c.y = round(y0 + c.y - top); c.x = round(clamp(c.x, 0, Math.max(0, room - wOf(c)))); band.items.push(c); }
     }
+    for (const c of copies) { growToFit(d, { section, parent: null, item: c }); ids.push(c.id); }
   });
   if (ids.length) st.getState().select({ kind: 'items', ids });
   return ids.length;

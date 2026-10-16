@@ -224,9 +224,10 @@ export default function ChartWizard() {
             <Field label={tr('showAtMost')}><Select value={String(c.top || 0)} options={[{ value: '0', label: tr('allCats') }, ...[5, 8, 10, 15, 20].map(n => ({ value: String(n), label: tr('firstN', { n }) })), ...(typeof c.top === 'string' && c.top ? [{ value: c.top, label: c.top }] : [])]} onChange={v => set({ top: /^=/.test(v || '') ? v : Number(v) || 0 })} /></Field>
             <Field label={tr('format')}><Select value={c.format} options={[{ value: 'N0', label: '1,234' }, { value: 'N2', label: '1,234.56' }, { value: 'C0', label: tr('currency') }, { value: 'P1', label: tr('percent') }]} onChange={v => set({ format: v })} /></Field>
           </div>
+          <Field label={tr('title')}><input className="input" value={c.title} onChange={e => set({ title: e.target.value })} placeholder={tr('optional')} /></Field>
+          {/* what comes and goes with the data picked stays under the fields, so none of them moves */}
           {monthish && <Check label={t(lang, 'ux_monthNames')} checked={c.monthNames !== false} onChange={v => set({ monthNames: v })} />}
           {compact && <div className="hint" data-testid="cw-compact">{t(lang, 'ux_compactAxis')}</div>}
-          <Field label={tr('title')}><input className="input" value={c.title} onChange={e => set({ title: e.target.value })} placeholder={tr('optional')} /></Field>
           {c.custom && <div className="hint">{tr('custom')}</div>}
         </section>
 

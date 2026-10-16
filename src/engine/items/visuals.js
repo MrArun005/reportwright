@@ -155,7 +155,9 @@ export function paintVisual(v, box, ctx, lc, base, who = 'Visual', opt = {}) {
     }
     return out;
   }
-  const val = num(v.value, ctx, lc, who) ?? 0;
+  const raw = num(v.value, ctx, lc, who);
+  if (raw == null && v.type === 'databar') return out; // no value: no bar and no "0" (a 0 is drawn)
+  const val = raw ?? 0;
   const range = columnRange(v.value, ctx, lc, who);
   const absMax = range ? Math.max(Math.abs(range.lo), Math.abs(range.hi)) : 0;
   // no max: the largest value in the cell's column (the region's rows; a group cell, its sibling groups'), so the

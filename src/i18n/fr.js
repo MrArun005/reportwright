@@ -93,7 +93,7 @@ export default {
   exporting: 'Exportation…', viewReport: 'Afficher le rapport', didNotRun: "Le rapport ne s'est pas exécuté.", fontsDidNotLoad: "Certaines polices n'ont pas été chargées ({fonts}). Le texte utilise une police de secours. Vérifiez que le dossier des polices est servi à fontsUrl.", true: 'Vrai', false: 'Faux',
   commaSeparated: 'Valeurs séparées par des virgules',
   selectAll: 'Tout sélectionner', nullValue: 'Nul (aucune valeur)',
-  pagesRows: '{pages} pages · {rows} lignes · {ms} ms', warnings: '{n} avertissement(s)',
+  pagesRows: '{pages} · {rows} · {ms} ms', warnings: '{n} avertissement(s)',
   back: 'Retour', drillDepth: 'Niveau d’exploration {n}', liveHint: 'Les modifications s’appliquent dès que vous choisissez.',
   print: 'Imprimer', printing: 'Préparation…', fullScreen: 'Plein écran', exitFullScreen: 'Quitter le plein écran',
   viewMode: 'Mode d’affichage', single: 'Page unique', continuous: 'Continu', galley: 'Placard',

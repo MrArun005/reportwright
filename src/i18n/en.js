@@ -93,7 +93,7 @@ export default {
   exporting: 'Exporting…', viewReport: 'View report', didNotRun: 'The report did not run.', fontsDidNotLoad: 'Some fonts did not load ({fonts}). Text is drawn in a fallback font. Check that the fonts folder is served at fontsUrl.', true: 'True', false: 'False',
   commaSeparated: 'Values, separated by commas',
   selectAll: 'Select all', nullValue: 'Null (no value)',
-  pagesRows: '{pages} pages · {rows} rows · {ms} ms', warnings: '{n} warning(s)',
+  pagesRows: '{pages} · {rows} · {ms} ms', warnings: '{n} warning(s)',
   back: 'Back', drillDepth: 'Drill level {n}', liveHint: 'Changes apply as you pick them.',
   print: 'Print', printing: 'Preparing…', fullScreen: 'Full screen', exitFullScreen: 'Exit full screen',
   viewMode: 'View mode', single: 'Single page', continuous: 'Continuous', galley: 'Galley',

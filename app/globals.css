@@ -387,15 +387,20 @@ a.cell-name:hover { color: var(--accent); }
 .trow:hover .act, .trow:focus-within .act { opacity: 1; }
 .outline-row.sel { background: var(--accent-soft); }
 .outline-row .linklike.nm, .outline-band { text-decoration: none; color: var(--ink); text-align: start; }
-/* a long name wraps inside the panel's width (no cut-off text); the type and the buttons keep their size */
-/* (the type and the buttons, together, go under a name too long to share the line) */
-.outline-row { flex-wrap: wrap; }
-.outline-row .linklike.nm { flex: 1 1 auto; white-space: normal; overflow-wrap: anywhere; }
-.outline-meta { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-inline-start: auto; }
+/* one line per item: a long name ends in "…" (its title shows it whole) and keeps at least 80px; the type label gives
+   way first, whole (it wraps out of sight after an empty first flex item, never "Co…").
+   The ↑↓⇱ buttons sit over the row's end, inside the panel, shown on hover, focus and the selected row. */
+.outline-row { position: relative; cursor: pointer; }
+.outline-row .linklike.nm { flex: 1 1 auto; min-width: min(80px, 100%); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.outline-meta { display: flex; flex-wrap: wrap; align-items: center; flex: 0 1000 auto; min-width: 0; height: 18px; overflow: hidden; margin-inline-start: auto; }
+.outline-meta::before { content: ''; width: 0; height: 18px; }
+.outline-meta .ty { white-space: nowrap; line-height: 18px; }
+.outline-meta .act { position: absolute; inset-inline-end: 2px; top: 50%; transform: translateY(-50%); padding-inline-start: 6px; border-radius: 4px; background: var(--panel-2); opacity: 0; }
+.outline-row.sel .act { background: var(--accent-soft); }
 .outline-meta .btn.icon { width: 22px; }
 .outline-row.sel .linklike.nm, .outline-band.sel { color: var(--accent); }
 .outline-row.sel .ty { color: var(--muted); } /* --faint is 4.38:1 on --accent-soft; --muted passes in both themes */
-.outline-row.sel .act, .outline-row:focus-within .act { opacity: 1; }
+.outline-row:hover .act, .outline-row.sel .act, .outline-row:focus-within .act { opacity: 1; }
 .outline-row[draggable="true"] { cursor: grab; }
 .outline-row .grip { color: var(--faint); font-size: 10px; line-height: 1; margin-inline-start: -2px; opacity: .55; }
 .outline-row:hover .grip { opacity: 1; }
@@ -456,6 +461,9 @@ a.cell-name:hover { color: var(--accent); }
 .cat > h5 { margin: 0; font-size: var(--fs-2xs); text-transform: uppercase; font-weight: var(--fw-strong); letter-spacing: var(--track-caps); color: var(--faint); }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+/* four number boxes in a row (page margins): no spinner and less padding, so "128.35" fits; arrow keys still step */
+.grid4.nums .input { padding: 0 4px; appearance: textfield; -moz-appearance: textfield; }
+.grid4.nums .input::-webkit-inner-spin-button, .grid4.nums .input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .expr-row { display: flex; gap: 4px; }
 .expr-row .input { flex: 1; }
 .fx { width: 26px; height: 26px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--panel-2); cursor: pointer; font: italic 600 var(--fs-sm) Georgia, serif; color: var(--expr); }
@@ -488,7 +496,10 @@ a.cell-name:hover { color: var(--accent); }
 .nest-tag { position: absolute; right: 2px; top: -15px; font: var(--fs-2xs) var(--mono); color: var(--expr); background: var(--expr-soft); padding: 0 4px; border-radius: 3px; white-space: nowrap; pointer-events: none; }
 .it.sel > .box.nest-box { outline: 1.5px solid var(--accent) !important; }
 .group-card { border: 1px solid var(--line); border-radius: 6px; padding: 8px; display: grid; gap: 6px; background: var(--panel-2); }
-.rowx { display: grid; grid-template-columns: 1fr 70px 1fr auto; gap: 4px; align-items: center; }
+/* an item's filter: the expression on its own line, then operator, value (and the upper value of Between) and remove */
+.rowx { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 4px; align-items: center; }
+.rowx.between { grid-template-columns: 96px minmax(0, 1fr) minmax(0, 1fr) auto; }
+.rowx > :first-child { grid-column: 1 / -1; min-width: 0; }
 /* viewer extras */
 .vside { width: 240px; border-inline-end: 1px solid var(--line); background: var(--panel); overflow: auto; padding: 12px; display: grid; gap: 4px; align-content: start; }
 .vside h3 { margin: 0 0 6px; font-size: var(--fs-sm); text-transform: uppercase; font-weight: var(--fw-strong); letter-spacing: var(--track-caps); color: var(--muted); }
@@ -683,8 +694,8 @@ a.cell-name:hover { color: var(--accent); }
 .issue-tag { position: absolute; right: -10px; top: -10px; width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; background: var(--danger); color: var(--panel); font: var(--fw-strong) var(--fs-2xs)/1 var(--ui); z-index: 5; }
 .issues-wrap { position: relative; }
 .issues-btn { color: var(--danger); border-color: var(--danger-line); background: var(--danger-soft); }
-.issues-list { position: absolute; z-index: 40; top: calc(100% + 6px); inset-inline-start: 0; width: min(420px, calc(100vw - 32px)); max-height: 320px; overflow: auto; margin: 0; padding: 8px 12px 8px 26px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-dialog); display: grid; gap: 4px; font-size: var(--fs-sm); }
-.issues-list .linklike { text-align: start; }
+.issues-list { position: fixed; z-index: 40; top: 0; left: 0; width: min(420px, calc(100vw - 32px)); max-height: 320px; overflow: auto; margin: 0; padding: 8px 12px 8px 26px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-dialog); display: grid; gap: 4px; font-size: var(--fs-sm); white-space: normal; }
+.issues-list .linklike { text-align: start; vertical-align: top; }
 .align-bar { display: inline-flex; align-items: center; gap: 2px; padding: 0 6px; border-inline: 1px solid var(--line); }
 .align-bar .btn.icon { width: 26px; }
 /* the left rail: compact insert tiles (three a row) so the data panel shows without scrolling */
@@ -877,6 +888,9 @@ a.cell-name:hover { color: var(--accent); }
 .dbar .saved { display: inline-flex; align-items: center; gap: 6px; padding-inline: 6px; font-size: var(--fs-xs); line-height: 1.2; }
 .dbar .saved i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
 .dbar .saved.dirty i { background: var(--warn); }
+/* a message (Nothing to paste, a save error) floats below the bar: the bar keeps its layout, the canvas does not move (#14) */
+.dmsg { position: relative; flex: none; width: 0; align-self: stretch; }
+.dmsg > .err { position: absolute; top: calc(100% + 10px); inset-inline-start: 0; z-index: 35; width: max-content; max-width: min(60ch, 70vw); padding: 6px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-dialog); line-height: 1.35; }
 .tb-group { flex: none; display: grid; justify-items: center; gap: 2px; padding-inline: 8px; border-inline-start: 1px solid var(--line-2); }
 .tb-items { display: flex; align-items: center; gap: 2px; }
 .tb-cap { font-size: 9.5px; line-height: 1; text-transform: uppercase; letter-spacing: var(--track-caps); color: var(--faint); font-weight: var(--fw-medium); }
@@ -910,9 +924,10 @@ a.cell-name:hover { color: var(--accent); }
 .dleft .tool:hover { background: var(--accent-soft); border-color: var(--accent); }
 .dleft .tool svg { width: 16px; height: 16px; }
 /* canvas: the page centred on the desk, rulers along the top and beside each band */
-.dcenter { grid-template-rows: auto minmax(0, 1fr) auto; background: var(--desk); }
+.dcenter { grid-template-rows: auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); background: var(--desk); }
 /* one row of a fixed height: the align buttons that come with a selection never push the canvas down (c132) */
-.cbar { gap: 8px 16px; padding: 6px 16px; height: 40px; box-sizing: border-box; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; background: var(--panel); }
+/* the column is the canvas's width, not the toolbar's: a long toolbar scrolls, the page never slides under the Inspector (#1b) */
+.cbar { min-width: 0; gap: 8px 16px; padding: 6px 16px; height: 40px; box-sizing: border-box; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; background: var(--panel); }
 .cbar > * { flex: none; white-space: nowrap; }
 .cbar .select { height: 28px; }
 .cscroll { padding: 24px 40px 80px 56px; }

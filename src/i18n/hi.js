@@ -93,7 +93,7 @@ export default {
   exporting: 'निर्यात हो रहा है…', viewReport: 'रिपोर्ट देखें', didNotRun: 'रिपोर्ट नहीं चली।', fontsDidNotLoad: 'कुछ फ़ॉन्ट लोड नहीं हुए ({fonts})। टेक्स्ट एक वैकल्पिक फ़ॉन्ट में दिखाया गया है। जाँचें कि फ़ॉन्ट फ़ोल्डर fontsUrl पर उपलब्ध है।', true: 'हाँ', false: 'नहीं',
   commaSeparated: 'मान, अल्पविराम से अलग',
   selectAll: 'सभी चुनें', nullValue: 'Null (कोई मान नहीं)',
-  pagesRows: '{pages} पृष्ठ · {rows} पंक्तियाँ · {ms} ms', warnings: '{n} चेतावनी',
+  pagesRows: '{pages} · {rows} · {ms} ms', warnings: '{n} चेतावनी',
   back: 'वापस', drillDepth: 'ड्रिल स्तर {n}', liveHint: 'बदलाव तुरंत लागू होते हैं।',
   print: 'प्रिंट करें', printing: 'तैयार हो रहा है…', fullScreen: 'पूर्ण स्क्रीन', exitFullScreen: 'पूर्ण स्क्रीन से बाहर निकलें',
   viewMode: 'देखने का तरीका', single: 'एक पृष्ठ', continuous: 'लगातार', galley: 'गैली',

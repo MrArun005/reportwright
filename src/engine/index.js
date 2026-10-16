@@ -13,7 +13,7 @@ import { evalValue, evaluate, functionTable, didYouMean } from './expr/evaluate.
 import { isoDate, validTimeZone } from './expr/format.js';
 import { BASE_STYLE } from './style.js';
 import { resolveImageSrc } from './image.js';
-import { ITEMS } from './items/index.js';
+import { ITEMS, tocEntries } from './items/index.js';
 import { loadBarcodes } from './items/barcode.js';
 import { placeItems, shiftItems } from './items/paint.js';
 import { paginate } from './paginate/index.js';
@@ -323,8 +323,13 @@ export async function render(def0, opts = {}) {
       const overflow = lc.overflow = { pending: new Map(), more: null, repeat: false, head: null };
       // each body section: laid out and paginated with its own page
       const parts = [];
+      // #16: a body section with no items and no page header or footer of its own (the empty Section1 that "Add a body
+      // section" leaves on a report with an empty body) prints no blank page; every section like that: the first prints
+      const blank = (/** @type {any} */ b, /** @type {any} */ g) => !(Array.isArray(b?.items) && b.items.length) && !g.own.h && !g.own.f;
+      const allBlank = bodies.every((b, i) => blank(b, geos[i]));
       sections: for (let bi = 0; bi < bodies.length; bi++) {
         const g = geos[bi];
+        if (!def.master && bodies.length > 1 && blank(bodies[bi], g) && (!allBlank || bi > 0)) continue;
         const blc = bi === 0 && !bodies[0].page && g.cH === contentH ? lc : { ...lc, bodyWidth: g.bodyWidth, maxUnitHeight: g.cH };
         // a section whose last overflow placeholder still has rows is laid out again, page after page
         for (let rep = 0; ; rep++) {
@@ -507,6 +512,10 @@ export async function render(def0, opts = {}) {
       const found = [...result.bookmarks, ...result.headings];
       if (found.length === entries.length && found.every((f, i) => f.label === entries[i].label)) break;
     }
+    // a table of contents with nothing to list prints its title only (the designer shows how to fill it)
+    const all = tocOf(result, false);
+    const emptyTocs = (items) => { for (const i of items || []) { if (i.type === 'toc' && !tocEntries(i, all).length) warn(`${i.name || 'Table of contents'} has no entries: ${i.source === 'headings' ? 'give text boxes a heading level' : 'add bookmarks to items or cells'}`); emptyTocs(i.items); } };
+    emptyTocs(allBody);
   }
   return result;
   };

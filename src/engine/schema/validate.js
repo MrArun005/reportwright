@@ -250,7 +250,7 @@ export function validate(def) {
     for (const it of Array.isArray(items) ? items : []) {
       const label = it.name || it.type;
       if (!ITEMS[it.type]) { warnings.push(`Unknown item type "${it.type}"`); continue; }
-      walkItems(it, (x) => { itemRefs(x, warnings, fields, params, refErrors); if (Array.isArray(x.filters)) filterShape(x.filters, x.name || x.type, errors); });
+      walkItems(it, (x) => { itemRefs(x, warnings, fields, params, refErrors); if (Array.isArray(x.filters)) filterShape(x.filters, x.name || x.type, errors); visualIssues(x, x.name || (x === it ? label : `${label} ${x.type}`), warnings); if (x.type === 'toc' && where !== 'body') warnings.push(`${x.name || 'Table of contents'} is in a page band: a table of contents lists entries only in the body`); });
       if (it.name) {
         if (names.has(it.name)) warnings.push(`Two items have the name "${it.name}"`);
         names.add(it.name);
@@ -276,7 +276,8 @@ export function validate(def) {
       if (it.type === 'chart' && !NO_SERIES_CHARTS.has(it.chartType) && !(Array.isArray(it.series) && it.series.length)) warnings.push(`${label}: the chart has no series, so it plots a count of its rows; add one, e.g. series: [{ "name": "Value", "value": "=Sum(Fields.Amount)" }]`);
       if (it.type === 'chart' && it.chartType === 'polar' && it.xValue == null) warnings.push(`${label}: a polar chart needs xValue, the angle of each point in degrees (0 at the top, clockwise); without it no point is drawn`);
       if (it.type === 'image' && typeof it.src === 'string' && !it.src.startsWith('=') && LOCAL_IMAGE.test(it.src.trim())) warnings.push(`${label}: "${it.src}" is a local file path, which a browser cannot load; embed the image (images: { name: "data:image/png;base64,..." } and src: "embedded:name") or use an https:// address`);
-      if (it.style != null && (typeof it.style !== 'object' || Array.isArray(it.style))) warnings.push(`${label}: "style" must be an object of style properties, such as { "fontWeight": "bold" }; ${JSON.stringify(it.style).slice(0, 40)} is ignored`);
+      // a sparkline's "style" is its kind (line, column…), checked against the schema's choices below
+      if (it.style != null && !SCHEMA_ITEMS.get(it.type)?.get('style')?.enum && (typeof it.style !== 'object' || Array.isArray(it.style))) warnings.push(`${label}: "style" must be an object of style properties, such as { "fontWeight": "bold" }; ${JSON.stringify(it.style).slice(0, 40)} is ignored`);
       // a mistyped property is ignored silently otherwise ("vale" for value: a blank box)
       const own = ownKeys(it.type);
       for (const k of Object.keys(it)) {
@@ -489,6 +490,16 @@ function itemRefs(it, warnings, fields, params, exprErrors) {
   scan(it, 0);
 }
 
+/** A number written as a constant: 80, "80" or "=80"; else null (an expression is not judged). @param {any} v */
+const constNumber = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && /^=?\s*-?\d+(\.\d+)?\s*$/.test(v) ? Number(v.replace('=', '')) : null);
+/** Mistakes in an item or a cell visual that print something other than meant, or nothing. @param {any} x @param {string} who @param {string[]} out */
+function visualIssues(x, who, out) {
+  if (x.type === 'barcode' && (x.value == null || (typeof x.value === 'string' && !x.value.trim()))) out.push(`${who} has no value: nothing is printed`);
+  if (x.type === 'iconset') {
+    const lo = constNumber(x.lower), hi = constNumber(x.upper);
+    if (lo != null && hi != null && hi < lo) out.push(`${who}: the high threshold (${hi}) is below the low one (${lo}), so the middle icon never shows`);
+  }
+}
 /** fn on an item and every item inside it (containers, lists, table cells). @param {any} it @param {(x: any) => void} fn */
 function walkItems(it, fn, depth = 0) {
   if (!it || typeof it !== 'object' || depth > 64) return;

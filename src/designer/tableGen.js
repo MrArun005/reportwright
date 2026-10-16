@@ -155,3 +155,56 @@ export function instantPicks(fields, rows = []) {
   ROWS = null;
   return [...dims.slice(0, 2), ...nums.slice(0, 1)];
 }
+
+const norm = (/** @type {string} */ s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+/** "Orders" → "order", "Categories" → "category", "Boxes" → "box" */
+const singular = (/** @type {string} */ s) => {
+  const n = norm(s);
+  if (n.endsWith('ies')) return `${n.slice(0, -3)}y`;
+  if (/(ss|x|ch|sh)es$/.test(n)) return n.slice(0, -2);
+  return n.endsWith('s') && !n.endsWith('ss') ? n.slice(0, -1) : n;
+};
+const KEY_END = ['id', 'key', 'code', 'no'];
+// names two unrelated data sets share by chance: never a link between them
+const NOT_A_LINK = /^(id|key|code|no|name|title|description|notes?|comment|amount|total|date|value|type|status|qty|quantity|price|rate)$/i;
+
+/**
+ * Which child field holds the parent row's key, for a table of `childDs` in a list of `parentDs` (two flat data sets):
+ * the child's orderId / order_id for a parent data set Orders (to the parent's id, or its own orderId), else a key both
+ * share (customerId in both), else another field both have (region). null when nothing fits.
+ * @param {{ name: string, fields?: { name: string, type?: string }[] }} parentDs
+ * @param {{ name: string, fields?: { name: string, type?: string }[] }} childDs
+ * @returns {{ child: string, parent: string } | null}
+ */
+export function relationGuess(parentDs, childDs) {
+  const pf = (parentDs?.fields || []).filter((f) => f.type !== 'object');
+  const cf = (childDs?.fields || []).filter((f) => f.type !== 'object');
+  const parentNamed = new Map(pf.map((f) => [norm(f.name), f.name]));
+  const one = singular(parentDs?.name || '');
+  for (const end of KEY_END) {
+    const c = one && cf.find((f) => norm(f.name) === one + end);
+    const p = c && (parentNamed.get(one + end) || parentNamed.get(end));
+    if (c && p) return { child: c.name, parent: p };
+  }
+  const shared = cf.filter((f) => parentNamed.has(norm(f.name)) && !NOT_A_LINK.test(f.name));
+  const key = shared.find((f) => KEY_END.some((e) => norm(f.name).endsWith(e))) || shared[0];
+  return key ? { child: key.name, parent: /** @type {string} */ (parentNamed.get(norm(key.name))) } : null;
+}
+
+/** The filter that keeps a nested table to the list's current row. @param {{ child: string, parent: string }} rel */
+export const parentFilter = (rel) => [{ expr: `=Fields.${rel.child}`, op: '=', value: `=Parent.${rel.parent}` }];
+
+/**
+ * The number a matrix sums by default: the first additive one (an amount, not an id, a code, a rate or a row number);
+ * '' when there is none, so the matrix counts rows.
+ * @param {{ name: string, type?: string }[]} fields @param {any[]} [rows]
+ * @returns {string}
+ */
+export function sumFieldFor(fields, rows = []) {
+  ROWS = rows;
+  try {
+    return (fields || []).find(additive)?.name || '';
+  } finally {
+    ROWS = null;
+  }
+}

@@ -7,6 +7,7 @@ import { exportBlob, EXPORT_DEFAULTS, needsExportData } from './exports.js';
 import { pageToSvg, linkTitle } from '@/exporters/svg.js';
 import { NO_CJK_FONTS } from '@/engine/notices.js';
 import { safeUrl } from '@/engine/url.js';
+import { fileStem } from '@/engine/filename.js';
 import { resolveHtmlExport } from '@/engine/htmlExport.js';
 import { viewerTimeZone } from './timeZone.js';
 import { applyStyleAttributes, deferStyleAttributes } from '../embed/styles.js';
@@ -523,7 +524,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       const ext = { pdf: 'pdf', xlsx: 'xlsx', docx: 'docx', pptx: 'pptx', html: 'html', 'html-print': 'html', csv: 'csv', json: 'json' }[fmt];
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = `${(definition.name || 'report').replace(/[^\w-]+/g, '-')}.${ext}`;
+      a.href = url; a.download = `${fileStem(definition.name)}.${ext}`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
       onExported?.(fmt === 'html-print' ? 'html' : fmt, level.id, params); // the app's own pages tell the server, for the audit log
@@ -651,7 +652,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     model && {
       id: 'stats', group: 'stats',
       node: <span className="stat vstats" title={usingWorker() ? 'Rendered in a Web Worker' : 'Rendered on the main thread'}>
-        {T('pagesRows', { pages: total, rows: Object.values(model.stats.rows).reduce((a, b) => a + b, 0), ms: model.stats.ms })}{usingWorker() ? ' · worker' : ''}
+        {T('pagesRows', { pages: total === 1 ? T('pageOne') : T('pageMany', { n: total }), rows: T('dsRows', { n: Object.values(model.stats.rows).reduce((a, b) => a + b, 0) }), ms: model.stats.ms })}{usingWorker() ? ' · worker' : ''}
       </span>,
     },
     {

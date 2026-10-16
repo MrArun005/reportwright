@@ -4,13 +4,14 @@ import { declareDocumentStyles } from '../embed/styles.js';
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from './ui.jsx';
 import Link from 'next/link';
-import { useDesigner, useDesignerStore, newDesignerStore, activateStore, DesignerStore, insertItem, insertSpot, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems, alignItems } from './store.js';
+import { useDesigner, useDesignerStore, newDesignerStore, activateStore, DesignerStore, insertItem, insertSpot, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems, alignItems, selectedBand, selectAllItems, cutSelection } from './store.js';
 import Canvas, { MIME_TOOL, useDesignIssues, issueLine } from './Canvas.jsx';
 import Inspector from './Inspector.jsx';
 import DataPanel, { loadSample } from './DataPanel.jsx';
 import Outline from './Outline.jsx';
 import ReportViewer from '@/viewer/ReportViewer.jsx';
 import { ITEMS } from '@/engine/items/index.js';
+import { fileStem } from '@/engine/filename.js';
 import { fontFaceCss } from '@/exporters/svg.js';
 import { allFontKeys, optionalMissing } from '@/engine/text/fonts.js';
 import { customFonts, fontsBase } from '@/viewer/engineClient.js';
@@ -23,7 +24,7 @@ import { PartsPanel, LayersPanel } from './Reuse.jsx';
 import PivotWizard, { InstantVisuals } from './PivotWizard.jsx';
 import { t, dirOf, pickLang } from '@/i18n/index.js';
 import { Icon } from '@/viewer/icons.jsx';
-import { sectionList, findItem, bodyWidth, nudgeStep } from './store.js';
+import { sectionList, findItem, bodyWidth, nudgeStep, pageOf, secOf, bodyKeyOf } from './store.js';
 import { resolvePage } from '@/engine/units.js';
 import { readDraft, writeDraft, clearDraft, clearDrafts, mergeDraft, staleDraft } from './draft.js';
 
@@ -56,10 +57,10 @@ const TOOLS = [
 function Toolbox({ T, hide = [] }) {
   const api = useDesignerStore();
   const name = (type) => (T(`item_${type}`) === `item_${type}` ? ITEMS[type].label : T(`item_${type}`));
-  // a selected list or container takes the new item; otherwise it goes below the body's items
+  // a selected list or container takes the new item; otherwise the selected band, or the band of the selected item (#12)
   const add = (type) => {
     const s = api.getState();
-    const at = insertSpot(s.def, s.sel);
+    const at = insertSpot(s.def, s.sel, type);
     insertItem(type, at.section, 0, at.y, {}, at.parentId);
   };
   return (
@@ -96,7 +97,11 @@ function LeftRail({ T, readOnly, embed }) {
   const body = useRef(null);
   const [at, setAt] = useState('tools');
   const tabs = [!readOnly && ['tools', 'b2_toolbox', 'tools'], embed?.panels?.data !== false && ['data', 'b2_data', 'data'], ['outline', 'b2_outline', 'outline']].filter(Boolean);
+  // a clicked tab stays current through its smooth scroll (and when its section cannot reach the top): the scroll spy
+  // takes over again when the author scrolls (wheel, touch, keys, the scrollbar)
+  const picked = useRef(false);
   const go = (id) => {
+    picked.current = true;
     const el = body.current?.querySelector(`[data-rail="${id}"]`);
     if (el) {
       body.current.scrollTo({ top: el.offsetTop - body.current.offsetTop, behavior: 'smooth' });
@@ -107,12 +112,16 @@ function LeftRail({ T, readOnly, embed }) {
   };
   const spy = () => {
     const b = body.current;
-    if (!b) return;
+    if (!b || picked.current) return;
     let cur = tabs[0]?.[0];
-    for (const [id] of tabs) { const el = b.querySelector(`[data-rail="${id}"]`); if (el && el.offsetTop - b.offsetTop <= b.scrollTop + 24) cur = id; }
-    if (b.scrollTop + b.clientHeight >= b.scrollHeight - 2) cur = tabs[tabs.length - 1][0];
+    const top = (id) => { const el = b.querySelector(`[data-rail="${id}"]`); return el ? el.offsetTop - b.offsetTop : Infinity; };
+    for (const [id] of tabs) if (top(id) <= b.scrollTop + 24) cur = id;
+    // scrolled to the end: a last section too short to reach the top counts once it fills the upper half
+    const last = tabs[tabs.length - 1][0];
+    if (b.scrollTop + b.clientHeight >= b.scrollHeight - 2 && top(last) <= b.scrollTop + b.clientHeight / 2) cur = last;
     setAt(cur);
   };
+  const userScroll = () => { picked.current = false; };
   return (
     <>
       <nav className="rail" aria-label={T('b2_panels')}>
@@ -122,7 +131,7 @@ function LeftRail({ T, readOnly, embed }) {
           </button>
         ))}
       </nav>
-      <div className="rail-body" ref={body} onScroll={spy}>
+      <div className="rail-body" ref={body} onScroll={spy} onWheel={userScroll} onTouchStart={userScroll} onPointerDown={userScroll} onKeyDown={userScroll}>
         {!readOnly && <section data-rail="tools"><Toolbox T={T} hide={embed?.toolbox?.hide} /><PartsPanel /></section>}
         {embed?.panels?.data !== false && <section data-rail="data"><DataPanel /></section>}
         {readOnly && <PartsPanel />}
@@ -145,10 +154,14 @@ function StatusBar({ T, zoom, setZoom }) {
   else what = T('b2_selReport');
   let page = '';
   try {
-    const pg = resolvePage(def.page);
+    // #16: the page of the selected body section (a landscape section has its own), else the report's
+    const key = sel.kind === 'section' ? sel.section : sel.kind === 'items' ? findItem(def, sel.ids[0])?.section : sel.kind === 'cell' ? findItem(def, sel.id)?.section : null;
+    const own = key && bodyKeyOf(key) && Array.isArray(def.sections?.body) ? secOf(def, bodyKeyOf(key))?.page : null;
+    const pg = own ? pageOf(def, key) : resolvePage(def.page);
+    const size = `${own?.size || def.page?.size || ''}${pg.width > pg.height && !pg.pageless ? ` ${T('ux_landscape')}` : ''}`;
     const k = { pt: 1, mm: 25.4 / 72, cm: 2.54 / 72, in: 1 / 72 }[unit] || 1;
     const r = (v) => Math.round(v * k * (unit === 'pt' ? 1 : 10)) / (unit === 'pt' ? 1 : 10);
-    page = pg.pageless ? `${def.page?.size || 'Pageless'} · ${r(bodyWidth(def, 'body'))} ${unit}` : T('b2_pageInfo', { size: def.page?.size || '', w: r(pg.width), h: r(pg.height), unit });
+    page = pg.pageless ? `${def.page?.size || 'Pageless'} · ${r(bodyWidth(def, 'body'))} ${unit}` : T('b2_pageInfo', { size, w: r(pg.width), h: r(pg.height), unit });
   } catch { /* an unknown size: the Inspector says so */ }
   const step = (dir) => { const z = zoom === 'fit' ? 1 : zoom; const next = dir > 0 ? ZOOMS.find(x => x > z) : [...ZOOMS].reverse().find(x => x < z); if (next) setZoom(next); };
   return (
@@ -261,27 +274,48 @@ function IssuesButton({ T }) {
   const issues = useDesignIssues();
   const [open, setOpen] = useState(false);
   useEffect(() => { if (!issues.length) setOpen(false); }, [issues.length]);
-  // the list opens under its button: moved left or right as far as it takes to stay inside the window (8 px margin)
+  // the list opens under its button (fixed, so the scrolling bar it sits in does not clip it), moved left or right as
+  // far as it takes to stay inside the canvas column (8 px margin): it never covers the Inspector or the left panel
   const listRef = useRef(null);
+  const wrapRef = useRef(null);
   useLayoutEffect(() => {
     const el = listRef.current;
     if (!el) return undefined;
     const place = () => {
-      el.style.translate = '0px';
-      const r = el.getBoundingClientRect(), vw = document.documentElement.clientWidth;
-      const dx = r.right > vw - 8 ? vw - 8 - r.right : r.left < 8 ? 8 - r.left : 0;
-      el.style.translate = `${Math.round(dx)}px`;
+      const vw = document.documentElement.clientWidth, col = el.closest('.dcenter')?.getBoundingClientRect();
+      const btn = wrapRef.current?.querySelector('.issues-btn')?.getBoundingClientRect();
+      if (!btn) return;
+      const lo = Math.max(8, col ? col.left + 8 : 8), hi = Math.min(vw - 8, col ? col.right - 8 : vw - 8);
+      el.style.maxWidth = `${Math.max(160, hi - lo)}px`;
+      el.style.top = `${Math.round(btn.bottom + 6)}px`;
+      const w = el.getBoundingClientRect().width;
+      el.style.left = `${Math.round(Math.max(lo, Math.min(btn.left, hi - w)))}px`;
     };
     place();
     window.addEventListener('resize', place);
-    return () => window.removeEventListener('resize', place);
+    window.addEventListener('scroll', place, true); // the bar scrolled sideways, or the page
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
   }, [open, issues.length]);
+  // closes on a click outside it and on Escape (focus goes back to its button)
+  useEffect(() => {
+    if (!open) return undefined;
+    const outside = (e) => { if (!e.composedPath().includes(wrapRef.current)) setOpen(false); };
+    const esc = (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      e.preventDefault();
+      setOpen(false);
+      wrapRef.current?.querySelector('.issues-btn')?.focus();
+    };
+    document.addEventListener('pointerdown', outside, true);
+    window.addEventListener('keydown', esc, true);
+    return () => { document.removeEventListener('pointerdown', outside, true); window.removeEventListener('keydown', esc, true); };
+  }, [open]);
   if (!issues.length) return <span className="hint" data-testid="issues-none">{T('ux_noIssues')}</span>;
   return (
-    <span className="issues-wrap">
+    <span className="issues-wrap" ref={wrapRef}>
       <button type="button" className="btn sm issues-btn" aria-expanded={open} onClick={() => setOpen(v => !v)} data-testid="issues">{T('ux_issues', { n: issues.length })}</button>
       {open && <ul className="issues-list" data-testid="issues-list" ref={listRef}>
-        {issues.map((i, k) => <li key={k}><button type="button" className="linklike" onClick={() => { if (i.id) api.getState().select({ kind: 'items', ids: [i.id] }); }}>{issueLine(T, i)}</button></li>)}
+        {issues.map((i, k) => <li key={k}><button type="button" className="linklike" onClick={() => { if (i.id) api.getState().select({ kind: 'items', ids: [i.id] }); setOpen(false); }}>{issueLine(T, i)}</button></li>)}
       </ul>}
     </span>
   );
@@ -294,8 +328,8 @@ function isTyping(e) {
 }
 
 const SHORTCUTS = [
-  ['⌘/Ctrl S', 'sc_save'], ['⌘/Ctrl Z', 'sc_undo'], ['⇧⌘/Ctrl Z, ⌘/Ctrl Y', 'sc_redo'], ['⌘/Ctrl C / V', 'sc_copy'],
-  ['⌘/Ctrl D', 'sc_duplicate'], ['Delete / Backspace', 'sc_delete'], ['← ↑ → ↓', 'c132_nudge1'], ['⇧ ← ↑ → ↓', 'c132_nudge10'],
+  ['⌘/Ctrl S', 'sc_save'], ['⌘/Ctrl Z', 'sc_undo'], ['⇧⌘/Ctrl Z, ⌘/Ctrl Y', 'sc_redo'], ['⌘/Ctrl C / X / V', 'sc_copy'],
+  ['⌘/Ctrl A', 'selectAll'], ['⌘/Ctrl D', 'sc_duplicate'], ['Delete / Backspace', 'sc_delete'], ['← ↑ → ↓', 'c132_nudge1'], ['⇧ ← ↑ → ↓', 'c132_nudge10'],
   ['⇧ Click', 'sc_toggle'], ['Drag', 'sc_marquee'], ['Alt + Drag', 'sc_guides'],
   ['Esc', 'sc_clear'], ['?', 'sc_help'],
 ];
@@ -416,12 +450,16 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
       if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); st().redo(); return; }
       if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelection(); return; }
       if (mod && e.key.toLowerCase() === 'c') { if (st().sel.kind === 'items') { e.preventDefault(); copySelection(); } return; }
+      if (mod && e.key.toLowerCase() === 'x') { if (st().sel.kind === 'items') { e.preventDefault(); cutSelection(); } return; } // #14
+      // Ctrl+A: the items of the band (the selected one, the selected item's, else the body), not the page's text (#6)
+      if (mod && !e.altKey && e.key.toLowerCase() === 'a') { if (!rootRef.current?.querySelector('.dialog')) { e.preventDefault(); selectAllItems(); } return; }
       if (mod && e.key.toLowerCase() === 'v') return; // the paste event below: its clipboard needs no permission (N36)
       if (e.key === 'Delete' || e.key === 'Backspace') { if (st().sel.kind === 'items') { e.preventDefault(); deleteSelection(); } return; }
       if (e.key === 'Escape') { st().select({ kind: 'report' }); return; }
       if (e.key === '?') { setDialog(d => (d === 'keys' ? null : 'keys')); return; }
       const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-      if (arrows[e.key] && st().sel.kind === 'items') {
+      // Alt+arrows are the browser's (back, forward) and the outline's (move out, in): never a nudge (#15)
+      if (arrows[e.key] && !e.altKey && st().sel.kind === 'items') {
         e.preventDefault();
         const step = nudgeStep(st(), e.shiftKey);
         const [dx, dy] = arrows[e.key];
@@ -434,7 +472,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
     const onPaste = (e) => {
       if ((embed && !ours(e)) || isTyping(e) || st().tab !== 'design') return;
       e.preventDefault();
-      if (!pasteItems(st().sel.kind === 'section' ? st().sel.section : 'body', e.clipboardData?.getData('text/plain'))) {
+      if (!pasteItems(selectedBand(st().def, st().sel), e.clipboardData?.getData('text/plain'))) {
         st().setUi({ saveError: t(lang, 'b9_nothingToPaste') }); setTimeout(() => st().setUi({ saveError: null }), 3000);
       }
     };
@@ -451,7 +489,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
     const d = st().def;
     const url = URL.createObjectURL(new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' }));
     const a = document.createElement('a');
-    a.href = url; a.download = `${(d.name || id || 'report').replace(/[^\w-]+/g, '-')}.pw.json`;
+    a.href = url; a.download = `${fileStem(d.name || id)}.pw.json`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
@@ -484,7 +522,8 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
           <input className="name" value={def.name || ''} aria-label={T('reportName')} readOnly={readOnly} onChange={e => st().apply(d => { d.name = e.target.value; }, 'name')} />
           {!readOnly && <span className={`saved${saved ? '' : ' dirty'}`} data-testid="save-state"><i aria-hidden="true" />{saving ? T('saving') : saved ? T('saved') : T('unsaved')}</span>}
         </div>
-        {saveError && <span className="err">{saveError}</span>}
+        {/* a message (Nothing to paste, a save error) floats below the bar: it never squeezes the bar or pushes the canvas (#14) */}
+        {saveError && <span className="dmsg"><span className="err" role="status">{saveError}</span></span>}
         <div className="spacer" />
         <TbGroup label={T('b2_file')}>
           {!embed && <button className="tb-btn" onClick={() => setDialog('history')} title={T('historyHint')} aria-label={T('history')}><Icon name="history" /></button>}
@@ -500,7 +539,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
             {QUICK.filter(([type]) => !(embed?.toolbox?.hide || []).includes(type)).map(([type, icon]) => {
               const nm = T(`item_${type}`) === `item_${type}` ? ITEMS[type].label : T(`item_${type}`);
               return <button key={type} className="tb-btn" title={`${T('b2_insertItem', { item: nm })} · ${T('b2_insertHint')}`} aria-label={T('b2_insertItem', { item: nm })} data-testid={`quick-${type}`}
-                onClick={() => { const s0 = st(); const at = insertSpot(s0.def, s0.sel); insertItem(type, at.section, 0, at.y, {}, at.parentId); }}><Icon name={icon} /></button>;
+                onClick={() => { const s0 = st(); const at = insertSpot(s0.def, s0.sel, type); insertItem(type, at.section, 0, at.y, {}, at.parentId); }}><Icon name={icon} /></button>;
             })}
           </TbGroup>
         )}
