@@ -1325,7 +1325,7 @@ for (const [type, label, defaults] of [
 /* ---------------------------------------------------------------- barcode */
 register('barcode', {
   label: 'Barcode',
-  defaults: () => ({ type: 'barcode', w: 160, h: 48, symbology: 'code128', value: '12345678', showText: true, style: { fontSize: 8, textAlign: 'center' } }),
+  defaults: () => ({ type: 'barcode', w: 160, h: 48, symbology: 'code128', value: '', showText: true, style: { fontSize: 8, textAlign: 'center' } }),
   props: [
     { key: 'symbology', label: 'Symbology', type: 'select', options: SYMBOLOGIES.map(s => ({ value: s.id, label: s.name })), category: 'Barcode' },
     { key: 'value', label: 'Value', type: 'expr', category: 'Barcode' },

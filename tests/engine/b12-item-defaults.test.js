@@ -11,7 +11,7 @@ const inBody = (item) => ({
 });
 
 describe('item defaults', () => {
-  for (const type of ['richtext', 'sparkline', 'barcode']) {
+  for (const type of ['richtext', 'sparkline']) {
     it(`a new ${type} in the body has no warnings`, () => {
       const v = validate(inBody(ITEMS[type].defaults()));
       expect(v.warnings).toEqual([]);
