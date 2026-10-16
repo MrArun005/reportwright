@@ -43,4 +43,9 @@ describe('design hints stay out of the output', () => {
     });
     expect(texts(m)).not.toContain('Entries appear here');
   });
+  it('a table of contents in a page band lists nothing, so it warns', async () => {
+    const toc = { type: 'toc', name: 'HdrToc', x: 0, y: 0, w: 300, h: 20, title: 'Contents' };
+    const m = await render(report([], { header: { height: 40, items: [toc] } }), { fontStore });
+    expect(m.warnings).toContain('HdrToc is in a page band: a table of contents lists entries only in the body');
+  });
 });
