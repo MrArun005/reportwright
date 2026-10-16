@@ -2,6 +2,40 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## Unreleased
+
+Fixes from a designer tester's report (issue numbers are that report's).
+
+### Designer
+- **Bands:** Insert, paste and drag go to the selected band, and the band grows to fit, also for an item added to a
+  container (#12, #13, #1b). A table, matrix or subreport sent to a page band goes to the body. Ctrl+A selects the
+  band's items (#6), Ctrl+X cuts and a cut item pasted back keeps its place (#14), and undo and redo select what they
+  changed (#25). Alt+arrow keys no longer nudge the selected item (#15).
+- **Layout:** the canvas toolbar no longer pushes the page under the Inspector (#1b). Messages float below the bar
+  (#14). Outline rows stay on one line (#15), the rail shows the tab that was clicked (#19), the checker list stays in
+  the canvas column (#27), and chart dialog hints no longer move the Title field (#26).
+- **Inspector:** search finds Sort and Filter (#7), a filter expression has its own line (#20), margin boxes show two
+  decimals (#24), and a matrix shows its drawn width (#9).
+- **Dialogs and wizards:** Escape asks before discarding a dialog (#5). The pivot wizard fits the matrix to the page and
+  its preview shows the whole matrix (#9, #22). The matrix preset sums an amount, never an id (#8), and a table inserted
+  in a list of another data set can keep to the list's current row (#2).
+- OverallPageNumber and OverallTotalPages are suggested (#18), a new rich text no longer uses PageNumber in the body
+  (#3), one rule, row or page is said in the singular (#21), and the download name has no runs of dashes (#23).
+
+### Checker and validation
+- Items are compared across containers, and an item drawn over a container it is not in is flagged (#1a).
+- Flagged: a body taller than the page, an item cut by the page, and a header and footer that leave little room (#30).
+  Landscape sections show their own page in the status bar, and the checker flags the shared header and footer (#16).
+- New warnings: an icon set's high threshold below its low one (#28), a barcode with no value (#29), and a table of
+  contents in a page band, which lists nothing. A sparkline's `style` is its kind, not a style object (#3).
+
+### Engine and export
+- An empty subreport or table of contents prints no design hint and warns instead (#4).
+- No data bar for a null value, and a data bar in a cell compares with its column (#11).
+- No blank page or false cut warning for a gap taller than the page (N1), and an empty landscape section prints no
+  page (#16).
+- An exported file name has one dash for a run of other characters and none at the ends (#23).
+
 ## 1.0.1 — unreleased
 
 Fixes from an early tester's report on 1.0.0. Thank you.
