@@ -1,6 +1,6 @@
 // Designer: paste goes to the selected band and fits it (#12, #13).
-import { describe, it, expect, beforeEach } from 'vitest';
-import { pasteItems, copySelection, findItem, secOf, selectedBand } from '../../src/designer/store.js';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { pasteItems, copySelection, cutSelection, findItem, secOf, selectedBand } from '../../src/designer/store.js';
 import { S, load, where } from './designer-bands.fixture.js';
 
 beforeEach(load);
@@ -50,5 +50,34 @@ describe('#12: the band a paste goes to', () => {
     expect(selectedBand(S().def, { kind: 'items', ids: ['f1'] })).toBe('pageFooter');
     expect(selectedBand(S().def, { kind: 'items', ids: ['kid'] })).toBe('body');
     expect(selectedBand(S().def, { kind: 'report' })).toBe('body');
+  });
+});
+
+describe('a table, matrix or subreport pasted into a page band goes to the body, as Insert does', () => {
+  const clip = (item) => JSON.stringify({ kind: 'pagewright/items@1', items: [item] });
+  for (const type of ['table', 'matrix', 'subreport']) {
+    it(type, () => {
+      expect(pasteItems('pageHeader', clip({ id: 'z', type, name: 'Z', x: 0, y: 0, w: 100, h: 20 }))).toBe(1);
+      expect(where(S().sel.ids[0]).section).toBe('body');
+    });
+  }
+  it('a text box still goes to the page band', () => {
+    pasteItems('pageHeader', clip(S().def.sections.body.items[0]));
+    expect(where(S().sel.ids[0]).section).toBe('pageHeader');
+  });
+});
+
+describe('#14: cut keeps the in-memory copy at once', () => {
+  it('a paste right after the cut, before the clipboard write ends, pastes the cut item', async () => {
+    S().apply((d) => {
+      d.sections.body.items[0].value = 'cut me';
+    });
+    vi.stubGlobal('navigator', { clipboard: { writeText: () => new Promise((r) => setTimeout(r)) } });
+    S().select({ kind: 'items', ids: ['a'] });
+    const done = cutSelection();
+    expect(pasteItems('body')).toBe(1);
+    expect(findItem(S().def, S().sel.ids[0]).item.value).toBe('cut me');
+    await done;
+    vi.unstubAllGlobals();
   });
 });

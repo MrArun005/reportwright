@@ -581,15 +581,15 @@ export async function copySelection({ cut = false } = {}) {
   // the band they come from (items of one band, none inside a container): a paste there cascades, elsewhere it fits (#13)
   const from = fs.length && fs.every(f => !f.parent && f.section === fs[0].section) ? fs[0].section : undefined;
   const text = JSON.stringify({ kind: CLIP, items, from, ...(cut ? { cut: true } : {}) });
+  memClip = text; // before the await: a paste (or cut's delete) right after sees this copy
   try { await navigator.clipboard.writeText(text); } catch { /* clipboard blocked: keep the in-memory copy */ }
-  memClip = text;
   return items.length;
 }
 let memClip = null;
 /** Ctrl+X (#14): copy the selected items, then delete them (one undo step). @returns {Promise<number>} how many */
 export function cutSelection() {
   if (S().sel.kind !== 'items') return Promise.resolve(0);
-  const n = copySelection({ cut: true }); // the in-memory copy is made before the items go
+  const n = copySelection({ cut: true }); // sets the in-memory copy synchronously, before the items go
   deleteSelection();
   return n;
 }
@@ -602,11 +602,13 @@ export function pasteItems(section = 'body', text = null) {
   const st = active; // the designer pasted into
   const data = clipOf(text) || clipOf(memClip);
   if (!data) return 0;
+  // a table, matrix or subreport goes to the body when the band cannot hold it, as Insert does
+  if (!isBodyKey(section) && !isContentKey(section) && data.items.some(it => BODY_ONLY.has(it?.type))) section = 'body';
   const ids = [];
   st.getState().apply((d) => {
     const used = allNames(d);
     const band = secOf(d, section);
-    const copies = data.items.map(it => cloneWithIds(it, used)).filter(c => !(c.type === 'table' && !isBodyKey(section)));
+    const copies = data.items.map(it => cloneWithIds(it, used));
     for (const c of copies) for (const k of ['x', 'y']) if (!Number.isFinite(c[k])) c[k] = 0; // pasted JSON is not trusted
     const hOf = (c) => (Number.isFinite(c.h) ? c.h : 0), wOf = (c) => (Number.isFinite(c.w) ? c.w : 0);
     // the same band: 12 pt right and down (N37). Another band (or one not known, where the copies would not fit): at the
