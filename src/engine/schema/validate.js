@@ -150,11 +150,13 @@ const ownKeys = (type) => {
 export function validate(def) {
   // checkOnly: errors a render reports itself where it meets them (an unknown function, a symbology): non-fatal, and
   // left out of the render's own warnings so they are not said twice
-  const errors = [], warnings = [], exprErrors = [], checkOnly = [];
-  if (!def || typeof def !== 'object') return { errors: ['The report definition is empty'], warnings, exprErrors, checkOnly };
+  // hints: warnings about one item that prints nothing or not what is meant (also in warnings); the designer's Issues
+  // panel lists them with the errors
+  const errors = [], warnings = [], exprErrors = [], checkOnly = [], hints = [];
+  if (!def || typeof def !== 'object') return { errors: ['The report definition is empty'], warnings, exprErrors, checkOnly, hints };
   // a band or an item list of the wrong shape: the checks below would walk it
   const shape = shapeErrors(def);
-  if (shape.length) return { errors: shape, warnings, exprErrors, checkOnly, renderSays: [] };
+  if (shape.length) return { errors: shape, warnings, exprErrors, checkOnly, renderSays: [], hints };
   if (!def.$schema) warnings.push(`The report has no "$schema", so an editor cannot check it; add "$schema": "${SCHEMA_ID}" at the top. It renders as before.`);
   if (def.$schema && def.$schema !== SCHEMA_ID && def.$schema !== SCHEMA_ALIAS) warnings.push(`Unknown schema "${def.$schema}". Expected "${SCHEMA_ID}".`);
   for (const k of Object.keys(def)) if (!DEF_KEYS.has(k) && !k.startsWith('_')) { const g = didYouMean(k, DEF_KEYS); warnings.push(`Unknown report property "${k}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`); }
@@ -241,6 +243,7 @@ export function validate(def) {
     }
   };
   const lists = [], refErrors = [];
+  const hint = { push: (/** @type {string} */ m) => { warnings.push(m); hints.push(m); } }; // a warning that is a hint too
   const fields = inlineFields(def), params = new Set((Array.isArray(def.parameters) ? def.parameters : []).map(p => p?.name));
   for (const where of ['pageHeader', 'body', 'pageFooter']) {
     const sec = def.sections?.[where];
@@ -254,7 +257,7 @@ export function validate(def) {
     for (const it of Array.isArray(items) ? items : []) {
       const label = it.name || it.type;
       if (!ITEMS[it.type]) { warnings.push(`Unknown item type "${it.type}"`); continue; }
-      walkItems(it, (x) => { itemRefs(x, warnings, fields, params, refErrors); if (Array.isArray(x.filters)) filterShape(x.filters, x.name || x.type, errors); visualIssues(x, x.name || (x === it ? label : `${label} ${x.type}`), warnings); if (x.type === 'toc' && where !== 'body') warnings.push(`${x.name || 'Table of contents'} is in a page band: a table of contents lists entries only in the body`); if (x !== it && x.type === 'table' && where !== 'body') errors.push(`${x.name || `${label} table`}: tables can only be in the body`); }); // a table inside a container or list too
+      walkItems(it, (x) => { itemRefs(x, warnings, fields, params, refErrors); if (Array.isArray(x.filters)) filterShape(x.filters, x.name || x.type, errors); visualIssues(x, x.name || (x === it ? label : `${label} ${x.type}`), hint); if (x.type === 'toc' && where !== 'body') hint.push(`${x.name || 'Table of contents'} is in a page band: a table of contents lists entries only in the body`); if (x !== it && x.type === 'table' && where !== 'body') errors.push(`${x.name || `${label} table`}: tables can only be in the body`); }); // a table inside a container or list too
       if (it.name) {
         if (names.has(it.name)) warnings.push(`Two items have the name "${it.name}"`);
         names.add(it.name);
@@ -396,7 +399,7 @@ export function validate(def) {
   }
   // a message quotes names and expressions: a 1 MB one stays readable (the same cut in every list, so they still match)
   const short = (/** @type {string[]} */ l) => l.map(m => (m.length > MAX_MESSAGE ? `${m.slice(0, MAX_MESSAGE - 1)}…` : m));
-  return { errors: short(errors), warnings: short(warnings), exprErrors: short(exprErrors), checkOnly: short(checkOnly), renderSays: short(renderSays) };
+  return { errors: short(errors), warnings: short(warnings), exprErrors: short(exprErrors), checkOnly: short(checkOnly), renderSays: short(renderSays), hints: short([...new Set(hints)]) };
 }
 const MAX_MESSAGE = 1000;
 

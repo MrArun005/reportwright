@@ -4,6 +4,7 @@
 // that read fields the data set does not have. Pure: the canvas passes the drawn widths of live items (extents).
 import { fieldIssues } from './fieldCheck.js';
 import { resolvePage } from '../engine/units.js';
+import { validate } from '../engine/schema/validate.js';
 
 const overlap = (a, b) => a.x < b.x + b.w - 0.5 && b.x < a.x + a.w - 0.5 && a.y < b.y + b.h - 0.5 && b.y < a.y + a.h - 0.5;
 const contains = (o, i) => i.x >= o.x - 0.5 && i.y >= o.y - 0.5 && i.x + i.w <= o.x + o.w + 0.5 && i.y + i.h <= o.y + o.h + 0.5;
@@ -147,12 +148,25 @@ function pageIssues(def, out) {
  * @param {{ items: any[] }[]} bands @param {string[]} messages
  * @returns {{ id: string | null, name: string, kind: 'check', text: string }[]}
  */
+/**
+ * What the Issues panel lists from the check: its errors, its item hints (a barcode with no value, a table of contents in
+ * a page band: they print nothing), and a save's missing reports. @param {any} def @param {string[]} [missing]
+ * @returns {string[]}
+ */
+export function checkMessages(def, missing = []) {
+  const v = validate(def);
+  return [...v.errors, ...(v.hints || []), ...missing];
+}
 export function checkIssues(bands, messages) {
   const ids = new Map();
   const go = (items, depth) => { if (depth > 64) return; for (const it of items || []) { if (!it) continue; if (it.name && !ids.has(it.name)) ids.set(it.name, it.id); if (Array.isArray(it.items)) go(it.items, depth + 1); } };
   for (const b of bands) go(b.items, 0);
+  const names = [...ids.keys()].sort((a, b) => b.length - a.length);
   return [...new Set(messages)].map(text => {
-    const name = String(text).split(':')[0].replace(/ (cell|group|header cell|detail cell|footer cell)$/, '');
+    const s = String(text);
+    // "Ledger cell: …", or a hint that starts with the item's name ("Barcode1 has no value: …")
+    const name = s.split(':')[0].replace(/ (cell|group|header cell|detail cell|footer cell)$/, '');
+    if (!ids.has(name)) { const n = names.find(k => s.startsWith(`${k} `)); if (n) return { id: ids.get(n) ?? null, name: n, kind: 'check', text: s }; }
     return { id: ids.get(name) ?? null, name, kind: 'check', text: String(text) };
   });
 }
