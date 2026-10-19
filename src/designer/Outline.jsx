@@ -5,7 +5,7 @@
 // name). The buttons do the same for the mouse.
 // Keyboard (N35): the rows are one group of toggle buttons (aria-pressed; not a listbox, which may not hold the row buttons: N42), a single Tab stop (roving tabindex): Up/Down/Home/End move between rows,
 // Enter or Space selects (Shift adds); Delete, the other arrows and Ctrl+D then act on the selection as on the canvas.
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDesigner, sectionList, secOf, reorderItem, moveOutOfParent, moveItemTo, findItem, NESTING } from './store.js';
 import { ITEMS } from '@/engine/items/index.js';
 import { t } from '@/i18n/index.js';
@@ -29,6 +29,11 @@ export default function Outline() {
   const keys = sectionList(def).flatMap(({ key }) => { const out = [`band:${key}`]; const go = (l) => l.forEach(it => { out.push(it.id); if (NESTING.has(it.type)) go(it.items || []); }); go(secOf(def, key)?.items || []); return out; });
   const stop = keys.includes(cur) ? cur : keys.find(k => chosen.has(k) || (sel.kind === 'section' && k === `band:${sel.section}`)) || keys[0];
   const roving = (k) => ({ tabIndex: k === stop ? 0 : -1, onFocus: () => setCur(k) });
+  // a selection made outside the outline (on the page) moves the Tab stop to its row (WAI-ARIA tree: the selected node)
+  useEffect(() => {
+    const el = body.current;
+    if (el && !el.contains(el.getRootNode().activeElement)) setCur(null);
+  }, [sel]);
   const nav = (e) => {
     if (e.defaultPrevented || e.altKey || e.metaKey || e.ctrlKey || !e.target.hasAttribute('data-opt')) return;
     const all = [...e.currentTarget.querySelectorAll('[data-opt]')];
@@ -51,8 +56,14 @@ export default function Outline() {
     const f = findItem(useDesigner.getState().def, id);
     if (!f) return;
     setSaid(T(f.parent ? 'outlineMovedInto' : 'outlineMovedBand', { name: f.item.name, parent: f.parent?.name || '', n: f.index + 1, of: f.list.length }));
-    requestAnimationFrame(() => body.current?.querySelector(`[data-outline-id="${CSS.escape(id)}"] .nm`)?.focus());
+    focusAfter.current = id; // focused once the outline is drawn again (a frame may come before that: the old row, then none)
   };
+  const focusAfter = useRef(null);
+  useEffect(() => {
+    const id = focusAfter.current;
+    const el = id && body.current?.querySelector(`[data-outline-id="${CSS.escape(id)}"] .nm`);
+    if (el) { focusAfter.current = null; el.focus(); }
+  });
   /** Alt+Up/Down: earlier or later; Alt+Right: into the container or list just above; Alt+Left: out of its parent. */
   const onKey = (e, it, list, i, parent) => {
     if (readOnly || !e.altKey || e.shiftKey || e.metaKey || e.ctrlKey) return;

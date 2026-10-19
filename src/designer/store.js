@@ -104,10 +104,14 @@ export function normalize(def) {
     }
   });
 }
+const nextFree = new WeakMap(); // used → base → the number to try first (a paste of 10,000 items counted up from 1 each time)
 export function uniqueName(used, base) {
-  let i = 1;
+  let hint = nextFree.get(used);
+  if (!hint) nextFree.set(used, hint = new Map());
+  let i = hint.get(base) || 1;
   while (used.has(`${base}${i}`)) i++;
   used.add(`${base}${i}`);
+  hint.set(base, i + 1);
   return `${base}${i}`;
 }
 
@@ -281,6 +285,29 @@ const S = () => active.getState();
 export function bodyWidth(def, key = 'body') { return pageOf(def, key).bodyWidth; }
 /** Width available to an item: the band width, or its parent's width. */
 function roomFor(d, f) { return f.parent ? f.parent.w : bodyWidth(d, f.section); }
+/** Items on a locked or hidden layer: drawn (or not), never selected, moved, aligned or deleted. */
+export function lockedIds(def) {
+  const lay = new Set((def?.layers || []).filter(l => l && (l.locked || l.visible === false)).map(l => l.name));
+  const out = new Set();
+  if (lay.size) walk(def, (it) => { if (it.layer != null && lay.has(it.layer)) out.add(it.id); });
+  return out;
+}
+/** Every item's place in one walk (findItem per id walks the whole report each time: 1,000 items took seconds). */
+function indexItems(d) {
+  const m = new Map();
+  walk(d, (item, list, index, parent, section) => { if (!m.has(item.id)) m.set(item.id, { item, list, index, parent, section }); });
+  return m;
+}
+/** growToFit, then each container around it in turn: a child that grew never pushes its container past its band. */
+function growUp(d, f, idx = null) {
+  for (let cur = f; cur;) {
+    growToFit(d, cur);
+    if (!cur.parent) return;
+    cur = idx?.get(cur.parent.id) || findItem(d, cur.parent.id);
+  }
+}
+/** A table, matrix or subreport in the item or anywhere inside it. */
+export const holdsBodyOnly = (it) => !!it && (BODY_ONLY.has(it.type) || (Array.isArray(it.items) && it.items.some(holdsBodyOnly)));
 
 /** Add a body section after the others (the body becomes a list of sections). */
 export function addBodySection() {
@@ -380,7 +407,7 @@ export function updateItem(id, recipe, key) {
     recipe(f.item, d, f.section, f);
     minSize(f.item);
     const nf = findItem(d, id); // the recipe may have moved it
-    if (nf) growToFit(d, nf); // a table that got taller (a group added) pushes its band down, not over the next one
+    if (nf) growUp(d, nf); // a table that got taller (a group added) pushes its band down, not over the next one
   }, key);
 }
 /** No item smaller than 1 pt (a 0 × 0 box can neither be seen nor clicked: N33); a line may be 0 one way, not both. */
@@ -393,17 +420,21 @@ export function minSize(it) {
 /** A drag keeps items inside their band; a keyboard nudge ({ nudge: true }) moves the whole step (E12: an item as wide
  * as the body had 0.28 pt of room on A4 with margins), never before the band's start; the Issues panel flags overflow. */
 export function moveItems(ids, dx, dy, { nudge = false, to = null } = {}) {
+  const locked = lockedIds(S().def);
+  if (locked.size) ids = ids.filter(id => !locked.has(id));
+  if (!ids.length) return;
   if (to && moveToBand(ids, dx, dy, to)) return;
   if (!dx && !dy) return;
   if (S().cells && wouldOverlap(S().def, ids, (it) => ({ x: it.x + dx, y: it.y + dy, w: it.w, h: it.h }))) { S().setUi({ saveError: CELL_TAKEN() }); setTimeout(() => S().setUi({ saveError: null }), 2500); return; }
   S().apply((d) => {
+    const idx = indexItems(d);
     for (const id of ids) {
-      const f = findItem(d, id);
+      const f = idx.get(id);
       if (!f) continue;
       const room = roomFor(d, f);
       f.item.x = round(nudge ? Math.max(0, f.item.x + dx) : clamp(f.item.x + dx, 0, Math.max(0, room - f.item.w)));
       f.item.y = round(Math.max(0, f.item.y + dy));
-      growToFit(d, f);
+      growUp(d, f, idx);
     }
   });
 }
@@ -419,7 +450,7 @@ function moveToBand(ids, dx, dy, to) {
   const fs = ids.map(id => findItem(def, id));
   if (!fs.length || !secOf(def, to.section) || fs.some(f => !f || f.parent || f.section !== fs[0].section)) return false;
   if (fs[0].section === to.section) return false;
-  if (!isBodyKey(to.section) && !isContentKey(to.section) && fs.some(f => BODY_ONLY.has(f.item.type))) return false;
+  if (!isBodyKey(to.section) && !isContentKey(to.section) && fs.some(f => holdsBodyOnly(f.item))) return false; // also one inside a container
   const room = bodyWidth(def, to.section);
   // the bands are not a whole number of grid steps apart: the y in the new band snaps again (to the grid, or to cells)
   const { snap, grid, cells, cellSize } = S();
@@ -517,16 +548,19 @@ export function moveItemTo(id, parentId, index) {
 export function deleteSelection() {
   const { sel } = S();
   if (sel.kind !== 'items') return;
+  const locked = lockedIds(S().def);
   S().apply((d) => {
-    for (const id of sel.ids) { const f = findItem(d, id); if (f) f.list.splice(f.index, 1); }
+    for (const id of sel.ids) { if (locked.has(id)) continue; const f = findItem(d, id); if (f) f.list.splice(f.index, 1); }
   });
-  S().select({ kind: 'report' });
+  const kept = sel.ids.filter(id => locked.has(id) && findItem(S().def, id));
+  S().select(kept.length ? { kind: 'items', ids: kept } : { kind: 'report' });
 }
 
 /** Ctrl+A (#6): select every item of the selected band, or of the selected item's band; nothing selected: the body. */
 export function selectAllItems() {
   const { def, sel } = S();
-  const ids = (secOf(def, selectedBand(def, sel))?.items || []).map(i => i.id);
+  const locked = lockedIds(def);
+  const ids = (secOf(def, selectedBand(def, sel))?.items || []).map(i => i.id).filter(id => !locked.has(id));
   if (ids.length) S().select({ kind: 'items', ids });
   return ids.length;
 }
@@ -549,8 +583,10 @@ export function duplicateSelection() {
       if (!f) continue;
       const copy = cloneWithIds(f.item, used);
       offsetCopy(f.list, copy); // as a paste: not on top of the original, nor of an earlier copy (N37)
-      growToFit(d, { ...f, item: copy });
+      // cell mode: whole cells, and the first free place at or below (as Insert does)
+      if (S().cells) { snapCells(copy); for (let k = 0; k < 400 && overlapsAny(copy, f.list); k++) copy.y += S().cellSize; }
       f.list.push(copy);
+      growUp(d, { ...f, item: copy });
       newIds.push(copy.id);
     }
   });
@@ -562,15 +598,17 @@ const PASTE_OFFSET = 12;
 /** A copy goes 12 pt right and down, and 12 more while an item already sits there (an earlier copy): repeated copies
  *  cascade instead of stacking (N37). keep (a cut item pasted back): its own place while nothing sits there (#14).
  *  @param {any[]} list the items the copy joins @param {any} c @param {boolean} [keep] */
-function offsetCopy(list, c, keep = false) {
+function offsetCopy(list, c, keep = false, taken = null) {
   // pasted JSON is not trusted: a coordinate that is not a finite number (1e309 parses to Infinity) starts at 0, and
   // the steps are bounded (list.length + 1 spots cannot all be taken; past 2^53, += 12 changes nothing)
   for (const k of ['x', 'y']) if (!Number.isFinite(c[k])) c[k] = 0;
-  if (keep && !list.some(i => i !== c && i.x === c.x && i.y === c.y)) return;
-  for (let n = 0; n <= list.length; n++) {
-    c.x += PASTE_OFFSET; c.y += PASTE_OFFSET;
-    if (!list.some(i => i !== c && i.x === c.x && i.y === c.y)) return;
+  // the places already taken, as a set (several copies pasted at once pass theirs: one scan of the band, not one per step)
+  const at = taken || new Set(list.filter(i => i !== c).map(i => `${i.x}|${i.y}`));
+  const free = () => !at.has(`${c.x}|${c.y}`);
+  if (!(keep && free())) {
+    for (let n = 0; n <= list.length; n++) { c.x += PASTE_OFFSET; c.y += PASTE_OFFSET; if (free()) break; }
   }
+  at.add(`${c.x}|${c.y}`);
 }
 const CLIP = 'pagewright/items@1'; // kept after the rename: copy and paste between 0.8 and 0.9 tabs
 export async function copySelection({ cut = false } = {}) {
@@ -580,7 +618,10 @@ export async function copySelection({ cut = false } = {}) {
   const items = fs.map(f => f.item);
   // the band they come from (items of one band, none inside a container): a paste there cascades, elsewhere it fits (#13)
   const from = fs.length && fs.every(f => !f.parent && f.section === fs[0].section) ? fs[0].section : undefined;
-  const text = JSON.stringify({ kind: CLIP, items, from, ...(cut ? { cut: true } : {}) });
+  // a cut remembers its band and container: pasted right away, the items go back there (#14), a container's child too
+  const one = fs.length && fs.every(f => f.section === fs[0].section && (f.parent?.id || null) === (fs[0].parent?.id || null));
+  const at = cut && one ? { section: fs[0].section, parentId: fs[0].parent?.id || null } : undefined;
+  const text = JSON.stringify({ kind: CLIP, items, from, ...(cut ? { cut: true } : {}), ...(at ? { at } : {}) });
   memClip = text; // before the await: a paste (or cut's delete) right after sees this copy
   writing = text;
   try { await navigator.clipboard.writeText(text); sysClip = text; } catch { /* clipboard blocked: keep the in-memory copy */ }
@@ -596,9 +637,34 @@ export function cutSelection() {
   if (S().sel.kind !== 'items') return Promise.resolve(0);
   const n = copySelection({ cut: true }); // sets the in-memory copy synchronously, before the items go
   deleteSelection();
+  cutBack = { text: memClip, sel: S().sel };
   return n;
 }
-const clipOf = (text) => { try { const d = JSON.parse(text); return d?.kind === CLIP && Array.isArray(d.items) ? d : null; } catch { return null; } };
+/** A cut not pasted yet, and the selection it left: a paste while that selection stands puts the items back where they
+ *  were (their band, their container), whatever band the caller names (#14) */
+let cutBack = null;
+/** How deep pasted items may nest: deeper JSON is refused (the history and the canvas recurse once per level). */
+const MAX_DEPTH = 256;
+const depthOk = (list, n = 0) => n <= MAX_DEPTH && list.every(it => !Array.isArray(it?.items) || depthOk(it.items, n + 1));
+const clipOf = (text) => { try { const d = JSON.parse(text); return d?.kind === CLIP && Array.isArray(d.items) && depthOk(d.items) ? d : null; } catch { return null; } };
+/**
+ * Pasted JSON is not trusted: only items of a known type are kept (nested ones too); a place that is not a finite number
+ * starts at 0 and none is negative; a size that is not a finite number of at least 1 pt takes the item's default size.
+ */
+function cleanItems(list) {
+  const out = [];
+  for (const it of list) {
+    if (!it || typeof it !== 'object' || Array.isArray(it) || !Object.hasOwn(ITEMS, it.type)) continue;
+    const d = ITEMS[it.type].defaults?.() || {};
+    for (const k of ['x', 'y']) { const v = Number(it[k]); it[k] = Number.isFinite(v) ? Math.max(0, v) : 0; }
+    for (const k of ['w', 'h']) { const v = Number(it[k]); it[k] = Number.isFinite(v) && v >= 0 ? v : Number(d[k]) || 1; }
+    minSize(it);
+    if (Array.isArray(it.items)) it.items = cleanItems(it.items);
+    else if (NESTING.has(it.type)) it.items = [];
+    out.push(it);
+  }
+  return out;
+}
 /**
  * Paste items: from the text of a paste event (e.clipboardData: no permission prompt, N36), else the copy made in this
  * tab. @returns {number} how many were pasted (0: nothing to paste, the caller says so)
@@ -606,29 +672,41 @@ const clipOf = (text) => { try { const d = JSON.parse(text); return d?.kind === 
 export function pasteItems(section = 'body', text = null) {
   const st = active; // the designer pasted into
   const stale = memClip !== null && text !== memClip && (writing === memClip || (text != null && text === sysClip));
-  const data = (stale && clipOf(memClip)) || clipOf(text) || clipOf(memClip);
+  // a paste event's text is what was copied last: this tab's own copy only stands in for it when there is no text, or
+  // when the system clipboard never took that copy (a blocked write). Text copied in another app is not an old copy.
+  const own = text == null || text === '' ? true : sysClip !== memClip;
+  const data = (stale && clipOf(memClip)) || clipOf(text) || (own ? clipOf(memClip) : null);
   if (!data) return 0;
-  // a table, matrix or subreport goes to the body when the band cannot hold it, as Insert does
-  if (!isBodyKey(section) && !isContentKey(section) && data.items.some(it => BODY_ONLY.has(it?.type))) section = 'body';
+  const fresh = cleanItems(JSON.parse(JSON.stringify(data.items)));
+  if (!fresh.length) return 0;
+  // the first paste right after a cut, in the cut's band: back into the container it came from (#14)
+  const back = data.cut && data.at && cutBack?.text === memClip && cutBack.sel === st.getState().sel && (text == null || text === memClip) && secOf(st.getState().def, data.at.section) ? data.at : null;
+  cutBack = null;
+  if (back) section = back.section;
+  // a table, matrix or subreport goes to the body when the band cannot hold it, as Insert does (also one in a container)
+  if (!isBodyKey(section) && !isContentKey(section) && fresh.some(holdsBodyOnly)) section = 'body';
   const ids = [];
   st.getState().apply((d) => {
     const used = allNames(d);
-    const band = secOf(d, section);
-    const copies = data.items.map(it => cloneWithIds(it, used));
-    for (const c of copies) for (const k of ['x', 'y']) if (!Number.isFinite(c[k])) c[k] = 0; // pasted JSON is not trusted
-    const hOf = (c) => (Number.isFinite(c.h) ? c.h : 0), wOf = (c) => (Number.isFinite(c.w) ? c.w : 0);
+    const parent = back?.parentId ? findItem(d, back.parentId)?.item : null;
+    const band = parent || secOf(d, section);
+    const list = parent ? parent.items : band.items;
+    const copies = fresh.map(it => cloneWithIds(it, used));
+    const hOf = (c) => c.h, wOf = (c) => c.w;
     // the same band: 12 pt right and down (N37). Another band (or one not known, where the copies would not fit): at the
     // top of its free space, moved up as far as needed to fit, keeping their places relative to each other (#13)
-    const fits = copies.every(c => c.y + PASTE_OFFSET + hOf(c) <= (band.height || 0));
-    if (data.from === section || (data.from === undefined && fits)) {
-      for (const c of copies) { offsetCopy(band.items, c, data.cut === true); band.items.push(c); }
+    const fits = copies.every(c => c.y + PASTE_OFFSET + hOf(c) <= ((parent ? parent.h : band.height) || 0));
+    if (parent || data.from === section || (data.from === undefined && fits)) {
+      const taken = new Set(list.map(i => `${i.x}|${i.y}`));
+      for (const c of copies) { offsetCopy(list, c, data.cut === true, taken); list.push(c); }
     } else if (copies.length) {
       const top = copies.reduce((m, c) => Math.min(m, c.y), Infinity), tall = copies.reduce((m, c) => Math.max(m, c.y + hOf(c)), -Infinity) - top;
       const y0 = Math.max(0, Math.min(belowItems(band.items), (band.height || 0) - tall));
       const room = bodyWidth(d, section);
       for (const c of copies) { c.y = round(y0 + c.y - top); c.x = round(clamp(c.x, 0, Math.max(0, room - wOf(c)))); band.items.push(c); }
     }
-    for (const c of copies) { growToFit(d, { section, parent: null, item: c }); ids.push(c.id); }
+    const pf = parent ? findItem(d, parent.id) : null;
+    for (const c of copies) { growUp(d, { section, parent: pf?.item || null, item: c }); ids.push(c.id); }
   });
   if (ids.length) st.getState().select({ kind: 'items', ids });
   return ids.length;
@@ -711,6 +789,40 @@ function owners(rows, n) {
 /** A row's cells as a full-width array: a merged cell's other columns hold null (a row may list only its merged cell). */
 const padded = (row, n) => Array.from({ length: n }, (_, c) => row.cells?.[c] ?? null);
 const setSpan = (cell, n) => { if (n > 1) cell.colSpan = n; else delete cell.colSpan; };
+const setRowSpan = (cell, n) => { if (n > 1) cell.rowSpan = n; else delete cell.rowSpan; };
+/** The columns and rows a cell covers, kept within its part (as owners() counts them). */
+const spanOf = (rows, n, r, c) => {
+  const cell = rows[r].cells[c];
+  return { cs: Math.max(1, Math.min(cell.colSpan || 1, n - c)), rs: Math.max(1, Math.min(cell.rowSpan || 1, rows.length - r)) };
+};
+/** Pad every row of a part to the columns (before a change that needs a cell or a null at each column). */
+const padAll = (rows, n) => { for (const row of rows) if (row.cells?.length !== n) row.cells = padded(row, n); };
+/**
+ * Merge the cell at (r, c) over rows r..r1 and columns c..c1. The area grows until no merge lies partly inside it;
+ * the cell keeps its value and moves to the area's top left, every other place in it becomes null.
+ */
+function mergeArea(rows, n, r, c, r1, c1) {
+  padAll(rows, n);
+  const g = owners(rows, n);
+  let top = r, left = c, bottom = r1, right = c1, grown = true;
+  while (grown) {
+    grown = false;
+    for (let i = top; i <= bottom; i++) for (let k = left; k <= right; k++) {
+      const o = g[i][k];
+      if (!o) continue;
+      const { cs, rs } = spanOf(rows, n, o.r, o.c);
+      if (o.r < top || o.c < left || o.r + rs - 1 > bottom || o.c + cs - 1 > right) {
+        top = Math.min(top, o.r); left = Math.min(left, o.c); bottom = Math.max(bottom, o.r + rs - 1); right = Math.max(right, o.c + cs - 1);
+        grown = true;
+      }
+    }
+  }
+  const keep = rows[r].cells[c];
+  for (let i = top; i <= bottom; i++) for (let k = left; k <= right; k++) rows[i].cells[k] = null;
+  rows[top].cells[left] = keep;
+  setSpan(keep, right - left + 1);
+  setRowSpan(keep, bottom - top + 1);
+}
 
 /** Add a column before column `at`. Inside a merged cell the merge grows (on every row it covers); elsewhere an empty cell. */
 export function tableInsertColumn(id, at) {
@@ -757,13 +869,41 @@ export function tableDeleteColumn(id, at) {
     tableSync(t);
   });
 }
+/** Add a row before row `at` of a part. Inside a vertical merge the merge grows over it; elsewhere empty cells. */
 export function tableInsertRow(id, part, at) {
-  updateItem(id, (t) => { rowsOf(t, part, true).splice(at, 0, blankRow(t.columns.length)); tableSync(t); });
+  updateItem(id, (t) => {
+    const n = t.columns.length, rows = rowsOf(t, part, true), add = blankRow(n);
+    if (at > 0 && at < rows.length) {
+      padAll(rows, n);
+      const g = owners(rows, n);
+      for (let c = 0; c < n; c++) {
+        const a = g[at - 1][c], b = g[at][c];
+        if (!a || !b || a.r !== b.r || a.c !== b.c) continue;
+        add.cells[c] = null;
+        if (c === a.c) setRowSpan(rows[a.r].cells[a.c], spanOf(rows, n, a.r, a.c).rs + 1);
+      }
+    }
+    rows.splice(at, 0, add);
+    tableSync(t);
+  });
 }
+/** Remove row `at` of a part. A vertical merge over it shrinks (and moves down if it started there). */
 export function tableDeleteRow(id, part, at) {
   updateItem(id, (t) => {
-    const rows = rowsOf(t, part);
+    const n = t.columns.length, rows = rowsOf(t, part);
+    if (!rows?.[at]) return;
     if (part === 'detail' && rows.length <= 1 && !(t.groups || []).length) return;
+    padAll(rows, n);
+    const g = owners(rows, n);
+    for (let c = 0; c < n; c++) {
+      const o = g[at][c];
+      if (!o || c !== o.c) continue; // each merge once, at its first column
+      const { rs } = spanOf(rows, n, o.r, o.c);
+      if (rs <= 1) continue;
+      const cell = rows[o.r].cells[o.c];
+      if (o.r === at) { const moved = { ...cell }; setRowSpan(moved, rs - 1); rows[at + 1].cells[o.c] = moved; }
+      else setRowSpan(cell, rs - 1);
+    }
     rows.splice(at, 1);
     tableSync(t);
   });
@@ -771,42 +911,47 @@ export function tableDeleteRow(id, part, at) {
 export function tableSetColumnWidth(id, col, width, key) {
   updateItem(id, (t) => { t.columns[col].width = round(Math.max(12, width)); tableSync(t); }, key);
 }
+/** Merge a cell with the cell to its right (and all of a merge there). A place no cell covers (a short row): nothing. */
 export function tableMergeRight(id, part, row, col) {
   updateItem(id, (t) => {
-    const cells = rowsOf(t, part)[row].cells;
-    const c = cells[col];
-    const span = c.colSpan || 1;
-    if (col + span >= cells.length) return;
-    cells[col + span] = null;
-    c.colSpan = span + 1;
+    const n = t.columns.length, rows = rowsOf(t, part);
+    if (!rows?.[row]?.cells?.[col]) return;
+    const { cs, rs } = spanOf(rows, n, row, col);
+    if (col + cs >= n) return;
+    mergeArea(rows, n, row, col, row + rs - 1, col + cs);
   });
 }
+/** Split a cell's columns: each other column gets an empty cell over the same rows. */
 export function tableSplit(id, part, row, col) {
   updateItem(id, (t) => {
-    const cells = rowsOf(t, part)[row].cells;
-    const c = cells[col];
-    const span = c.colSpan || 1;
-    for (let k = 1; k < span; k++) cells[col + k] = { value: '' };
-    delete c.colSpan;
+    const n = t.columns.length, rows = rowsOf(t, part);
+    if (!rows?.[row]?.cells?.[col]) return;
+    const { cs, rs } = spanOf(rows, n, row, col);
+    padAll(rows, n);
+    const cells = rows[row].cells;
+    for (let k = 1; k < cs; k++) { cells[col + k] = { value: '' }; setRowSpan(cells[col + k], rs); }
+    delete cells[col].colSpan;
   });
 }
 /** Merge a cell with the cell below it (rowSpan), within the same rows of the table (header, a group's rows, detail, footer). */
 export function tableMergeDown(id, part, row, col) {
   updateItem(id, (t) => {
-    const rows = rowsOf(t, part);
-    const c = rows[row].cells[col];
-    const rs = c.rowSpan || 1;
+    const n = t.columns.length, rows = rowsOf(t, part);
+    if (!rows?.[row]?.cells?.[col]) return;
+    const { cs, rs } = spanOf(rows, n, row, col);
     if (row + rs >= rows.length) return;
-    for (let k = 0; k < (c.colSpan || 1); k++) rows[row + rs].cells[col + k] = null;
-    c.rowSpan = rs + 1;
+    mergeArea(rows, n, row, col, row + rs, col + cs - 1);
   });
 }
+/** Split a cell's rows: each other row gets an empty cell over the same columns. */
 export function tableSplitRows(id, part, row, col) {
   updateItem(id, (t) => {
-    const rows = rowsOf(t, part);
-    const c = rows[row].cells[col];
-    for (let r = 1; r < (c.rowSpan || 1); r++) if (rows[row + r]) rows[row + r].cells[col] = { value: '' };
-    delete c.rowSpan;
+    const n = t.columns.length, rows = rowsOf(t, part);
+    if (!rows?.[row]?.cells?.[col]) return;
+    const { cs, rs } = spanOf(rows, n, row, col);
+    padAll(rows, n);
+    for (let r = 1; r < rs; r++) { const c = { value: '' }; setSpan(c, cs); rows[row + r].cells[col] = c; }
+    delete rows[row].cells[col].rowSpan;
   });
 }
 /** Add an innermost group. The header shows the group value; the footer sums number columns. */
@@ -833,7 +978,12 @@ export function tableAddGroup(id, field, numericCols = [], { drill = false } = {
   });
 }
 export function tableRemoveGroup(id, level) {
-  updateItem(id, (t) => { t.groups.splice(level, 1); tableSync(t); });
+  updateItem(id, (t) => {
+    t.groups.splice(level, 1);
+    // the last group gone with no detail row: an empty detail row, as Delete row keeps one
+    if (!t.groups.length && !(t.detail || []).length) t.detail = [blankRow(t.columns.length)];
+    tableSync(t);
+  });
 }
 
 const IMAGE_MAX = 10 * 1024 * 1024; // the engine's limit per image
@@ -860,36 +1010,68 @@ export async function uploadImages(files, T) {
  * how: left | hcenter | right | top | vmiddle | bottom | hdist | vdist | width | height
  */
 export function alignItems(ids, how, toPage = false) {
+  const { def, cells } = S();
+  const locked = lockedIds(def);
+  ids = ids.filter(id => !locked.has(id));
+  const rects = alignedRects(def, ids, how, toPage);
+  if (!rects) return;
+  // cell mode: no item on top of another (the selected ones among themselves too), as a move or a resize
+  if (cells) {
+    const fs = ids.map(id => findItem(def, id)).filter(Boolean);
+    const box = (it) => rects.get(it.id) || it;
+    if (fs.some(f => f.list.some(o => o.id !== f.item.id && overlap(box(f.item), box(o))))) { S().setUi({ saveError: CELL_TAKEN() }); setTimeout(() => S().setUi({ saveError: null }), 2500); return; }
+  }
   S().apply((d) => {
-    const fs = ids.map(id => findItem(d, id)).filter(Boolean);
-    if (!fs.length) return;
-    const its = fs.map(f => f.item);
-    const page = toPage || its.length === 1;
-    const room = roomFor(d, fs[0]);
-    const bandH = fs[0].parent ? fs[0].parent.h : secOf(d, fs[0].section)?.height || 0;
-    const L = page ? 0 : Math.min(...its.map(i => i.x)), R = page ? room : Math.max(...its.map(i => i.x + i.w));
-    const Tp = page ? 0 : Math.min(...its.map(i => i.y)), B = page ? bandH : Math.max(...its.map(i => i.y + i.h));
-    const dist = (k, s) => {
-      if (its.length < 3) return;
-      const o = [...its].sort((a, b) => a[k] - b[k]);
-      const gap = (o[o.length - 1][k] + o[o.length - 1][s] - o[0][k] - o.reduce((a, i) => a + i[s], 0)) / (o.length - 1);
-      let at = o[0][k];
-      for (const i of o) { i[k] = round(at); at += i[s] + gap; }
-    };
-    for (const i of its) {
-      if (how === 'left') i.x = round(L);
-      else if (how === 'right') i.x = round(R - i.w);
-      else if (how === 'hcenter') i.x = round((L + R) / 2 - i.w / 2);
-      else if (how === 'top') i.y = round(Tp);
-      else if (how === 'bottom') i.y = round(B - i.h);
-      else if (how === 'vmiddle') i.y = round((Tp + B) / 2 - i.h / 2);
-      else if (how === 'width' && i.type !== 'table') i.w = Math.max(...its.map(x => x.w));
-      else if (how === 'height' && i.type !== 'table') i.h = Math.max(...its.map(x => x.h));
-    }
-    if (how === 'hdist') dist('x', 'w');
-    if (how === 'vdist') dist('y', 'h');
-    for (const i of its) { i.x = round(clamp(i.x, 0, Math.max(0, room - i.w))); i.y = Math.max(0, i.y); }
+    const idx = indexItems(d);
+    for (const [id, r] of rects) { const f = idx.get(id); if (!f) continue; Object.assign(f.item, r); growUp(d, f, idx); }
   });
+}
+
+/**
+ * Where alignItems puts each item: id → its new { x, y, w, h } in its own band or container. Items of different
+ * containers (or a container's child and a band item) line up on the page: their places are compared on the band.
+ */
+function alignedRects(def, ids, how, toPage) {
+  const fs = ids.map(id => findItem(def, id)).filter(Boolean);
+  if (!fs.length) return null;
+  // where each item's list has its 0, 0 on the band: the sum of its containers' places
+  const origin = (f) => { let x = 0, y = 0; for (let q = f; q?.parent;) { q = findItem(def, q.parent.id); x += q.item.x; y += q.item.y; } return { x, y }; };
+  const same = fs.every(f => (f.parent?.id || null) === (fs[0].parent?.id || null) && f.section === fs[0].section);
+  const its = fs.map(f => { const o = origin(f); return { f, o, x: f.item.x + o.x, y: f.item.y + o.y, w: f.item.w, h: f.item.h, type: f.item.type }; });
+  const page = toPage || its.length === 1;
+  // the area "to page" means: the items' container (all in one), else the band of the first item
+  const po = same ? its[0].o : { x: 0, y: 0 };
+  const room = same ? roomFor(def, fs[0]) : bodyWidth(def, fs[0].section);
+  const bandH = same && fs[0].parent ? fs[0].parent.h : secOf(def, fs[0].section)?.height || 0;
+  const L = page ? po.x : Math.min(...its.map(i => i.x)), R = page ? po.x + room : Math.max(...its.map(i => i.x + i.w));
+  const Tp = page ? po.y : Math.min(...its.map(i => i.y)), B = page ? po.y + bandH : Math.max(...its.map(i => i.y + i.h));
+  const dist = (k, s) => {
+    if (its.length < 3) return;
+    const o = [...its].sort((a, b) => a[k] - b[k]);
+    const gap = (o[o.length - 1][k] + o[o.length - 1][s] - o[0][k] - o.reduce((a, i) => a + i[s], 0)) / (o.length - 1);
+    let at = o[0][k];
+    for (const i of o) { i[k] = round(at); at += i[s] + gap; }
+  };
+  for (const i of its) {
+    if (how === 'left') i.x = round(L);
+    else if (how === 'right') i.x = round(R - i.w);
+    else if (how === 'hcenter') i.x = round((L + R) / 2 - i.w / 2);
+    else if (how === 'top') i.y = round(Tp);
+    else if (how === 'bottom') i.y = round(B - i.h);
+    else if (how === 'vmiddle') i.y = round((Tp + B) / 2 - i.h / 2);
+    else if (how === 'width' && i.type !== 'table') i.w = Math.max(...its.map(x => x.w));
+    else if (how === 'height' && i.type !== 'table') i.h = Math.max(...its.map(x => x.h));
+  }
+  if (how === 'hdist') dist('x', 'w');
+  if (how === 'vdist') dist('y', 'h');
+  const out = new Map();
+  for (const i of its) {
+    // back to the item's own container, and kept inside its width
+    const own = roomFor(def, i.f);
+    const w = i.type === 'table' ? i.w : Math.min(i.w, own);
+    out.set(i.f.item.id, { x: round(clamp(i.x - i.o.x, 0, Math.max(0, own - w))), y: round(Math.max(0, i.y - i.o.y)), w, h: i.h });
+  }
+  return out;
 }
 
 export const round = (v) => Math.round(v * 100) / 100;

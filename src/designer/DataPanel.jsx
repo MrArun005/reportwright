@@ -17,8 +17,12 @@ import { origin } from '@/viewer/engineClient.js';
 import { reportFetch } from '@/viewer/dataFetch.js';
 import { OPS } from './Inspector.jsx';
 import { nestedFields } from './fieldCheck.js';
+import { renameRefs } from '@/engine/expr/rename.js';
 
 const NAME = /^[A-Za-z_][\w]*$/;
+
+/** A renamed parameter or data set: the report's expressions follow it (a data source's inline rows are data, left alone). */
+const renameIn = (d, how) => renameRefs(d, how, (k, o) => k === 'data' && (d.dataSources || []).includes(o));
 
 /** The i18n key saying why sample data cannot load (the report has no data source), else null. */
 export const noSourceKey = (def) => ((def?.dataSources || []).length ? null : 'r4_noDataSource');
@@ -191,6 +195,7 @@ function ParamDialog({ index, onClose }) {
   const [live, setLive] = useState(def.liveParameters !== false);
   // the box keeps what is typed ("North=" mid-word); the choices are parsed from it
   const [choicesText, setChoicesText] = useState(() => (p.options || []).map(optionLine).join('\n'));
+  const dirty = useDirty({ p, columns, live }); // Escape or a click outside asks before dropping these changes
   const fromFields = (def.dataSets?.find(d => d.name === p.optionsFrom?.dataSet)?.fields || []).map(f => f.name);
   // the label is an expression: a field picks =Fields.x; another expression from the file stays as one more choice
   const labelOpts = [...fromFields.map(f => ({ value: `=Fields.${f}`, label: f })), ...(p.optionsFrom?.label && !fromFields.some(f => `=Fields.${f}` === p.optionsFrom.label) ? [{ value: p.optionsFrom.label, label: p.optionsFrom.label }] : [])];
@@ -225,7 +230,11 @@ function ParamDialog({ index, onClose }) {
       const v = { ...p }; if (v.default === '') delete v.default; if (!v.prompt) delete v.prompt;
       if (!v.editor) { delete v.editor; delete v.min; delete v.max; delete v.step; }
       for (const k of ['min', 'max', 'step']) if (v[k] === undefined) delete v[k];
-      if (index != null) d.parameters[index] = v; else d.parameters.push(v);
+      if (index != null) {
+        const old = d.parameters[index].name;
+        d.parameters[index] = v;
+        if (old !== v.name) renameIn(d, { parameter: [old, v.name] }); // Parameters.old in expressions
+      } else d.parameters.push(v);
       const n = Number(columns);
       if (n > 1) d.parameterLayout = { ...(d.parameterLayout || {}), columns: n }; else delete d.parameterLayout;
       if (live) delete d.liveParameters; else d.liveParameters = false;
@@ -237,7 +246,7 @@ function ParamDialog({ index, onClose }) {
   const needsChoices = (p.editor === 'radio' || p.editor === 'list') && !p.options && !p.optionsFrom;
   const limits = p.editor === 'slider' || RANGE_EDITORS.has(p.editor);
   return (
-    <Dialog title={orig ? T('paramTitle', { name: orig.name }) : T('paramNew')} onClose={onClose}
+    <Dialog title={orig ? T('paramTitle', { name: orig.name }) : T('paramNew')} onClose={onClose} dirty={dirty}
       footer={<>{orig && <button className="btn danger" style={{ marginInlineEnd: 'auto' }} onClick={del}>{T('delete')}</button>}<button className="btn" onClick={onClose}>{T('cancel')}</button><button className="btn primary" disabled={!!err} onClick={save}>{T('save')}</button></>}>
       <div className="grid2">
         <Field label={T('name')}><TextInput value={p.name} onChange={v => setP({ ...p, name: v })} autoFocus /></Field>
@@ -578,6 +587,8 @@ function DataSetDialog({ index, onClose, onSaved }) {
         if (old !== v.name) {
           walk(x, (it) => { if (it.dataSet === old) it.dataSet = v.name; });
           for (const o of x.dataSets) if (o.relation?.parent === old) o.relation.parent = v.name;
+          for (const p of x.parameters || []) if (p.optionsFrom?.dataSet === old) p.optionsFrom.dataSet = v.name;
+          renameIn(x, { dataSet: [old, v.name] }); // Sum(Fields.x, "Sales"), Lookup(…, "Sales")
         }
       } else { x.dataSets.push(v); at = x.dataSets.length - 1; }
       // a nested data set comes after its parent (the engine builds them in order)

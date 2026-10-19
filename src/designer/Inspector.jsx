@@ -9,7 +9,7 @@ import { t } from '@/i18n/index.js';
 import { ITEMS, stylePropsFor, TEXT_STYLE_PROPS } from '@/engine/items/index.js';
 import { useFontFamilies, FontsDialog } from './Fonts.jsx';
 import { PAGE_SIZES, fromPt, toPt } from '@/engine/units.js';
-import { TextInput, NumberInput, Select, ColorInput, ExprInput, Field, Check, FieldScope } from './ui.jsx';
+import { TextInput, NumberInput, DraftInput, Select, ColorInput, ExprInput, Field, Check, FieldScope } from './ui.jsx';
 import ExpressionEditor from './ExpressionEditor.jsx';
 import CondFormat from './CondFormat.jsx';
 import { applyCf, customProps, cfExpressions, pointAverage } from './cfRules.js';
@@ -94,10 +94,11 @@ function Geo({ label, value, onChange, min, drawnOf }) {
   const T = useT();
   // #9: a matrix draws wider than its box with its data: say so where the width is (the issues pane counts the drawn width)
   const drawn = useDesigner(s => (drawnOf ? s.extents?.[drawnOf]?.w || 0 : 0));
-  const hint = drawn > (value ?? 0) + 0.5 ? T('ux_drawsWidth', { w: `${round(fromPt(drawn, unit) * 100) / 100} ${unit}` }) : undefined;
+  // round() keeps two decimals (round(x * 100) / 100 again gave 7.055599999999999)
+  const hint = drawn > (value ?? 0) + 0.5 ? T('ux_drawsWidth', { w: `${round(fromPt(drawn, unit))} ${unit}` }) : undefined;
   return (
     <Field label={`${label} (${unit})`} hint={hint}>
-      <NumberInput value={round(fromPt(value ?? 0, unit) * 100) / 100} min={min == null ? undefined : round(fromPt(min, unit) * 100) / 100} step={unit === 'pt' ? 1 : unit === 'in' ? 0.05 : 0.5} onChange={v => onChange(round(toPt(v, unit)))} />
+      <NumberInput value={round(fromPt(value ?? 0, unit))} min={min == null ? undefined : round(fromPt(min, unit))} step={unit === 'pt' ? 1 : unit === 'in' ? 0.05 : 0.5} onChange={v => onChange(round(toPt(v, unit)))} />
     </Field>
   );
 }
@@ -111,7 +112,12 @@ function PropEditor({ p: spec, value, onChange, openExpr, dataSet, item }) {
   switch (p.type) {
     case 'expr': return <Field label={p.label}><ExprInput value={value} onChange={onChange} onOpen={() => openExpr({ value, dataSet, onSave: onChange, title: p.label })} /></Field>;
     case 'html': return <Field label={p.label}><textarea className="input mono" rows={7} spellCheck={false} data-testid={`prop-${p.key}`} style={{ width: '100%', resize: 'vertical', fontSize: 11 }} value={value ?? ''} onChange={e => onChange(e.target.value === '' ? undefined : e.target.value)} /></Field>;
-    case 'number': return p.expr ? <ExprOr p={p} value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet}><NumberInput value={value} onChange={onChange} /></ExprOr> : <Field label={p.label}><NumberInput value={value} onChange={onChange} /></Field>;
+    case 'number': {
+      // sizes, widths and counts are 0 or more (a font size of -4 drew mirrored text above its box); a rotation may be negative
+      const least = p.key === 'rotate' ? undefined : 0;
+      const num = <NumberInput value={value} min={least} onChange={v => onChange(least == null ? v : Math.max(least, v))} />;
+      return p.expr ? <ExprOr p={p} value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet}>{num}</ExprOr> : <Field label={p.label}>{num}</Field>;
+    }
     case 'bool': return p.defaultOn ? <Check label={p.label} checked={value !== false} onChange={v => onChange(v ? undefined : false)} /> : <Check label={p.label} checked={value} onChange={onChange} />;
     case 'select': if (p.number) return <Field label={p.label}><Select value={value == null ? '' : String(value)} onChange={v => onChange(v == null ? undefined : Number(v))} options={p.options} allowEmpty /></Field>; // stored as a number
       return p.expr ? <ExprOr p={p} value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet}><Select value={value} onChange={onChange} options={p.options} allowEmpty /></ExprOr> : <Field label={p.label}><Select value={value} onChange={onChange} options={p.options} allowEmpty /></Field>;
@@ -359,16 +365,24 @@ function TableProps({ table, openExpr }) {
 
 /* ---------------------------------------------------------------- pivot (matrix) */
 const LEGACY_MATRIX = ['rowGroup', 'columnGroup', 'value', 'valueFormat', 'rowSort', 'columnSort', 'rowTotals', 'columnTotals'];
+/**
+ * The array form of a matrix for editing. An old-form matrix with no row and no column group (an empty matrix from the
+ * toolbox) has no groups: its placeholder levels are not made into real ones.
+ */
+const tablixOf = (it) => {
+  const n = normalizeMatrix(it);
+  return isTablix(it) || it.rowGroup || it.columnGroup ? n : { ...n, rowGroups: [], columnGroups: [] };
+};
 /** Rows, columns and values of a matrix. The first edit turns the old single-group form into the array form (same look). */
 function PivotEditor({ item, openExpr }) {
   const T = useT();
   const def = useDesigner(s => s.def);
   const fields = fieldsOf(def, item.dataSet);
-  const spec = normalizeMatrix(item);
+  const spec = tablixOf(item);
   const [pick, setPick] = useState({ rowGroups: '', columnGroups: '', values: '' });
   const edit = (fn, key) => updateItem(item.id, (it) => {
     if (!isTablix(it)) {
-      const n = normalizeMatrix(it);
+      const n = tablixOf(it);
       Object.assign(it, { rowGroups: n.rowGroups, columnGroups: n.columnGroups, values: n.values });
       for (const k of LEGACY_MATRIX) delete it[k];
     }
@@ -637,13 +651,13 @@ function AxesEditor({ value, onChange, chartType, hasSecondary }) {
             {!round && <Field label={T('i_title')}><TextInput value={a.title} onChange={v => set(ax, 'title', v)} aria-label={T('i_axisTitleAria', { axis: label })} /></Field>}
             {valueAxis && <>
               <div className="grid2">
-                <Field label={T('i_minimum')}><TextInput value={a.min ?? ''} onChange={v => set(ax, 'min', optNum(v))} aria-label={T('i_axisMinAria', { axis: label })} placeholder={T('i_auto')} /></Field>
-                <Field label={T('i_maximum')}><TextInput value={a.max ?? ''} onChange={v => set(ax, 'max', optNum(v))} aria-label={T('i_axisMaxAria', { axis: label })} placeholder={T('i_auto')} /></Field>
+                <Field label={T('i_minimum')}><DraftInput value={a.min ?? ''} onChange={v => set(ax, 'min', optNum(v))} aria-label={T('i_axisMinAria', { axis: label })} placeholder={T('i_auto')} /></Field>
+                <Field label={T('i_maximum')}><DraftInput value={a.max ?? ''} onChange={v => set(ax, 'max', optNum(v))} aria-label={T('i_axisMaxAria', { axis: label })} placeholder={T('i_auto')} /></Field>
               </div>
               {chartType !== 'gauge' && <Field label={T('i_numberFormat')}><TextInput value={a.format} onChange={v => set(ax, 'format', v)} placeholder="N0, C0, P0, 0.0" aria-label={T('i_axisFormatAria', { axis: label })} /></Field>}
               {!round && <Check label={T('i_log')} checked={a.log} onChange={v => set(ax, 'log', v || undefined)} />}
             </>}
-            {!valueAxis && <Field label={T('i_labelAngle')}><TextInput value={a.labelAngle ?? ''} onChange={v => set(ax, 'labelAngle', optNum(v))} aria-label={T('i_labelAngleAria')} /></Field>}
+            {!valueAxis && <Field label={T('i_labelAngle')}><DraftInput value={a.labelAngle ?? ''} onChange={v => set(ax, 'labelAngle', optNum(v))} aria-label={T('i_labelAngleAria')} /></Field>}
             {chartType !== 'gauge' && <Check label={T('i_gridLines')} checked={a.gridlines ?? (ax === 'y')} onChange={v => set(ax, 'gridlines', v === (ax === 'y') ? undefined : v)} />}
             {!round && <Check label={T('i_reversed')} checked={a.reversed} onChange={v => set(ax, 'reversed', v || undefined)} />}
           </div>

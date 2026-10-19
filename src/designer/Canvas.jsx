@@ -1,6 +1,6 @@
 'use client';
 import SvgHtml from './SvgHtml.jsx';
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useDesigner, sectionList, secOf, isBodyKey, isContentKey, bodyWidth, addItem, insertItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING,
   selCells, selectCells, uploadImages, cellRange, columnCells, rowCells, tableInsertRow, tableDeleteRow, tableInsertColumn, tableDeleteColumn, tableMergeRight, tableAddGroup } from './store.js';
 import { tableFor, formatFor } from './tableGen.js';
@@ -111,11 +111,12 @@ export default function Canvas() {
   useEffect(() => {
     if (zoom !== 'fit' || !scrollRef.current) return;
     const el = scrollRef.current;
-    const ro = new ResizeObserver(() => setFitW(el.clientWidth));
+    // the width inside the scroll area's padding (it differs by layout: wide, narrow, right to left)
+    const ro = new ResizeObserver(() => { const cs = getComputedStyle(el); setFitW(el.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0)); });
     ro.observe(el);
     return () => ro.disconnect();
   }, [zoom]);
-  const scale = zoom === 'fit' ? Math.max(0.3, Math.min(3, ((fitW || 900) - 80) / bw)) : zoom * PX;
+  const scale = zoom === 'fit' ? Math.max(0.3, Math.min(3, (fitW || 820) / bw)) : zoom * PX;
   const [drag, setDrag] = useState(null); // {mode:'move', ids, dx, dy} | {mode:'resize', id, rect} | {mode:'band', section, h} | {mode:'col', id, col, w}
   const T = useT();
   const issues = useDesignIssues();
@@ -145,7 +146,12 @@ function blurField(e) {
 const UNIT_STEP = { pt: [72, 12], mm: [72 / 25.4 * 10, 72 / 25.4 * 2], cm: [72 / 2.54, 72 / 2.54 / 5], in: [72, 72 / 8] };
 function Ruler({ width, scale, vertical = false }) {
   const unit = useDesigner(s => s.unit);
-  const [major, minor] = UNIT_STEP[unit] || UNIT_STEP.pt;
+  const [major, base] = UNIT_STEP[unit] || UNIT_STEP.pt;
+  // a very tall band (an item typed at y 1,000,000) would get a tick per step, ~100,000 SVG nodes: past 2,000 ticks only
+  // the major ones are drawn, and past that every 10th, 100th… major one
+  let minor = base;
+  if (width / minor > 2000) minor = major;
+  while (width / minor > 2000) minor *= 10;
   const ticks = [];
   for (let x = 0, i = 0; x <= width + 0.01; x += minor, i++) {
     const isMajor = Math.abs((x / major) - Math.round(x / major)) < 1e-6;
@@ -387,11 +393,13 @@ export function fieldStyle(f) {
 function useItemKeys(item) {
   const T = useT();
   const type = T(`item_${item.type}`) === `item_${item.type}` ? ITEMS[item.type]?.label || item.type : T(`item_${item.type}`);
+  const locked = useLayerOf(item)?.locked;
   return {
-    tabIndex: 0, role: 'group', 'data-item-key': item.id,
+    tabIndex: locked ? -1 : 0, role: 'group', 'data-item-key': item.id, // a locked layer's item is not selectable: no Tab stop
+    ...(locked ? { 'aria-disabled': true } : {}),
     'aria-label': T('b9_itemLabel', { type, name: item.name, x: round(item.x), y: round(item.y) }),
     onKeyDown: (e) => {
-      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+      if (locked || e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
       e.preventDefault(); e.stopPropagation();
       const st = useDesigner.getState();
       const cur = st.sel.kind === 'items' ? st.sel.ids : [];
@@ -400,6 +408,11 @@ function useItemKeys(item) {
     },
   };
 }
+
+/** The selected ids as a set, made once per selection: every item asks on each change (a list scan per item was
+ *  quadratic: 1,000 items took most of a second to show Ctrl+A). */
+const selSets = new WeakMap();
+function selSet(sel) { let s = selSets.get(sel); if (!s) selSets.set(sel, s = new Set(sel.ids)); return s; }
 
 /* ---------------------------------------------------------------- shared drag */
 function useItemDrag(item, scale, setDrag) {
@@ -480,7 +493,8 @@ function rectOf(item, drag) {
 }
 
 /* ---------------------------------------------------------------- items */
-function AnyItem(props) {
+const AnyItem = memo(AnyItemIn); // a band drawn again (its selection changed) does not draw every item again
+function AnyItemIn(props) {
   const t = props.item.type;
   const layer = useLayerOf(props.item);
   if (layer?.visible === false) return null; // a hidden layer is hidden here too
@@ -518,27 +532,32 @@ function NestChildren({ item, scale, drag, setDrag, section }) {
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
 function ItemView({ item, scale, drag, setDrag, bw, nest, section }) {
-  const selected = useDesigner(s => s.sel.kind === 'items' && s.sel.ids.includes(item.id));
+  const selected = useDesigner(s => s.sel.kind === 'items' && selSet(s.sel).has(item.id));
   const single = useDesigner(s => s.sel.kind === 'items' && s.sel.ids.length === 1);
   const onDown = useItemDrag(item, scale, setDrag);
   const keys = useItemKeys(item);
   const r = rectOf(item, drag);
+  // the same object while the item and its box stay the same: its body is not drawn again when only the selection changes
+  const shown = useMemo(() => ({ ...item, ...r }), [item, r.x, r.y, r.w, r.h]); // eslint-disable-line react-hooks/exhaustive-deps
   const problems = useContext(IssueMap).get(item.id);
 
   const onHandle = (dir) => (e) => {
     e.preventDefault(); e.stopPropagation();
     const x0 = e.clientX, y0 = e.clientY;
     const o = { x: item.x, y: item.y, w: item.w, h: item.h };
-    const minW = item.type === 'line' ? 0 : 4, minH = item.type === 'line' ? 0 : 4;
+    // the smallest box: 4 pt, one whole cell in cell mode; a line may be 0 one way
+    const cell = useDesigner.getState().cells ? useDesigner.getState().cellSize : 4;
+    const minW = item.type === 'line' ? 0 : cell, minH = item.type === 'line' ? 0 : cell;
     let rect = o;
     const move = (ev) => {
       const dx = (ev.clientX - x0) / scale, dy = (ev.clientY - y0) / scale;
       let { x, y, w, h } = o;
       if (dir.includes('e')) w = Math.max(minW, snapV(o.x + o.w + dx) - o.x);
       if (dir.includes('s')) h = Math.max(minH, snapV(o.y + o.h + dy) - o.y);
-      if (dir.includes('w')) { const nx = Math.min(snapV(o.x + dx), o.x + o.w - minW); w = o.x + o.w - nx; x = nx; }
-      if (dir.includes('n')) { const ny = Math.min(snapV(o.y + dy), o.y + o.h - minH); h = o.y + o.h - ny; y = ny; }
-      x = Math.max(0, x); w = Math.min(w, bw - x);
+      // the left and top edges stop at the band's start: the right and bottom edges stay where they were
+      if (dir.includes('w')) { const nx = Math.max(0, Math.min(snapV(o.x + dx), o.x + o.w - minW)); w = o.x + o.w - nx; x = nx; }
+      if (dir.includes('n')) { const ny = Math.max(0, Math.min(snapV(o.y + dy), o.y + o.h - minH)); h = o.y + o.h - ny; y = ny; }
+      w = Math.min(w, bw - x);
       rect = { x: round(x), y: round(Math.max(0, y)), w: round(w), h: round(h) };
       setDrag({ mode: 'resize', id: item.id, rect });
     };
@@ -566,7 +585,7 @@ function ItemView({ item, scale, drag, setDrag, bw, nest, section }) {
     <div className={`it${selected ? ' sel' : ''}${problems ? ' issue' : ''}`} data-item={item.name} title={problems?.join('\n')}
       style={{ left: r.x * scale, top: r.y * scale, width: Math.max(r.w * scale, 2), height: Math.max(r.h * scale, 2) }}
       onPointerDown={onDown} {...keys}>
-      {nest ? <NestBox item={{ ...item, ...r }} scale={scale} /> : <ItemBody item={{ ...item, ...r }} scale={scale} />}
+      {nest ? <NestBox item={shown} scale={scale} /> : <MemoBody item={shown} scale={scale} />}
       {nest && <NestChildren item={item} scale={scale} drag={drag} setDrag={setDrag} section={section} />}
       {selected && single && HANDLES.map(d => <div key={d} className="handle" style={handlePos(d)} onPointerDown={onHandle(d)} />)}
       {showBadge && <div className="guide-badge" style={{ left: 0, top: -18 }}>{drag.mode === 'move' ? `${round(r.x)}, ${round(r.y)}` : `${round(r.w)} × ${round(r.h)}`}</div>}
@@ -684,6 +703,7 @@ export function checkedOnCanvas(v) {
   return lit ? lit === 'true' || lit === '1' : null;
 }
 
+const MemoBody = memo((props) => <ItemBody {...props} />);
 function ItemBody({ item, scale }) {
   const base = useDesigner(s => s.def.styles?.base);
   const images = useDesigner(s => s.def.images);
@@ -865,7 +885,8 @@ function TableView({ item, scale, drag, setDrag }) {
       <div className="grip" title="Select or move the table" onPointerDown={onGrip}>⠿</div>
       <div className="col-handles" aria-label={T('ux_columns')} role="group">
         {widths.map((w, ci) => <button type="button" key={ci} className="col-handle" style={{ width: w * scale }} data-col-handle={ci} title={T('ux_selectColumn', { n: ci + 1 })} aria-label={T('ux_selectColumn', { n: ci + 1 })}
-          onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); const cur = useDesigner.getState().sel; const add = (e.shiftKey || e.metaKey || e.ctrlKey) && cur.kind === 'cell' && cur.id === item.id; selectCells(item.id, [...(add ? selCells(cur) : []), ...columnCells(item, ci)]); }} />)}
+          onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); const cur = useDesigner.getState().sel; const add = (e.shiftKey || e.metaKey || e.ctrlKey) && cur.kind === 'cell' && cur.id === item.id; selectCells(item.id, [...(add ? selCells(cur) : []), ...columnCells(item, ci)]); }}
+          onKeyDown={(e) => { if (e.key !== 'Enter' && e.key !== ' ') return; e.preventDefault(); e.stopPropagation(); const cur = useDesigner.getState().sel; const add = (e.shiftKey || e.metaKey || e.ctrlKey) && cur.kind === 'cell' && cur.id === item.id; selectCells(item.id, [...(add ? selCells(cur) : []), ...columnCells(item, ci)]); }} />)}
       </div>
       {menu && <div className="cell-menu" role="menu" style={{ left: menu.x, top: menu.y }} data-testid="cell-menu">
         <button role="menuitem" onClick={menuDo(() => tableInsertRow(item.id, menu.part, menu.row))}>{T('i_rowAbove')}</button>

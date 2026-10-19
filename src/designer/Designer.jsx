@@ -106,7 +106,7 @@ function LeftRail({ T, readOnly, embed }) {
     if (el) {
       body.current.scrollTo({ top: el.offsetTop - body.current.offsetTop, behavior: 'smooth' });
       // the keyboard goes along: to the outline's current row, else the section's first control (N35: no long Tab walk)
-      (el.querySelector('[data-opt][tabindex="0"]') || el.querySelector('button, input, select, textarea'))?.focus({ preventScroll: true });
+      (el.querySelector('[data-opt][tabindex="0"]') || el.querySelector('button, input, select, textarea, [role="button"][tabindex="0"]'))?.focus({ preventScroll: true });
     }
     setAt(id);
   };
@@ -146,9 +146,12 @@ function StatusBar({ T, zoom, setZoom }) {
   const sel = useDesigner(s => s.sel);
   const def = useDesigner(s => s.def);
   const unit = useDesigner(s => s.unit);
+  // lengths in the chosen unit (the item's place and size, the page)
+  const k = { pt: 1, mm: 25.4 / 72, cm: 2.54 / 72, in: 1 / 72 }[unit] || 1;
+  const r = (v) => Math.round(v * k * (unit === 'pt' ? 1 : 10)) / (unit === 'pt' ? 1 : 10);
   let what;
   if (sel.kind === 'items' && sel.ids.length > 1) what = T('b2_selItems', { n: sel.ids.length });
-  else if (sel.kind === 'items') { const it = findItem(def, sel.ids[0])?.item; what = it ? `${it.name} · ${T(`item_${it.type}`) === `item_${it.type}` ? (ITEMS[it.type]?.label || it.type) : T(`item_${it.type}`)} · ${Math.round(it.x)}, ${Math.round(it.y)} · ${Math.round(it.w)} × ${Math.round(it.h)} pt` : ''; }
+  else if (sel.kind === 'items') { const it = findItem(def, sel.ids[0])?.item; what = it ? `${it.name} · ${T(`item_${it.type}`) === `item_${it.type}` ? (ITEMS[it.type]?.label || it.type) : T(`item_${it.type}`)} · ${r(it.x)}, ${r(it.y)} · ${r(it.w)} × ${r(it.h)} ${unit}` : ''; }
   else if (sel.kind === 'cell') what = T('b2_selCell', { name: findItem(def, sel.id)?.item?.name || '' });
   else if (sel.kind === 'section') what = T('b2_selBand', { band: sectionList(def).find(x => x.key === sel.section)?.label || sel.section });
   else what = T('b2_selReport');
@@ -159,8 +162,6 @@ function StatusBar({ T, zoom, setZoom }) {
     const own = key && bodyKeyOf(key) && Array.isArray(def.sections?.body) ? secOf(def, bodyKeyOf(key))?.page : null;
     const pg = own ? pageOf(def, key) : resolvePage(def.page);
     const size = `${own?.size || def.page?.size || ''}${pg.width > pg.height && !pg.pageless ? ` ${T('ux_landscape')}` : ''}`;
-    const k = { pt: 1, mm: 25.4 / 72, cm: 2.54 / 72, in: 1 / 72 }[unit] || 1;
-    const r = (v) => Math.round(v * k * (unit === 'pt' ? 1 : 10)) / (unit === 'pt' ? 1 : 10);
     page = pg.pageless ? `${def.page?.size || 'Pageless'} · ${r(bodyWidth(def, 'body'))} ${unit}` : T('b2_pageInfo', { size, w: r(pg.width), h: r(pg.height), unit });
   } catch { /* an unknown size: the Inspector says so */ }
   const step = (dir) => { const z = zoom === 'fit' ? 1 : zoom; const next = dir > 0 ? ZOOMS.find(x => x > z) : [...ZOOMS].reverse().find(x => x < z); if (next) setZoom(next); };
@@ -344,6 +345,10 @@ function HistoryDialog({ id, onClose, T, lang }) {
     if (!res.ok) { setErr((await res.json()).error); return; }
     const def = await res.json();
     api.getState().init(id, def);
+    // the restore is a new revision on the server: the next save must be made from it, not from the one opened (409)
+    const now = await fetch(`/api/reports/${encodeURIComponent(id)}`, { cache: 'no-store' }).catch(() => null);
+    const etag = now?.ok ? (now.headers.get('etag') || '').replace(/^W\/|"/g, '') : '';
+    api.getState().setUi({ rev: etag || null, conflict: null });
     onClose();
   };
   return (
@@ -502,8 +507,10 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
   const [imported, setImported] = useState(null);
   const importFile = async (file) => {
     if (!file) return;
-    const r = readReportFile(file.name, await file.text());
-    if (r.definition) { st().init(id, r.definition); loadSample(api); }
+    // the bytes: an XML design is read in the encoding it declares (ISO-8859-1, UTF-16), not always as UTF-8
+    const r = readReportFile(file.name, new Uint8Array(await file.arrayBuffer()));
+    // an imported report is not saved yet: Save stays on, and leaving the page asks
+    if (r.definition) { st().init(id, r.definition); st().setUi({ saved: false }); loadSample(api); }
     setImported({ name: file.name, ok: !!r.definition, warnings: r.warnings || [], error: r.error });
   };
 
@@ -566,7 +573,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
           </div>
         </TbGroup>
         {!embed && <button className="btn ai-btn" onClick={() => setDialog('ai')} disabled={!ai} title={ai ? T('askAiHint') : T('r4_aiOff')} data-testid="ask-ai"><Icon name="ai" />{T('askAi')}</button>}
-        {!readOnly && (!embed || embed.onSave || embed.server) && <button className="btn primary save-btn" onClick={() => st().save()} disabled={saving || saved} data-testid="save"><Icon name="save" />{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>}
+        {!readOnly && (!embed || embed.onSave || embed.server) && <button className="btn primary save-btn" onClick={() => st().save()} disabled={saving || saved} data-testid="save"><Icon name="save" />{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor' }}>⌘S</span></button>}
       </header>
       {draftBar}
       <ConflictBar T={T} />

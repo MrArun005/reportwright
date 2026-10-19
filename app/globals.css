@@ -476,6 +476,7 @@ a.cell-name:hover { color: var(--accent); }
 .scrim { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: center; z-index: 100; padding: 16px; }
 .dialog { background: var(--panel); border-radius: 10px; width: min(640px, 100%); max-height: calc(100vh - 32px); display: grid; grid-template-rows: auto 1fr auto; box-shadow: var(--shadow-dialog); }
 .dialog.wide { width: min(880px, 100%); }
+.dialog:focus { outline: none; } /* it takes the focus only when it has no field (Dialog): a container, not a control */
 .dialog header { padding: 14px 16px; border-bottom: 1px solid var(--line); font-weight: var(--fw-strong); }
 .dialog .dbody { padding: 14px 16px; overflow: auto; display: grid; gap: 12px; align-content: start; }
 .dialog footer { padding: 10px 16px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px; }
@@ -557,6 +558,7 @@ a.cell-name:hover { color: var(--accent); }
 .cw-card { display: grid; gap: 4px; padding: 8px; text-align: left; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--panel); cursor: pointer; font: inherit; color: inherit; }
 .cw-card:hover { border-color: var(--accent); }
 .cw-card.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); background: var(--accent-soft); }
+.cw-card.sel .hint { color: var(--muted); } /* --faint is 4.33:1 on --accent-soft; --muted passes in both themes */
 .cw-thumb { display: grid; place-items: center; aspect-ratio: 250 / 150; background: var(--paper); border-radius: 4px; overflow: hidden; }
 .cw-thumb > span:not(.hint):not(.err) { width: 100%; height: 100%; display: block; }
 .cw-thumb svg { display: block; width: 100%; height: 100%; }

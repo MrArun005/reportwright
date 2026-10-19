@@ -13,14 +13,33 @@ export function TextInput({ value, onChange, mono, invalid, className, ...rest }
   return <input className={`input${mono ? ' mono' : ''}${invalid ? ' invalid' : ''}${className ? ` ${className}` : ''}`} value={value ?? ''} onChange={e => onChange(e.target.value)} {...rest} />;
 }
 
-export function NumberInput({ value, onChange, step = 0.5, min, ...rest }) {
-  const [draft, setDraft] = useState(value ?? '');
-  useEffect(() => { setDraft(value ?? ''); }, [value]);
+/**
+ * What a field shows: the text typed while it has the focus, else the stored value. A value the store clamps or rounds
+ * ("4" of a height whose least is 90) is not written back mid-typing; the stored value shows again on blur or Enter.
+ */
+function useDraft(value, onBlur, onKeyDown) {
+  const [draft, setDraft] = useState(null); // null: not typing
+  return {
+    shown: draft ?? value ?? '',
+    setDraft,
+    onBlur: (e) => { setDraft(null); onBlur?.(e); },
+    onKeyDown: (e) => { if (e.key === 'Enter') setDraft(null); onKeyDown?.(e); },
+  };
+}
+
+export function NumberInput({ value, onChange, step = 0.5, min, onBlur, onKeyDown, ...rest }) {
+  const d = useDraft(value, onBlur, onKeyDown);
   return (
-    <input className="input mono" type="number" step={step} min={min} value={draft}
-      onChange={e => { setDraft(e.target.value); if (e.target.value !== '' && !Number.isNaN(Number(e.target.value))) onChange(Number(e.target.value)); }}
-      onBlur={() => { if (draft === '' || Number.isNaN(Number(draft))) setDraft(value ?? ''); }} {...rest} />
+    <input className="input mono" type="number" step={step} min={min} value={d.shown}
+      onChange={e => { d.setDraft(e.target.value); if (e.target.value !== '' && !Number.isNaN(Number(e.target.value))) onChange(Number(e.target.value)); }}
+      onBlur={d.onBlur} onKeyDown={d.onKeyDown} {...rest} />
   );
+}
+
+/** TextInput with NumberInput's draft: for a text the caller turns into another value ("-" or "0." read as a number). */
+export function DraftInput({ value, onChange, onBlur, onKeyDown, ...rest }) {
+  const d = useDraft(value, onBlur, onKeyDown);
+  return <TextInput value={d.shown} onChange={v => { d.setDraft(v); onChange(v); }} onBlur={d.onBlur} onKeyDown={d.onKeyDown} {...rest} />;
 }
 
 export function Select({ value, onChange, options, allowEmpty, ...rest }) {
@@ -115,27 +134,65 @@ export function useDirty(value) {
   return !sameValue(first, value);
 }
 
+/** The controls Tab stops at in `el`, in order (an unchecked radio of a group with a checked one is skipped, as Tab does). */
+const TABBABLE = 'button, input, select, textarea, a[href], [tabindex], [contenteditable="true"]';
+function tabbables(el) {
+  return [...el.querySelectorAll(TABBABLE)].filter(n => n.tabIndex >= 0 && !n.disabled && !(n.type === 'hidden') && n.getClientRects().length > 0
+    && !(n.type === 'radio' && !n.checked && n.name && el.querySelector(`input[type="radio"][name="${CSS.escape(n.name)}"]:checked`)));
+}
+
 /**
  * A modal dialog. Escape and a click outside close it; with `dirty` (unsaved changes) they ask first. The footer's
- * own Cancel button closes without asking.
+ * own Cancel button closes without asking. It takes the focus when it opens (its first field), keeps Tab inside, and
+ * gives the focus back to the control that opened it when it closes (WCAG 2.4.3).
  */
 export function Dialog({ title, children, onClose, footer, wide, className = '', dirty = false }) {
   const ref = useRef(null);
+  const box = useRef(null);
   const T = useT();
   const ask = useRef(null);
   ask.current = () => { if (!dirty || window.confirm(T('dlg_discard'))) onClose(); };
+  // the control that opened the dialog: read before the first render commits (an autoFocus field takes the focus then)
+  const [opener] = useState(() => { let a = typeof document === 'undefined' ? null : document.activeElement; while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement; return a; });
+  // a dialog opened over this one (a nested editor) takes its own keys and focus
+  const under = () => { const all = (ref.current?.closest('.designer') || document).querySelectorAll('.scrim'); return all.length > 1 && all[all.length - 1] !== ref.current; };
   useEffect(() => {
     // CodeMirror uses Escape to close its suggestions. Escape typed in another designer on the page is not ours.
     const inOther = (e) => { const mine = ref.current?.closest('.designer'); return e.composedPath().some(n => n !== mine && n?.classList?.contains('designer')); };
-    // a dialog opened over this one (a nested editor) takes its own Escape
-    const under = () => { const all = (ref.current?.closest('.designer') || document).querySelectorAll('.scrim'); return all.length > 1 && all[all.length - 1] !== ref.current; };
     const k = (e) => { if (e.key === 'Escape' && !e.defaultPrevented && !e.isComposing && !inOther(e) && !under()) ask.current(); };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, []);
+  useEffect(() => {
+    const scrim = ref.current, d = box.current;
+    if (!scrim || !d) return undefined;
+    // the designer may sit in a shadow root: its activeElement is the focused control there
+    const root = scrim.getRootNode();
+    const active = () => root.activeElement || document.activeElement;
+    // a field that took the focus itself (CodeMirror) keeps it
+    if (!d.contains(active())) (tabbables(d.querySelector('.dbody') || d)[0] || d).focus({ preventScroll: true });
+    // the focus moved out (a click or script on the page behind): back to the dialog
+    const keep = (e) => { if (!under() && !scrim.contains(e.target) && scrim.closest('.designer')?.contains(e.target)) (tabbables(d)[0] || d).focus({ preventScroll: true }); };
+    root.addEventListener('focusin', keep);
+    return () => {
+      root.removeEventListener('focusin', keep);
+      // back to the opener, unless the action that closed the dialog put the focus somewhere else
+      const now = active();
+      if (opener?.isConnected && opener !== document.body && (!now || now === document.body || !now.isConnected || scrim.contains(now))) opener.focus({ preventScroll: true });
+    };
+  }, []);
+  /** Tab on the last control goes to the first, Shift+Tab on the first to the last. */
+  const trap = (e) => {
+    if (e.key !== 'Tab' || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.target.closest?.('.dialog') !== box.current) return;
+    const all = tabbables(box.current);
+    if (!all.length) { e.preventDefault(); return; }
+    // nothing left to Tab to in that direction (in document order from the focused element): wrap around
+    const dir = e.shiftKey ? Node.DOCUMENT_POSITION_PRECEDING : Node.DOCUMENT_POSITION_FOLLOWING;
+    if (!all.some(n => n !== e.target && e.target.compareDocumentPosition(n) & dir)) { e.preventDefault(); all[e.shiftKey ? all.length - 1 : 0].focus(); }
+  };
   return (
     <div className="scrim" ref={ref} onPointerDown={(e) => { if (e.target === e.currentTarget) ask.current(); }}>
-      <div className={`dialog${wide ? ' wide' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={box} tabIndex={-1} onKeyDown={trap} className={`dialog${wide ? ' wide' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <header>{title}</header>
         <div className="dbody">{children}</div>
         <footer>{footer}</footer>

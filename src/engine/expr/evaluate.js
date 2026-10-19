@@ -633,6 +633,8 @@ const AGG = {
   stdev: (vals) => { const v = variance(vals, true); return v == null ? null : Math.sqrt(v); },
   stdevp: (vals) => { const v = variance(vals, false); return v == null ? null : Math.sqrt(v); },
 };
+/** The aggregate functions' names, lower case (Sum(expr, "Scope"): the scope is their second argument). */
+export const AGGREGATES = Object.freeze(Object.keys(AGG));
 /** Numbers among the values: nulls, blanks and text that is not a number are skipped. */
 function nums(vals) {
   const out = [];

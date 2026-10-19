@@ -22,10 +22,14 @@ const SECRET_PARAM = /token|key|secret|pass|auth|sig|session|code|credential/i;
 /** A URL's query values that look like credentials are blanked (the rest of the URL stays as designed). */
 function scrubUrl(s) {
   if (typeof s !== 'string' || !/^(https?:)?\/\/|^\/[^/]/.test(s) || !s.includes('?')) return s;
-  const [head, ...rest] = s.split('?');
-  const q = rest.join('?').split('#')[0];
-  const hash = s.includes('#') ? `#${s.split('#').slice(1).join('#')}` : '';
-  return `${head}?${q.split('&').map(kv => { const [k] = kv.split('='); return SECRET_PARAM.test(decodeURIComponent(k || '')) ? `${k}=` : kv; }).join('&')}${hash}`;
+  const scrub = (part) => {
+    const i = part.indexOf('?');
+    if (i < 0) return part;
+    return `${part.slice(0, i)}?${part.slice(i + 1).split('&').map(kv => { const [k] = kv.split('='); return SECRET_PARAM.test(decodeURIComponent(k || '')) ? `${k}=` : kv; }).join('&')}`;
+  };
+  // a hash route (https://x/#/r?token=…) has a query of its own, after the #
+  const h = s.indexOf('#');
+  return h < 0 ? scrub(s) : `${scrub(s.slice(0, h))}#${scrub(s.slice(h + 1))}`;
 }
 function scrubDeep(v) {
   if (typeof v === 'string') return scrubUrl(v);

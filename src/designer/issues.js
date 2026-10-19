@@ -152,7 +152,8 @@ export function checkIssues(bands, messages) {
   const go = (items, depth) => { if (depth > 64) return; for (const it of items || []) { if (!it) continue; if (it.name && !ids.has(it.name)) ids.set(it.name, it.id); if (Array.isArray(it.items)) go(it.items, depth + 1); } };
   for (const b of bands) go(b.items, 0);
   return [...new Set(messages)].map(text => {
-    const name = String(text).split(':')[0].replace(/ (cell|group|header cell|detail cell|footer cell)$/, '');
+    // "Ledger cell: …", "Ledger, filter 1 has no expr; …": the name ends at the colon or at ", filter N"
+    const name = String(text).split(':')[0].replace(/, filter \d+\b[\s\S]*$/, '').replace(/ (cell|group|header cell|detail cell|footer cell)$/, '');
     return { id: ids.get(name) ?? null, name, kind: 'check', text: String(text) };
   });
 }
