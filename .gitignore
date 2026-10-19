@@ -30,3 +30,4 @@ packages/vscode/*.vsix
 .stryker-tmp
 reports/mutation/
 tests/fixtures/golden-export/*.actual.png
+reports/stryker-incremental.json
