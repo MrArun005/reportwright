@@ -2,9 +2,35 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
-## Unreleased
+## 1.0.1 — 2026-10-19
 
-Fixes from a designer tester's report (issue numbers are that report's).
+Fixes from two testers' reports on 1.0.0: an early tester's, and a designer tester's (the issue numbers below are that
+report's). Thank you.
+
+### Changed
+- **HTML export subsets fonts by default** (`@reportwright/engine`'s `exportHtml`), as `exportPdf` and the CLI already
+  did: a 3-row report's file goes from ~904 KB to ~15 KB. `subset: false` embeds fonts in full as before; when
+  `@reportwright/fonts`' `harfbuzz-subset.wasm` cannot be loaded, fonts embed in full with a warning.
+- **A misconfigured subsetter throws** instead of silently embedding full fonts: `createSubsetter()` without a loader
+  is a `TypeError`, and a subsetter whose wasm does not load (or is not WebAssembly) makes `exportHtml`, `exportPdf`
+  and `exportPdfStream` reject with `harfbuzz-subset.wasm did not load (…)`. The engine's default subsetter and the
+  viewer's stay lenient (fonts in full, with a warning).
+- **`C` formats with no locale are en-US dollars** (`$1,234.50`), as the designer shows and the README says; 1.0.0
+  printed the number with no symbol. A report's `locale` or `currency` still wins; a locale with no country (`fr`)
+  still has no currency. Excel export follows.
+- **Node 20.16 or later** (`engines`) for every package with code to run (all but `@reportwright/fonts`):
+  `@reportwright/pdf` needs it; 1.0.0 said 20.9.
+- **`@reportwright/pdf` 1.1.1** (was 1.0.0) for `@reportwright/engine`, `/cli` and `/viewer`: a page whose
+  `/Contents` is an indirect array keeps its own content when saved, flattened or overlaid, and very long
+  right-to-left lines extract in linear time. Its experimental page renderer (1.1.0) is not used by ReportWright.
+
+### Engine and export
+- An empty subreport or table of contents prints no design hint and warns instead (#4).
+- No data bar for a null value, and a data bar in a cell compares with its column (#11).
+- No blank page or false cut warning for a gap taller than the page (N1), and an empty landscape section prints no
+  page (#16).
+- File names: an exported file, and the designer's report download, have one dash for a run of other characters and
+  none at the ends (#23).
 
 ### Designer
 - **Bands:** Insert, paste and drag go to the selected band, and the band grows to fit, also for an item added to a
@@ -20,7 +46,7 @@ Fixes from a designer tester's report (issue numbers are that report's).
   its preview shows the whole matrix (#9, #22). The matrix preset sums an amount, never an id (#8), and a table inserted
   in a list of another data set can keep to the list's current row (#2).
 - OverallPageNumber and OverallTotalPages are suggested (#18), a new rich text no longer uses PageNumber in the body
-  (#3), one rule, row or page is said in the singular (#21), and the download name has no runs of dashes (#23).
+  (#3), and one rule, row or page is said in the singular (#21).
 
 ### Checker and validation
 - Items are compared across containers, and an item drawn over a container it is not in is flagged (#1a).
@@ -29,31 +55,7 @@ Fixes from a designer tester's report (issue numbers are that report's).
 - New warnings: an icon set's high threshold below its low one (#28), a barcode with no value (#29), and a table of
   contents in a page band, which lists nothing. A sparkline's `style` is its kind, not a style object (#3).
 
-### Engine and export
-- An empty subreport or table of contents prints no design hint and warns instead (#4).
-- No data bar for a null value, and a data bar in a cell compares with its column (#11).
-- No blank page or false cut warning for a gap taller than the page (N1), and an empty landscape section prints no
-  page (#16).
-- An exported file name has one dash for a run of other characters and none at the ends (#23).
-
-## 1.0.1 — unreleased
-
-Fixes from an early tester's report on 1.0.0. Thank you.
-
-### Changed
-- **HTML export subsets fonts by default** (`@reportwright/engine`'s `exportHtml`), as `exportPdf` and the CLI already
-  did: a 3-row report's file goes from ~904 KB to ~15 KB. `subset: false` embeds fonts in full as before; when
-  `@reportwright/fonts`' `harfbuzz-subset.wasm` cannot be loaded, fonts embed in full with a warning.
-- **A misconfigured subsetter throws** instead of silently embedding full fonts: `createSubsetter()` without a loader
-  is a `TypeError`, and a subsetter whose wasm does not load (or is not WebAssembly) makes `exportHtml`, `exportPdf`
-  and `exportPdfStream` reject with `harfbuzz-subset.wasm did not load (…)`. The engine's default subsetter and the
-  viewer's stay lenient (fonts in full, with a warning).
-- **`C` formats with no locale are en-US dollars** (`$1,234.50`), as the designer shows and the README says; 1.0.0
-  printed the number with no symbol. A report's `locale` or `currency` still wins; a locale with no country (`fr`)
-  still has no currency. Excel export follows.
-- **Node 20.16 or later** for every package (`engines`): `@reportwright/pdf` needs it; 1.0.0 said 20.9.
-
-### Fixed
+### Packages, CLI and docs
 - `@reportwright/engine`'s type declarations no longer name `pdf-lib` (not a dependency): a project with
   `skipLibCheck: false` got 13 TS2307 errors. CI now packs the packages, installs them in a new project and runs
   `tsc --noEmit` with `skipLibCheck: false` over every typed entry (`scripts/check-package-types.mjs`).

@@ -45,7 +45,7 @@
     "@node-saml/node-saml": "^5.1.0",
     "@pdf-lib/fontkit": "^1.1.1",
     "@pdf-lib/standard-fonts": "^1.0.0",
-    "@reportwright/pdf": "1.0.0",
+    "@reportwright/pdf": "1.1.1",
     "@signpdf/signpdf": "^3.3.0",
     "bidi-js": "~1.0.3",
     "bwip-js": "^4.11.4",
