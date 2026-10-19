@@ -568,7 +568,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
           </div>
         </TbGroup>
         {!embed && <button className="btn ai-btn" onClick={() => setDialog('ai')} disabled={!ai} title={ai ? T('askAiHint') : T('r4_aiOff')} data-testid="ask-ai"><Icon name="ai" />{T('askAi')}</button>}
-        {!readOnly && (!embed || embed.onSave || embed.server) && <button className="btn primary save-btn" onClick={() => st().save()} disabled={saving || saved} data-testid="save"><Icon name="save" />{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>}
+        {!readOnly && (!embed || embed.onSave || embed.server) && <button className="btn primary save-btn" onClick={() => st().save()} disabled={saving || saved} data-testid="save"><Icon name="save" />{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor' }}>⌘S</span></button>}
       </header>
       {draftBar}
       <ConflictBar T={T} />
