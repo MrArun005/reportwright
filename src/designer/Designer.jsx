@@ -446,6 +446,8 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
         return;
       }
       if (isTyping(e) || st().tab !== 'design' || e.defaultPrevented) return; // handled already (the outline's arrows)
+      // a dialog is open (it is modal): Escape, Delete, the arrows and the clipboard keys are its own, not the canvas's
+      if (rootRef.current?.querySelector('.scrim')) return;
       if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? st().redo() : st().undo(); return; }
       if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); st().redo(); return; }
       if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelection(); return; }
@@ -470,7 +472,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
     };
     const onLeave = (e) => { if (!st().saved) { e.preventDefault(); e.returnValue = ''; } };
     const onPaste = (e) => {
-      if ((embed && !ours(e)) || isTyping(e) || st().tab !== 'design') return;
+      if ((embed && !ours(e)) || isTyping(e) || st().tab !== 'design' || rootRef.current?.querySelector('.scrim')) return;
       e.preventDefault();
       if (!pasteItems(selectedBand(st().def, st().sel), e.clipboardData?.getData('text/plain'))) {
         st().setUi({ saveError: t(lang, 'b9_nothingToPaste') }); setTimeout(() => st().setUi({ saveError: null }), 3000);
