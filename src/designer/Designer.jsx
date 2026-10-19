@@ -446,6 +446,8 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
         return;
       }
       if (isTyping(e) || st().tab !== 'design' || e.defaultPrevented) return; // handled already (the outline's arrows)
+      // a dialog is open (it is modal): Escape, Delete, the arrows and the clipboard keys are its own, not the canvas's
+      if (rootRef.current?.querySelector('.scrim')) return;
       if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? st().redo() : st().undo(); return; }
       if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); st().redo(); return; }
       if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelection(); return; }
@@ -470,7 +472,13 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
     };
     const onLeave = (e) => { if (!st().saved) { e.preventDefault(); e.returnValue = ''; } };
     const onPaste = (e) => {
-      if ((embed && !ours(e)) || isTyping(e) || st().tab !== 'design') return;
+      // WebKit sends a paste with no text field focused to the shadow host, not to the focused item inside the embed:
+      // the focus (followed into the shadow root) says whose it is and whether it is typing
+      const host = /** @type {any} */ (rootRef.current?.getRootNode())?.host;
+      let focus = document.activeElement;
+      while (focus?.shadowRoot?.activeElement) focus = focus.shadowRoot.activeElement;
+      const atHost = !!host && e.target === host;
+      if ((embed && !ours(e) && !atHost) || isTyping(e) || (atHost && isTyping({ target: focus })) || st().tab !== 'design' || rootRef.current?.querySelector('.scrim')) return;
       e.preventDefault();
       if (!pasteItems(selectedBand(st().def, st().sel), e.clipboardData?.getData('text/plain'))) {
         st().setUi({ saveError: t(lang, 'b9_nothingToPaste') }); setTimeout(() => st().setUi({ saveError: null }), 3000);
@@ -566,7 +574,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
           </div>
         </TbGroup>
         {!embed && <button className="btn ai-btn" onClick={() => setDialog('ai')} disabled={!ai} title={ai ? T('askAiHint') : T('r4_aiOff')} data-testid="ask-ai"><Icon name="ai" />{T('askAi')}</button>}
-        {!readOnly && (!embed || embed.onSave || embed.server) && <button className="btn primary save-btn" onClick={() => st().save()} disabled={saving || saved} data-testid="save"><Icon name="save" />{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>}
+        {!readOnly && (!embed || embed.onSave || embed.server) && <button className="btn primary save-btn" onClick={() => st().save()} disabled={saving || saved} data-testid="save"><Icon name="save" />{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor' }}>⌘S</span></button>}
       </header>
       {draftBar}
       <ConflictBar T={T} />

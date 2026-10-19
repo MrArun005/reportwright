@@ -3,6 +3,7 @@ import { createStore, useStore } from 'zustand';
 import { createContext, useContext } from 'react';
 import { produce } from 'immer';
 import { ITEMS } from '@/engine/items/index.js';
+import { shapeErrors, itemListErrors, MAX_NESTING } from '@/engine/schema/shape.js';
 import { resolvePage } from '@/engine/units.js';
 import { t } from '@/i18n/index.js';
 
@@ -158,7 +159,11 @@ export const newDesignerStore = () => createStore((set, get) => ({
   /** set by mountDesigner: { onSave, onOpen, readOnly, toolbox, panels, dataSourceTemplates, server } */
   embed: null,
   readOnly: false,
-  init(id, def) { set({ id, def: normalize(def), saved: true, past: [], future: [], sel: { kind: 'report' } }); },
+  init(id, def) {
+    const shape = shapeErrors(def); // a definition of the wrong shape: a message, not a TypeError from deep inside normalize
+    if (shape.length) throw new Error(`The report cannot be opened: ${shape[0]}`);
+    set({ id, def: normalize(def), saved: true, past: [], future: [], sel: { kind: 'report' } });
+  },
 
   /** Apply an immer recipe to the definition and record history. Same key within 800 ms merges. */
   apply(recipe, key = null) {
@@ -338,6 +343,8 @@ export function selectedBand(def, sel) {
 }
 /** Items that only go in a body section (or a content report's placeholder), never in a page header or footer. */
 export const BODY_ONLY = new Set(['table', 'matrix', 'subreport']);
+/** Whether an item is one of those, or holds one (a container or list with a table inside). @param {any} it */
+export const holdsBodyOnly = (it, depth = 0) => !!it && depth <= MAX_NESTING && (BODY_ONLY.has(it.type) || (Array.isArray(it.items) && it.items.some(x => holdsBodyOnly(x, depth + 1))));
 /** The y below a list of items (8 pt gap, on a 4 pt step); 0 for none. */
 const belowItems = (items) => (items.length ? Math.ceil((items.reduce((m, i) => Math.max(m, i.y + i.h), -Infinity) + 8) / 4) * 4 : 0);
 /**
@@ -419,7 +426,7 @@ function moveToBand(ids, dx, dy, to) {
   const fs = ids.map(id => findItem(def, id));
   if (!fs.length || !secOf(def, to.section) || fs.some(f => !f || f.parent || f.section !== fs[0].section)) return false;
   if (fs[0].section === to.section) return false;
-  if (!isBodyKey(to.section) && !isContentKey(to.section) && fs.some(f => BODY_ONLY.has(f.item.type))) return false;
+  if (!isBodyKey(to.section) && !isContentKey(to.section) && fs.some(f => holdsBodyOnly(f.item))) return false;
   const room = bodyWidth(def, to.section);
   // the bands are not a whole number of grid steps apart: the y in the new band snaps again (to the grid, or to cells)
   const { snap, grid, cells, cellSize } = S();
@@ -582,10 +589,17 @@ export async function copySelection({ cut = false } = {}) {
   const from = fs.length && fs.every(f => !f.parent && f.section === fs[0].section) ? fs[0].section : undefined;
   const text = JSON.stringify({ kind: CLIP, items, from, ...(cut ? { cut: true } : {}) });
   memClip = text; // before the await: a paste (or cut's delete) right after sees this copy
-  try { await navigator.clipboard.writeText(text); } catch { /* clipboard blocked: keep the in-memory copy */ }
+  writing = text;
+  try { await navigator.clipboard.writeText(text); sysClip = text; if (blocked?.clip === text) blocked = null; } catch { if (memClip === text) blocked = { clip: text, seen: undefined }; /* clipboard blocked: keep the in-memory copy */ }
+  if (writing === text) writing = null;
   return items.length;
 }
 let memClip = null;
+/** The copy whose clipboard write has not ended yet, and the last copy the system clipboard took: while a paste event
+ *  brings one of this tab's older copies, the in-memory copy is newer (a slow or blocked write, #14). blocked: a copy
+ *  the clipboard refused, and the text the first paste after it brought (what the clipboard held then, maybe another
+ *  tab's older copy): that text pastes the blocked copy; a different one (a newer copy elsewhere) pastes itself. */
+let writing = null, sysClip = null, blocked = null;
 /** Ctrl+X (#14): copy the selected items, then delete them (one undo step). @returns {Promise<number>} how many */
 export function cutSelection() {
   if (S().sel.kind !== 'items') return Promise.resolve(0);
@@ -593,17 +607,21 @@ export function cutSelection() {
   deleteSelection();
   return n;
 }
-const clipOf = (text) => { try { const d = JSON.parse(text); return d?.kind === CLIP && Array.isArray(d.items) ? d : null; } catch { return null; } };
+// pasted JSON is not trusted: a list of item objects, nested as a report may be (itemListErrors), else nothing to paste
+const clipOf = (text) => { try { const d = JSON.parse(text); return d?.kind === CLIP && Array.isArray(d.items) && !itemListErrors(d.items, 'paste').length ? d : null; } catch { return null; } };
 /**
  * Paste items: from the text of a paste event (e.clipboardData: no permission prompt, N36), else the copy made in this
  * tab. @returns {number} how many were pasted (0: nothing to paste, the caller says so)
  */
 export function pasteItems(section = 'body', text = null) {
   const st = active; // the designer pasted into
-  const data = clipOf(text) || clipOf(memClip);
+  const refused = blocked?.clip === memClip && text != null && (blocked.seen === undefined || blocked.seen === text);
+  const stale = memClip !== null && text !== memClip && (writing === memClip || (text != null && text === sysClip) || refused);
+  if (refused) blocked.seen = text;
+  const data = (stale && clipOf(memClip)) || clipOf(text) || clipOf(memClip);
   if (!data) return 0;
   // a table, matrix or subreport goes to the body when the band cannot hold it, as Insert does
-  if (!isBodyKey(section) && !isContentKey(section) && data.items.some(it => BODY_ONLY.has(it?.type))) section = 'body';
+  if (!isBodyKey(section) && !isContentKey(section) && data.items.some(it => holdsBodyOnly(it))) section = 'body';
   const ids = [];
   st.getState().apply((d) => {
     const used = allNames(d);

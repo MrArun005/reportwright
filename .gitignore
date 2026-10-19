@@ -27,3 +27,7 @@ packages/create-reportwright/templates
 packages/vscode/out
 packages/vscode/node_modules
 packages/vscode/*.vsix
+.stryker-tmp
+reports/mutation/
+tests/fixtures/golden-export/*.actual.png
+reports/stryker-incremental.json

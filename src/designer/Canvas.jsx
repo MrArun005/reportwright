@@ -22,7 +22,7 @@ import { t } from '@/i18n/index.js';
 import { themeContext, findItemNamed } from '@/engine/reuse.js';
 import { MIME_PART, insertPart, useReused, useLayerOf, useT } from './Reuse.jsx';
 import { wouldOverlap, useDesignerStore, activeStore } from './store.js';
-import { designIssues, checkIssues } from './issues.js';
+import { designIssues, checkIssues, checkMessages } from './issues.js';
 import { validate } from '@/engine/schema/validate.js';
 
 export const PX = 96 / 72;
@@ -34,8 +34,9 @@ export function useDesignIssues() {
   const saveCheck = useDesigner(s => s.saveCheck);
   return useMemo(() => {
     const bands = sectionList(def).map(s => ({ key: s.key, items: secOf(def, s.key)?.items || [], width: bodyWidth(def, s.key) }));
-    // what a save would report (validate's errors: unknown functions, symbologies, syntax) and the last save's missing reports
-    return [...designIssues(def, bands, extents || {}), ...checkIssues(bands, [...validate(def).errors, ...(saveCheck?.missing || [])])];
+    // what a save would report (validate's errors: unknown functions, symbologies, syntax), its hints (an item that prints
+    // nothing) and the last save's missing reports
+    return [...designIssues(def, bands, extents || {}), ...checkIssues(bands, checkMessages(def, saveCheck?.missing || []))];
   }, [def, extents, saveCheck]);
 }
 const IssueMap = createContext(new Map());

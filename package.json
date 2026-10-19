@@ -29,10 +29,12 @@
     "build:embed": "node scripts/build-embed.mjs",
     "build:packages": "node scripts/build-embed.mjs && node scripts/build-packages.mjs",
     "scan:packages": "node scripts/scan-packages.mjs",
+    "test:consumers": "node scripts/check-consumers.mjs",
     "perf": "node scripts/perf.mjs",
     "build:site": "node scripts/build-site.mjs",
     "format:check": "node scripts/format-check.mjs",
-    "qa": "node scripts/qa.mjs"
+    "qa": "node scripts/qa.mjs",
+    "test:mutation": "stryker run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
@@ -60,14 +62,20 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.0",
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo-google-fonts/jetbrains-mono": "^0.4.1",
+    "@playwright/test": "^1.56.0",
     "@signpdf/placeholder-pdf-lib": "^3.3.0",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
     "axe-core": "^4.14.0",
     "esbuild": "^0.28.2",
     "exceljs": "^4.4.0",
+    "fast-check": "^4.10.2",
     "node-forge": "^1.4.0",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.296",
     "playwright": "^1.56.0",
     "typescript": "^5.9.3",
     "vitest": "^5.0.3",

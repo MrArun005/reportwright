@@ -1,9 +1,14 @@
 // Designer: paste goes to the selected band and fits it (#12, #13).
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { pasteItems, copySelection, cutSelection, findItem, secOf, selectedBand } from '../../src/designer/store.js';
 import { S, load, where } from './designer-bands.fixture.js';
 
-beforeEach(load);
+beforeEach(() => {
+  // a clipboard that takes each copy, as a browser's does (in Node there is none: every copy would count as refused)
+  vi.stubGlobal('navigator', { clipboard: { writeText: async () => {} } });
+  load();
+});
+afterEach(() => vi.unstubAllGlobals());
 
 describe('#12/#13: paste goes to the selected band and fits it', () => {
   it('copied in the body, pasted into the footer: at the top of its free space, the footer keeps its height', async () => {
@@ -79,5 +84,85 @@ describe('#14: cut keeps the in-memory copy at once', () => {
     expect(findItem(S().def, S().sel.ids[0]).item.value).toBe('cut me');
     await done;
     vi.unstubAllGlobals();
+  });
+});
+
+describe('#14: a paste event that still brings an older copy of this tab pastes the newer in-memory copy', () => {
+  /** A clipboard whose writes end when release() is called, or fail while `block`; `system` is what it holds. */
+  const slowClipboard = () => {
+    const cb = { system: null, block: false, release: () => {} };
+    vi.stubGlobal('navigator', {
+      clipboard: {
+        writeText: (t) =>
+          new Promise((resolve, reject) => {
+            cb.release = () => (cb.block ? reject(new Error('blocked')) : ((cb.system = t), resolve()));
+          }),
+      },
+    });
+    return cb;
+  };
+  const valueOfPasted = () => findItem(S().def, S().sel.ids[0]).item.value;
+  /** Copy A (its write ends), then cut B: @returns the cut's promise, its write not ended yet */
+  const copyAThenCutB = async (cb) => {
+    S().apply((d) => {
+      d.sections.body.items[0].value = 'older';
+      d.sections.body.items[1].value = 'just cut';
+    });
+    S().select({ kind: 'items', ids: ['a'] });
+    const c = copySelection();
+    cb.release();
+    await c;
+    S().select({ kind: 'items', ids: ['b'] });
+    return { cut: cutSelection() };
+  };
+  afterEach(() => vi.unstubAllGlobals());
+  it('the write has not ended: the cut item, not the clipboard text', async () => {
+    const cb = slowClipboard();
+    const { cut } = await copyAThenCutB(cb);
+    expect(pasteItems('body', cb.system)).toBe(1); // cb.system: still the older copy, as the paste event's text
+    expect(valueOfPasted()).toBe('just cut');
+    cb.release();
+    await cut;
+  });
+  it('the write failed: the cut item, not the older copy the clipboard kept', async () => {
+    const cb = slowClipboard();
+    const { cut } = await copyAThenCutB(cb);
+    cb.block = true;
+    cb.release();
+    await cut;
+    expect(pasteItems('body', cb.system)).toBe(1);
+    expect(valueOfPasted()).toBe('just cut');
+  });
+  // found by store-properties.test.js (shrunk): another tab copied, then this tab's clipboard write was blocked
+  it("another tab copied, then this copy could not reach the clipboard: this copy, not the other tab's", async () => {
+    vi.stubGlobal('navigator', { clipboard: { writeText: () => Promise.reject(new Error('blocked')) } });
+    const other = JSON.stringify({
+      kind: 'pagewright/items@1',
+      items: [{ id: 'o', type: 'textbox', name: 'O', x: 0, y: 0, w: 50, h: 20, value: 'other tab' }],
+    });
+    S().apply((d) => {
+      d.sections.body.items[0].value = 'mine';
+    });
+    S().select({ kind: 'items', ids: ['a'] });
+    await copySelection();
+    expect(pasteItems('body', other)).toBe(1);
+    expect(valueOfPasted()).toBe('mine');
+    // the other tab copies again after that: its new copy pastes
+    const newer = other.replace('other tab', 'other tab, later');
+    expect(pasteItems('body', newer)).toBe(1);
+    expect(valueOfPasted()).toBe('other tab, later');
+  });
+  it('a copy made elsewhere after this one still pastes', async () => {
+    const cb = slowClipboard();
+    S().select({ kind: 'items', ids: ['a'] });
+    const c = copySelection();
+    cb.release();
+    await c;
+    const other = JSON.stringify({
+      kind: 'pagewright/items@1',
+      items: [{ id: 'o', type: 'textbox', name: 'O', x: 0, y: 0, w: 50, h: 20, value: 'other tab' }],
+    });
+    expect(pasteItems('body', other)).toBe(1);
+    expect(valueOfPasted()).toBe('other tab');
   });
 });

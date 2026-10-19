@@ -2,6 +2,7 @@
 // The Designer's Import action: a JasperReports, SSRS or BIRT design (XML) through the importers, or a ReportWright
 // definition (.pw.json). Pure: the Designer decides what to do with the result.
 import { importXmlReport } from '../importers/index.js';
+import { shapeErrors } from '../engine/schema/shape.js';
 
 const XML_FILE = /\.(jrxml|rdl|rdlc|rptdesign)$/i;
 
@@ -19,6 +20,8 @@ export function readReportFile(name, text) {
     let def;
     try { def = JSON.parse(text); } catch (e) { return { warnings: [], error: `${name} is not valid JSON (${e instanceof Error ? e.message : e})` }; }
     if (!def || typeof def !== 'object' || !def.sections) return { warnings: [], error: `${name} is not a report definition (it has no sections)` };
+    const shape = shapeErrors(def);
+    if (shape.length) return { warnings: [], error: `${name} is not a report definition the designer can open: ${shape[0]}` };
     return { definition: def, warnings: [] };
   }
   return { warnings: [], error: `${name} is not a report file: use .jrxml, .rdl, .rptdesign or .pw.json` };

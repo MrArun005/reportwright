@@ -4,6 +4,7 @@
  * render(definition, options) → page model.
  * No React, no DOM. Runs in a Web Worker and in Node.
  */
+import { shapeErrors } from './schema/shape.js';
 import { resolvePage } from './units.js';
 import { FontStore, CORE_FONT_KEY, PRELOAD_KEYS, fontsFor, fontsForDef, familyOf, fontCss, embeddedFace, isStandard, SHAPER, OPTIONAL_KEYS } from './text/fonts.js';
 import { safeUrl } from './url.js';
@@ -116,6 +117,8 @@ export async function render(def0, opts = {}) {
   const reuseWarnings = [];
   const getReport = makeLoader(opts.loadReport, opts.reportCache || (opts.reportCache = new Map()));
   let def = def0, parts = null;
+  const shape = shapeErrors(def0); // before anything walks it: a hostile file stops here, not in a stack overflow
+  if (def0 && typeof def0 === 'object' && shape.length) throw new ReportError(shape[0], { errors: shape });
   if (def0 && typeof def0 === 'object' && !Array.isArray(def0)) {
     // one item budget for report parts across this render and its subreports (opts is passed on to them)
     ({ def, parts } = await resolveReuse(def0, getReport, (m) => { if (!reuseWarnings.includes(m)) reuseWarnings.push(m); }, opts.reportId ? [opts.reportId] : [], opts.reuseBudget || (opts.reuseBudget = { items: 0 })));

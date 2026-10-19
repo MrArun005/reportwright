@@ -32,7 +32,7 @@ import { rowCells } from './cells.js';
  */
 
 /** @type {Record<string, any>} */
-export const ITEMS = {};
+export const ITEMS = Object.create(null); // no prototype: an item type "constructor" or "toString" is unknown, not Object's
 export const GROW_TOLERANCE = 1;
 /** A cell's text layout in a dataOnly render (the data CSV): nothing is measured or drawn. */
 const DATA_ONLY_TL = Object.freeze({ lines: Object.freeze([]), needed: 0, lh: 1, pad: [0, 0, 0, 0], size: 0, key: '', inner: 0 });

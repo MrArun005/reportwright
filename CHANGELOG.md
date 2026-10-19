@@ -2,6 +2,23 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## Unreleased
+
+### Engine and export
+- **A definition of the wrong shape is refused with a clear message** before anything walks it, by `validate()` and
+  by `render()` (a `ReportError`): `sections` not an object, a band that is not an object, `items` that is not a
+  list, an item that is not an object, `sections.content` that is not a list, or items nested more than 256 deep.
+  A few of these rendered before (an item that is a number, a page header that is a string, `sections.content`
+  that is an object, items nested more than 256 deep); fix the file where the message points.
+- A table inside a container or list in a page header or footer is a **warning** (the designer's Issues panel lists
+  it): it belongs in the body. A saved report with one renders as before. A table directly in a page band is an
+  error, as before.
+
+### Designer
+- Paste and drag send a container holding a table to the body, as they do a table.
+- Safari (WebKit): Ctrl/Cmd+V pastes items in the embedded designer. WebKit sends that paste to the embed's host
+  element, and the designer ignored it.
+
 ## 1.0.1 — 2026-10-19
 
 Fixes from two testers' reports on 1.0.0: an early tester's, and a designer tester's (the issue numbers below are that
