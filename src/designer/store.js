@@ -3,6 +3,7 @@ import { createStore, useStore } from 'zustand';
 import { createContext, useContext } from 'react';
 import { produce } from 'immer';
 import { ITEMS } from '@/engine/items/index.js';
+import { shapeErrors, itemListErrors } from '@/engine/schema/shape.js';
 import { resolvePage } from '@/engine/units.js';
 import { t } from '@/i18n/index.js';
 
@@ -158,7 +159,11 @@ export const newDesignerStore = () => createStore((set, get) => ({
   /** set by mountDesigner: { onSave, onOpen, readOnly, toolbox, panels, dataSourceTemplates, server } */
   embed: null,
   readOnly: false,
-  init(id, def) { set({ id, def: normalize(def), saved: true, past: [], future: [], sel: { kind: 'report' } }); },
+  init(id, def) {
+    const shape = shapeErrors(def); // a definition of the wrong shape: a message, not a TypeError from deep inside normalize
+    if (shape.length) throw new Error(`The report cannot be opened: ${shape[0]}`);
+    set({ id, def: normalize(def), saved: true, past: [], future: [], sel: { kind: 'report' } });
+  },
 
   /** Apply an immer recipe to the definition and record history. Same key within 800 ms merges. */
   apply(recipe, key = null) {
@@ -602,7 +607,8 @@ export function cutSelection() {
   deleteSelection();
   return n;
 }
-const clipOf = (text) => { try { const d = JSON.parse(text); return d?.kind === CLIP && Array.isArray(d.items) ? d : null; } catch { return null; } };
+// pasted JSON is not trusted: a list of item objects, nested as a report may be (itemListErrors), else nothing to paste
+const clipOf = (text) => { try { const d = JSON.parse(text); return d?.kind === CLIP && Array.isArray(d.items) && !itemListErrors(d.items, 'paste').length ? d : null; } catch { return null; } };
 /**
  * Paste items: from the text of a paste event (e.clipboardData: no permission prompt, N36), else the copy made in this
  * tab. @returns {number} how many were pasted (0: nothing to paste, the caller says so)

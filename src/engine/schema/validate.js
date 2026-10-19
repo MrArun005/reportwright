@@ -1,4 +1,5 @@
 // @ts-check
+import { shapeErrors } from './shape.js';
 import { checkValue, checkFunctions, parseValue, callIssues, compile, isAggregate, didYouMean, noParam } from '../expr/evaluate.js';
 import { ITEMS } from '../items/index.js';
 import { symbologyError } from '../items/barcode.js';
@@ -151,6 +152,9 @@ export function validate(def) {
   // left out of the render's own warnings so they are not said twice
   const errors = [], warnings = [], exprErrors = [], checkOnly = [];
   if (!def || typeof def !== 'object') return { errors: ['The report definition is empty'], warnings, exprErrors, checkOnly };
+  // a band or an item list of the wrong shape: the checks below would walk it
+  const shape = shapeErrors(def);
+  if (shape.length) return { errors: shape, warnings, exprErrors, checkOnly, renderSays: [] };
   if (!def.$schema) warnings.push(`The report has no "$schema", so an editor cannot check it; add "$schema": "${SCHEMA_ID}" at the top. It renders as before.`);
   if (def.$schema && def.$schema !== SCHEMA_ID && def.$schema !== SCHEMA_ALIAS) warnings.push(`Unknown schema "${def.$schema}". Expected "${SCHEMA_ID}".`);
   for (const k of Object.keys(def)) if (!DEF_KEYS.has(k) && !k.startsWith('_')) { const g = didYouMean(k, DEF_KEYS); warnings.push(`Unknown report property "${k}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`); }
@@ -390,8 +394,11 @@ export function validate(def) {
       warnings.push(msg); renderSays.push(msg);
     }
   }
-  return { errors, warnings, exprErrors, checkOnly, renderSays };
+  // a message quotes names and expressions: a 1 MB one stays readable (the same cut in every list, so they still match)
+  const short = (/** @type {string[]} */ l) => l.map(m => (m.length > MAX_MESSAGE ? `${m.slice(0, MAX_MESSAGE - 1)}…` : m));
+  return { errors: short(errors), warnings: short(warnings), exprErrors: short(exprErrors), checkOnly: short(checkOnly), renderSays: short(renderSays) };
 }
+const MAX_MESSAGE = 1000;
 
 /** validate() results by a signature of what it reads (content, never a name): safe across reports and tenants. */
 const validated = new Map();
