@@ -47,7 +47,7 @@ for (const [name, what] of [
     await designer.key('v');
     const got = await added(designer, before);
     expect(got.map((g) => [g.band, g.type])).toEqual([['body', name === 'Box' ? 'container' : 'table']]);
-    expect((await designer.issues()).join('\n')).not.toMatch(/can only be in the body/);
+    expect((await designer.issues()).join('\n')).not.toMatch(/can only be in the body|belong in the body/);
   });
 }
 

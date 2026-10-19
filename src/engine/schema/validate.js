@@ -257,7 +257,7 @@ export function validate(def) {
     for (const it of Array.isArray(items) ? items : []) {
       const label = it.name || it.type;
       if (!ITEMS[it.type]) { warnings.push(`Unknown item type "${it.type}"`); continue; }
-      walkItems(it, (x) => { itemRefs(x, warnings, fields, params, refErrors); if (Array.isArray(x.filters)) filterShape(x.filters, x.name || x.type, errors); const vis = []; visualIssues(x, x.name || (x === it ? label : `${label} ${x.type}`), vis); vis.forEach(hint); if (x.type === 'toc' && where !== 'body') hint(`${x.name || 'Table of contents'} is in a page band: a table of contents lists entries only in the body`); if (x !== it && x.type === 'table' && where !== 'body') errors.push(`${x.name || `${label} table`}: tables can only be in the body`); }); // a table inside a container or list too
+      walkItems(it, (x) => { itemRefs(x, warnings, fields, params, refErrors); if (Array.isArray(x.filters)) filterShape(x.filters, x.name || x.type, errors); const vis = []; visualIssues(x, x.name || (x === it ? label : `${label} ${x.type}`), vis); vis.forEach(hint); if (x.type === 'toc' && where !== 'body') hint(`${x.name || 'Table of contents'} is in a page band: a table of contents lists entries only in the body`); if (x !== it && x.type === 'table' && where !== 'body') hint(`${x.name || `${label} table`}: tables belong in the body; this one, inside a container or list in a page band, still prints, but move it to the body`); }); // a warning, not an error: reports saved with one render as before
       if (it.name) {
         if (names.has(it.name)) warnings.push(`Two items have the name "${it.name}"`);
         names.add(it.name);
