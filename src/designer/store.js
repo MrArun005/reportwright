@@ -3,7 +3,7 @@ import { createStore, useStore } from 'zustand';
 import { createContext, useContext } from 'react';
 import { produce } from 'immer';
 import { ITEMS } from '@/engine/items/index.js';
-import { shapeErrors, itemListErrors } from '@/engine/schema/shape.js';
+import { shapeErrors, itemListErrors, MAX_NESTING } from '@/engine/schema/shape.js';
 import { resolvePage } from '@/engine/units.js';
 import { t } from '@/i18n/index.js';
 
@@ -344,7 +344,7 @@ export function selectedBand(def, sel) {
 /** Items that only go in a body section (or a content report's placeholder), never in a page header or footer. */
 export const BODY_ONLY = new Set(['table', 'matrix', 'subreport']);
 /** Whether an item is one of those, or holds one (a container or list with a table inside). @param {any} it */
-export const holdsBodyOnly = (it, depth = 0) => !!it && depth < 64 && (BODY_ONLY.has(it.type) || (Array.isArray(it.items) && it.items.some(x => holdsBodyOnly(x, depth + 1))));
+export const holdsBodyOnly = (it, depth = 0) => !!it && depth <= MAX_NESTING && (BODY_ONLY.has(it.type) || (Array.isArray(it.items) && it.items.some(x => holdsBodyOnly(x, depth + 1))));
 /** The y below a list of items (8 pt gap, on a 4 pt step); 0 for none. */
 const belowItems = (items) => (items.length ? Math.ceil((items.reduce((m, i) => Math.max(m, i.y + i.h), -Infinity) + 8) / 4) * 4 : 0);
 /**
