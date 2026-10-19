@@ -205,8 +205,26 @@ export class Designer {
   }
   /** Keyboard shortcuts with the platform's modifier. */
   async key(k) {
+    const webkit = k === 'v' && this.page.context().browser()?.browserType().name() === 'webkit';
+    if (webkit)
+      await this.page.evaluate(() => {
+        window.__pasted = false;
+        window.addEventListener('paste', () => (window.__pasted = true), { capture: true, once: true });
+      });
     await this.page.keyboard.press(`ControlOrMeta+${k}`);
     await this.page.waitForTimeout(80);
+    // Headless WebKit on Linux has no key binding for Ctrl+V outside a text field: no paste event at all (macOS WebKit
+    // and Safari send one). Then send the one WebKit sends: to the document's focused element (the embed's shadow host),
+    // with no clipboard text, so the designer's own paste handler runs and pastes this tab's copy. A paste event that
+    // came and was ignored is not replaced: the spec fails as it should.
+    if (webkit && !(await this.page.evaluate(() => window.__pasted))) {
+      await this.page.evaluate(() =>
+        (document.activeElement || document.body).dispatchEvent(
+          new ClipboardEvent('paste', { bubbles: true, cancelable: true, composed: true }),
+        ),
+      );
+      await this.page.waitForTimeout(80);
+    }
   }
   async issues() {
     const btn = this.root.locator('[data-testid=issues]');
