@@ -472,7 +472,13 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
     };
     const onLeave = (e) => { if (!st().saved) { e.preventDefault(); e.returnValue = ''; } };
     const onPaste = (e) => {
-      if ((embed && !ours(e)) || isTyping(e) || st().tab !== 'design' || rootRef.current?.querySelector('.scrim')) return;
+      // WebKit sends a paste with no text field focused to the shadow host, not to the focused item inside the embed:
+      // the focus (followed into the shadow root) says whose it is and whether it is typing
+      const host = /** @type {any} */ (rootRef.current?.getRootNode())?.host;
+      let focus = document.activeElement;
+      while (focus?.shadowRoot?.activeElement) focus = focus.shadowRoot.activeElement;
+      const atHost = !!host && e.target === host;
+      if ((embed && !ours(e) && !atHost) || isTyping(e) || (atHost && isTyping({ target: focus })) || st().tab !== 'design' || rootRef.current?.querySelector('.scrim')) return;
       e.preventDefault();
       if (!pasteItems(selectedBand(st().def, st().sel), e.clipboardData?.getData('text/plain'))) {
         st().setUi({ saveError: t(lang, 'b9_nothingToPaste') }); setTimeout(() => st().setUi({ saveError: null }), 3000);
