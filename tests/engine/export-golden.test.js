@@ -1,7 +1,8 @@
 // Export round trips and goldens for eight reports (a grouped table, a matrix, a subreport, barcodes, a table of
 // contents, Hindi/Arabic/Chinese text, an image, charts), each exported to PDF, HTML, XLSX and CSV:
-// - PDF: page 1 drawn by pdf.js in Chromium matches tests/fixtures/golden-export/<name>.png (a few pixels may differ:
-//   anti-aliasing: at most 0.01%, where one changed digit is 0.03%), and its text comes out in reading order.
+// - PDF: page 1 drawn by pdf.js in Chromium matches tests/fixtures/golden-export/<name>.png (glyphs drawn as paths, so
+//   no machine's font hinting enters; a few pixels may differ: anti-aliasing, see diffShare), and its text comes out
+//   in reading order.
 // - HTML: fonts subset (a size budget), no request leaves the file, data values cannot inject markup or script.
 // - XLSX and CSV: read back, the values and number formats are the report's.
 // UPDATE_GOLDEN=1 rewrites the PNGs (look at them before committing). Needs Playwright's Chromium.
@@ -348,7 +349,12 @@ afterAll(async () => browser?.close());
 const drawPdf = (bytes) =>
   page.evaluate(async (b64) => {
     const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const doc = await window.pdfjs.getDocument({ data, isEvalSupported: false, useSystemFonts: false }).promise;
+    const doc = await window.pdfjs.getDocument({
+      data,
+      isEvalSupported: false,
+      useSystemFonts: false,
+      disableFontFace: true,
+    }).promise;
     const p = await doc.getPage(1);
     const vp = p.getViewport({ scale: 1.5 });
     const c = document.getElementById('c');
