@@ -361,7 +361,13 @@ const drawPdf = (bytes) =>
     const text = (await p.getTextContent()).items.map((i) => i.str).filter((s) => s.trim());
     return { png: c.toDataURL('image/png'), text, pages: doc.numPages };
   }, Buffer.from(bytes).toString('base64'));
-/** How many pixels of the drawn page differ from the golden PNG (any channel by more than 48 of 255), as a share. */
+/**
+ * How many pixels of the drawn page differ from the golden PNG, as a share. Another machine draws text with its own
+ * hinting and anti-aliasing: glyph edges move by a pixel, here and there. So a pixel differs when no pixel within 1 px
+ * of it in the other image is within 48 of 255 on every channel (either way round), and it counts only when at least 4
+ * of the 3 × 3 pixels around it (itself included) differ: a patch, not a lone edge pixel. An item moved by a few pt,
+ * a value changed or a glyph missing is a patch (the moved-item case below checks it).
+ */
 const diffShare = (png, golden) =>
   page.evaluate(
     async ([a, b]) => {
@@ -384,15 +390,38 @@ const diffShare = (png, golden) =>
         return x.getImageData(0, 0, c.width, c.height).data;
       };
       const [pa, pb] = [px(ia), px(ib)];
+      const w = ia.width,
+        h = ia.height;
+      const inside = (x, y) => x >= 0 && y >= 0 && x < w && y < h;
+      /** a pixel of p at x, y has a match in q within 1 px */
+      const near = (p, q, x, y) => {
+        const i = (y * w + x) * 4;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!inside(x + dx, y + dy)) continue;
+            const j = ((y + dy) * w + x + dx) * 4;
+            if (
+              Math.abs(p[i] - q[j]) <= 48 &&
+              Math.abs(p[i + 1] - q[j + 1]) <= 48 &&
+              Math.abs(p[i + 2] - q[j + 2]) <= 48
+            )
+              return true;
+          }
+        return false;
+      };
+      const odd = new Uint8Array(w * h);
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++) if (!near(pa, pb, x, y) || !near(pb, pa, x, y)) odd[y * w + x] = 1;
       let bad = 0;
-      for (let i = 0; i < pa.length; i += 4)
-        if (
-          Math.abs(pa[i] - pb[i]) > 48 ||
-          Math.abs(pa[i + 1] - pb[i + 1]) > 48 ||
-          Math.abs(pa[i + 2] - pb[i + 2]) > 48
-        )
-          bad++;
-      return { share: bad / (pa.length / 4) };
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++) {
+          if (!odd[y * w + x]) continue;
+          let n = 0;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++) if (inside(x + dx, y + dy)) n += odd[(y + dy) * w + x + dx];
+          if (n >= 4) bad++;
+        }
+      return { share: bad / (w * h) };
     },
     [png, golden],
   );
@@ -439,11 +468,18 @@ describe('PDF: page 1 matches its golden, text in reading order', () => {
         expect(
           d.share,
           `${(d.share * 100).toFixed(3)}% of the pixels differ (see ${name}.actual.png)`,
-        ).toBeLessThanOrEqual(0.0001); // one changed digit is 0.03%
+        ).toBeLessThanOrEqual(0.0001); // an item moved by 5 pt is 0.1% to 2%
       },
       60000,
     );
   }
+  it('an item moved by 5 pt does not match its golden', async () => {
+    const def = structuredClone(REPORTS.table.def);
+    def.sections.body.items[0].y += 5;
+    const drawn = await drawPdf((await exportsOf(def)).pdf);
+    const golden = `data:image/png;base64,${fs.readFileSync(path.join(GOLDEN, 'table.png')).toString('base64')}`;
+    expect((await diffShare(drawn.png, golden)).share).toBeGreaterThan(0.0001);
+  }, 60000);
   it('the Hindi, Arabic and Chinese text: shaped, extracted as written', async () => {
     const { pdf } = await exportsOf(REPORTS.unicode.def);
     const t = (await drawPdf(pdf)).text.join(' ');
