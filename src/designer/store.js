@@ -338,6 +338,8 @@ export function selectedBand(def, sel) {
 }
 /** Items that only go in a body section (or a content report's placeholder), never in a page header or footer. */
 export const BODY_ONLY = new Set(['table', 'matrix', 'subreport']);
+/** Whether an item is one of those, or holds one (a container or list with a table inside). @param {any} it */
+export const holdsBodyOnly = (it, depth = 0) => !!it && depth < 64 && (BODY_ONLY.has(it.type) || (Array.isArray(it.items) && it.items.some(x => holdsBodyOnly(x, depth + 1))));
 /** The y below a list of items (8 pt gap, on a 4 pt step); 0 for none. */
 const belowItems = (items) => (items.length ? Math.ceil((items.reduce((m, i) => Math.max(m, i.y + i.h), -Infinity) + 8) / 4) * 4 : 0);
 /**
@@ -419,7 +421,7 @@ function moveToBand(ids, dx, dy, to) {
   const fs = ids.map(id => findItem(def, id));
   if (!fs.length || !secOf(def, to.section) || fs.some(f => !f || f.parent || f.section !== fs[0].section)) return false;
   if (fs[0].section === to.section) return false;
-  if (!isBodyKey(to.section) && !isContentKey(to.section) && fs.some(f => BODY_ONLY.has(f.item.type))) return false;
+  if (!isBodyKey(to.section) && !isContentKey(to.section) && fs.some(f => holdsBodyOnly(f.item))) return false;
   const room = bodyWidth(def, to.section);
   // the bands are not a whole number of grid steps apart: the y in the new band snaps again (to the grid, or to cells)
   const { snap, grid, cells, cellSize } = S();
@@ -609,7 +611,7 @@ export function pasteItems(section = 'body', text = null) {
   const data = (stale && clipOf(memClip)) || clipOf(text) || clipOf(memClip);
   if (!data) return 0;
   // a table, matrix or subreport goes to the body when the band cannot hold it, as Insert does
-  if (!isBodyKey(section) && !isContentKey(section) && data.items.some(it => BODY_ONLY.has(it?.type))) section = 'body';
+  if (!isBodyKey(section) && !isContentKey(section) && data.items.some(it => holdsBodyOnly(it))) section = 'body';
   const ids = [];
   st.getState().apply((d) => {
     const used = allNames(d);
