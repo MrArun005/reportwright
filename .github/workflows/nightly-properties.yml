@@ -1,0 +1,36 @@
+name: Nightly property tests
+# The designer store's property tests with a new random seed each night, and many more runs than CI's fixed seed.
+# A failure prints the seed and the shrunk counterexample: replay it with FC_SEED=<seed> npx vitest run
+# tests/engine/store-properties.test.js, then keep it as a test (designer-paste-band.test.js has one).
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: 'Seed to replay (empty: a random one)'
+        required: false
+      runs:
+        description: 'Number of runs'
+        required: false
+        default: '3000'
+permissions:
+  contents: read
+jobs:
+  properties:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Property tests, random seed
+        env:
+          SEED_INPUT: ${{ github.event.inputs.seed }}
+          RUNS_INPUT: ${{ github.event.inputs.runs }}
+        run: |
+          SEED="${SEED_INPUT:-$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')}"
+          echo "FC_SEED=$SEED (replay: FC_SEED=$SEED npx vitest run tests/engine/store-properties.test.js)"
+          FC_SEED="$SEED" FC_RUNS="${RUNS_INPUT:-3000}" npx vitest run tests/engine/store-properties.test.js tests/engine/hostile-designer.test.js

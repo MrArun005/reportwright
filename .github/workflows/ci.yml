@@ -38,11 +38,16 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: sudo apt-get update && sudo apt-get install -y poppler-utils # pdftotext: the PDF text, password and script tests read the PDFs they make
+      # export-golden.test.js draws PDFs with pdf.js and opens the HTML exports in Chromium
+      - run: npx playwright install --with-deps chromium
       - name: Type check (the server has no errors; the engine's may only go down)
         run: npm run typecheck
       # storage, perms and audit share the one database per engine (storage.test.js empties its tables between cases),
       # so they run one file at a time after the rest; in one parallel run they wipe each other's jobs and leases
+      # the designer store's property tests (store-properties.test.js) replay one fixed seed here; the nightly job draws new ones
       - run: npx vitest run --exclude tests/engine/storage.test.js --exclude tests/engine/perms.test.js --exclude tests/engine/audit.test.js
+        env:
+          FC_SEED: '20261019'
       - run: npx vitest run --no-file-parallelism tests/engine/storage.test.js tests/engine/perms.test.js tests/engine/audit.test.js
       - run: node scripts/check-engine-boundary.mjs
       - name: Report snapshots (fails when a page or a total changes)
@@ -61,6 +66,30 @@ jobs:
           cd "$T/app" && npm i --no-audit --no-fund "$T"/reportwright-engine-*.tgz "$T"/reportwright-fonts-*.tgz
           npm start && qpdf --check orders.pdf
       - run: npm run build
+
+  designer-e2e:
+    # tests/e2e/designer-*.spec.js: the designer and viewer from the embed build, driven by mouse and keyboard
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    env:
+      TZ: Asia/Kolkata
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build:packages # public/embed/esm and packages/fonts/public/fonts, which the specs serve
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - run: npx playwright test --project=${{ matrix.browser }}
+      - name: Screenshots and traces of failed specs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with: { name: 'designer-e2e-${{ matrix.browser }}', path: test-results, if-no-files-found: ignore }
 
   verapdf:
     runs-on: ubuntu-latest
