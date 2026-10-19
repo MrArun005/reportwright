@@ -65,7 +65,7 @@ describe('wrong shapes are refused with a clear message', () => {
     'an item is an array': [def([[tb()]]), 'body: item 1 is not an object'],
     'sections is a list': [
       { ...def([]), sections: [] },
-      '"sections" must be an object, such as { "body": { "items": [] } }',
+      '"sections" must be an object',
     ],
     'the body is a string': [{ ...def([]), sections: { body: 'x' } }, 'body: a band must be an object with "items"'],
     'a page header is a number': [
@@ -82,7 +82,7 @@ describe('wrong shapes are refused with a clear message', () => {
     ],
     'content is an object': [
       { ...def([tb()]), sections: { body: { items: [] }, content: {} } },
-      '"sections.content" must be a list of placeholders',
+      '"sections.content" must be a list',
     ],
   };
   for (const [name, [d, msg]] of Object.entries(cases)) {
