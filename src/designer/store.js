@@ -582,10 +582,15 @@ export async function copySelection({ cut = false } = {}) {
   const from = fs.length && fs.every(f => !f.parent && f.section === fs[0].section) ? fs[0].section : undefined;
   const text = JSON.stringify({ kind: CLIP, items, from, ...(cut ? { cut: true } : {}) });
   memClip = text; // before the await: a paste (or cut's delete) right after sees this copy
-  try { await navigator.clipboard.writeText(text); } catch { /* clipboard blocked: keep the in-memory copy */ }
+  writing = text;
+  try { await navigator.clipboard.writeText(text); sysClip = text; } catch { /* clipboard blocked: keep the in-memory copy */ }
+  if (writing === text) writing = null;
   return items.length;
 }
 let memClip = null;
+/** The copy whose clipboard write has not ended yet, and the last copy the system clipboard took: while a paste event
+ *  brings one of this tab's older copies, the in-memory copy is newer (a slow or blocked write, #14) */
+let writing = null, sysClip = null;
 /** Ctrl+X (#14): copy the selected items, then delete them (one undo step). @returns {Promise<number>} how many */
 export function cutSelection() {
   if (S().sel.kind !== 'items') return Promise.resolve(0);
@@ -600,7 +605,8 @@ const clipOf = (text) => { try { const d = JSON.parse(text); return d?.kind === 
  */
 export function pasteItems(section = 'body', text = null) {
   const st = active; // the designer pasted into
-  const data = clipOf(text) || clipOf(memClip);
+  const stale = memClip !== null && text !== memClip && (writing === memClip || (text != null && text === sysClip));
+  const data = (stale && clipOf(memClip)) || clipOf(text) || clipOf(memClip);
   if (!data) return 0;
   // a table, matrix or subreport goes to the body when the band cannot hold it, as Insert does
   if (!isBodyKey(section) && !isContentKey(section) && data.items.some(it => BODY_ONLY.has(it?.type))) section = 'body';
