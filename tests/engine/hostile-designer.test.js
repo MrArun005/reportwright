@@ -108,6 +108,14 @@ describe('wrong shapes are refused with a clear message', () => {
     expect(open('"x"')).toBe('hostile.pw.json is not a report definition (it has no sections)');
     expect(validate([]).errors).toEqual(['The report definition is not an object']);
   });
+  it('a report with a master: its own wrong shape is refused before the master is merged in (which would hide it)', async () => {
+    // merging wraps the body's items in the master's content box and drops the page header: the check after it sees
+    // a good shape, so only the render's own check of the definition as given refuses this
+    const d = { ...def([]), master: 'master-1', sections: { body: { items: 'oops' }, pageHeader: 'x' } };
+    const opts = { fontStore, loadReport: async () => def([tb()]) };
+    await expect(render(d, opts)).rejects.toThrow('pageHeader: a band must be an object with "items"');
+    await expect(render(d, opts)).rejects.toBeInstanceOf(ReportError);
+  });
 });
 
 describe('coordinates that are not numbers', () => {
