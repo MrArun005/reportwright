@@ -590,7 +590,8 @@ export async function copySelection({ cut = false } = {}) {
   const text = JSON.stringify({ kind: CLIP, items, from, ...(cut ? { cut: true } : {}) });
   memClip = text; // before the await: a paste (or cut's delete) right after sees this copy
   writing = text;
-  try { await navigator.clipboard.writeText(text); sysClip = text; if (blocked?.clip === text) blocked = null; } catch { if (memClip === text) blocked = { clip: text, seen: undefined }; /* clipboard blocked: keep the in-memory copy */ }
+  try { await navigator.clipboard.writeText(text); sysClip = text; if (blocked?.clip === text) blocked = null; } catch { if (memClip === text) blocked = { clip: text, seen: early?.clip === text ? early.text : undefined }; /* clipboard blocked: keep the in-memory copy */ }
+  if (early?.clip === text) early = null;
   if (writing === text) writing = null;
   return items.length;
 }
@@ -600,6 +601,9 @@ let memClip = null;
  *  the clipboard refused, and the text the first paste after it brought (what the clipboard held then, maybe another
  *  tab's older copy): that text pastes the blocked copy; a different one (a newer copy elsewhere) pastes itself. */
 let writing = null, sysClip = null, blocked = null;
+/** The text the first paste brought while a copy's clipboard write had not ended: if the clipboard then refuses that
+ *  copy, this paste was the first one after it (not the next one, which may bring a newer copy from another tab). */
+let early = null;
 /** Ctrl+X (#14): copy the selected items, then delete them (one undo step). @returns {Promise<number>} how many */
 export function cutSelection() {
   if (S().sel.kind !== 'items') return Promise.resolve(0);
@@ -618,6 +622,7 @@ export function pasteItems(section = 'body', text = null) {
   const refused = blocked?.clip === memClip && text != null && (blocked.seen === undefined || blocked.seen === text);
   const stale = memClip !== null && text !== memClip && (writing === memClip || (text != null && text === sysClip) || refused);
   if (refused) blocked.seen = text;
+  if (writing !== null && writing === memClip && text != null && early?.clip !== writing) early = { clip: writing, text };
   const data = (stale && clipOf(memClip)) || clipOf(text) || clipOf(memClip);
   if (!data) return 0;
   // a table, matrix or subreport goes to the body when the band cannot hold it, as Insert does
