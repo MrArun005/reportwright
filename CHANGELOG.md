@@ -2,7 +2,7 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
-## Unreleased
+## 1.0.2 — 2026-11-12
 
 ### Engine and export
 - **A definition of the wrong shape is refused with a clear message** before anything walks it, by `validate()` and

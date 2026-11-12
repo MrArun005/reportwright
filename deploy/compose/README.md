@@ -66,7 +66,7 @@ Copy the backup file off the server (for example `scp`), or it is not a backup.
 ## Upgrade
 
 ```bash
-cd reportwright && git fetch --depth 1 origin tag v1.0.1 && git checkout v1.0.1   # the release you move to
+cd reportwright && git fetch --depth 1 origin tag v1.0.2 && git checkout v1.0.2   # the release you move to
 cd deploy/compose && docker compose --profile https up -d --build
 ```
 
