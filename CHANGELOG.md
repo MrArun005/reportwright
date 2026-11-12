@@ -2,7 +2,7 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
-## Unreleased
+## 1.0.2 — 2026-11-13
 
 ### Engine and export
 - **A definition of the wrong shape is refused with a clear message** before anything walks it, by `validate()` and
@@ -18,6 +18,8 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 - Paste and drag send a container holding a table to the body, as they do a table.
 - Safari (WebKit): Ctrl/Cmd+V pastes items in the embedded designer. WebKit sends that paste to the embed's host
   element, and the designer ignored it.
+- A paste made while the clipboard had not yet answered a copy it then refused no longer makes the next paste bring
+  that copy back in place of a newer one from another tab (found by the nightly property tests, seed 3171775530).
 
 ## 1.0.1 — 2026-10-19
 
